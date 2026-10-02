@@ -12,6 +12,7 @@ import com.tacmap.util.MissionStorePersistence
 import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
+import com.tacmap.models.RemoteChangeFold
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -107,6 +108,50 @@ class DrawingStore private constructor(
             candidate.features.mapTo(HashSet()) { it.id }
         }
         return commit(before, candidate, changed, origin, recordUndo = true)
+    }
+
+    /**
+     * Unit Sync apply: new layers (first one wins, existing ids untouched),
+     * feature upserts and deletes of one snapshot or live batch as one
+     * persisted write (plans/04 section 17). No undo entry.
+     */
+    @Synchronized
+    fun applyRemoteBatch(
+        layers: List<DrawingLayer>,
+        upserts: List<DrawingFeature>,
+        removals: Set<String>,
+        origin: ModelMutationOrigin = ModelMutationOrigin.REMOTE_SYNC,
+    ): Boolean {
+        if (layers.isEmpty() && upserts.isEmpty() && removals.isEmpty()) return true
+        val before = stableDocument()
+        val layerIds = before.layers.asSequence().map { it.id }.toHashSet()
+        val newLayers = layers.filter { layerIds.add(it.id) }
+        val replacements = LinkedHashMap<String, DrawingFeature>()
+        for (feature in upserts) replacements[feature.id] = feature
+        val features = ArrayList<DrawingFeature>(before.features.size + replacements.size)
+        val changed = HashSet<String>()
+        for (feature in before.features) {
+            if (feature.id in removals) {
+                changed += feature.id
+                continue
+            }
+            val replacement = replacements.remove(feature.id)
+            if (replacement != null && replacement != feature) changed += feature.id
+            features += replacement ?: feature
+        }
+        for (feature in replacements.values) {
+            if (feature.id in removals) continue
+            features += feature
+            changed += feature.id
+        }
+        if (newLayers.isEmpty() && changed.isEmpty()) return true
+        val candidate = before.copy(
+            layers = before.layers + newLayers,
+            features = features,
+        ).withDefaultLayers()
+        // layer metadata rides inside every exported drawing, same as addLayerVerbatim
+        if (newLayers.isNotEmpty()) candidate.features.mapTo(changed) { it.id }
+        return commit(before, candidate, changed, origin, recordUndo = false)
     }
 
     @Synchronized
@@ -371,7 +416,8 @@ class DrawingStore private constructor(
             _document.value = before
             return false
         }
-        pushUndo(before)
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else pushUndo(before)
         _committedDocument.value = candidate
         _document.value = candidate
         emit(setOf(feature.id), origin)
@@ -476,11 +522,26 @@ class DrawingStore private constructor(
         recordUndo: Boolean,
     ): Boolean {
         if (!persistCandidate(candidate)) return false
-        if (recordUndo) pushUndo(before)
+        // peer edits arent ours to undo, see RemoteChangeFold
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else if (recordUndo) pushUndo(before)
         _committedDocument.value = candidate
         _document.value = candidate
         emit(changed, origin)
         return true
+    }
+
+    private fun foldRemoteIntoHistory(before: DrawingDocument, after: DrawingDocument) {
+        if (undoStack.isEmpty() && redoStack.isEmpty()) return
+        val layers = RemoteChangeFold(before.layers, after.layers, DrawingLayer::id)
+        val features = RemoteChangeFold(before.features, after.features, DrawingFeature::id)
+        if (layers.isEmpty && features.isEmpty) return
+        fun fold(snapshot: DrawingDocument) = snapshot.copy(
+            layers = layers.applyTo(snapshot.layers),
+            features = features.applyTo(snapshot.features),
+        )
+        for (i in undoStack.indices) undoStack[i] = fold(undoStack[i])
+        for (i in redoStack.indices) redoStack[i] = fold(redoStack[i])
     }
 
     private fun stableDocument(): DrawingDocument {

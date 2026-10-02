@@ -3,7 +3,7 @@ import Foundation
 /// Remote unit member broadcasting location via sync relay. Ephemeral: recent
 /// updates expire quickly, while a v3 location may remain as a bounded
 /// last-known position when its matching authenticated session is still active.
-struct PresencePeer: Identifiable {
+struct PresencePeer: Identifiable, Equatable {
     let clientId: String
     var callsign: String
     var affiliation: String
@@ -122,6 +122,15 @@ struct OnlineMember: Identifiable, Equatable {
     var metadataUpdatedAt: Date?
 
     var id: String { clientId }
+
+    /// Same thing on screen. lastSeenAt / metadataUpdatedAt move on every
+    /// frame but nothing shows them, so they do not count (S5-12).
+    func sameDisplay(as other: OnlineMember) -> Bool {
+        clientId == other.clientId && displayName == other.displayName
+            && callsign == other.callsign && affiliation == other.affiliation
+            && echelon == other.echelon && function == other.function
+            && isHQ == other.isHQ && joinedAt == other.joinedAt
+    }
 }
 
 struct V3ActiveSession: Equatable {

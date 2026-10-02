@@ -29,6 +29,17 @@ class TacticalApp : Application() {
     lateinit var unitSyncRuntime: UnitSyncRuntime
         private set
 
+    /** PDF render crash loop breaker (WP2 contract I), plaintext uuids only, no backup */
+    lateinit var pdfRenderGuard: com.tacmap.map.render.pdf.PdfRenderGuard
+        private set
+
+    /** Generate Offline Tiles lives here so it outlives the Layers sheet and the Activity */
+    lateinit var pdfBakeManager: com.tacmap.calibration.PdfBakeManager
+        private set
+
+    /** forwarded to whoever holds PDF memory (the map's runtime registers itself) */
+    val memoryPressure = java.util.concurrent.CopyOnWriteArrayList<(Int) -> Unit>()
+
     override fun onCreate() {
         super.onCreate()
         L10n.install(this)
@@ -37,9 +48,31 @@ class TacticalApp : Application() {
         com.tacmap.waypoints.CustomSymbolStore.initialize(this)
         appLock = AppLock(this)
         cleanupExportArtifacts(this)
+        // S5: PDFBox spills plaintext stream bytes into cacheDir/pdfbox (PdfInspector's scratch).
+        // nothing can be parsing yet, so whatever's there is from a parse that died mid way
+        runCatching { java.io.File(cacheDir, "pdfbox").deleteRecursively() }
         opsec = OpsecSettings(this)
         unitSyncRuntime = UnitSyncRuntime(this, opsec)
         trackRecorder = TrackRecorder(this)
+        com.tacmap.map.render.pdf.PdfRenderSessions.init(this)
+        pdfRenderGuard = com.tacmap.map.render.pdf.PdfRenderGuard(
+            java.io.File(noBackupFilesDir, com.tacmap.map.render.pdf.PdfRenderGuard.FILE_NAME)
+        )
+        pdfBakeManager = com.tacmap.calibration.PdfBakeManager(this, pdfRenderGuard)
+        // no bake can be running at process start, anything in the work dir is dead
+        pdfBakeManager.cleanWorkDirectory()
+        registerComponentCallbacks(object : android.content.ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) {
+                memoryPressure.forEach { it(level) }
+            }
+
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) = Unit
+
+            @Deprecated("Deprecated in Java")
+            override fun onLowMemory() {
+                memoryPressure.forEach { it(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE) }
+            }
+        })
         CrashReporter.install(this)
     }
 }

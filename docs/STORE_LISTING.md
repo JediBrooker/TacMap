@@ -25,7 +25,9 @@ the screenshots in `docs/store/`.
 - **Pay once. Offline field maps for hiking, hunting, SAR, survey & tactical work.** *(78)*
 
 ## App Store promotional text (≤170 chars, editable without review)
-- **New in 2.0: encrypted TacMap Chat, Heading Up compass mode, more reliable Unit Sync, and safer PDF, GeoPDF and MBTiles import on iOS and Android.**
+- **New in 2.2: elevation profile and line of sight, red night mode, KML/KMZ export, a long-press point menu and a guided map tour.** *(127)*
+- German: **Neu in 2.2: Höhenprofil und Sichtlinie, roter Nachtmodus, KML/KMZ-Export, ein Punktmenü per langem Drücken und eine geführte Kartentour.** *(136)*
+- Previous (2.1): range rings, offline sun & moon times, symbol list sorting and Keep screen on.
 
 ---
 
@@ -42,51 +44,61 @@ Both are well under the 4,000-character limit.
 ```
 TacMap is a serious offline map for the field - buy it once and own it. No subscription. No TacMap account, ads, or analytics.
 
-Built for field use where signal drops: hiking, hunting, overlanding, SAR, fire/EMS, survey, forestry, drone mapping, and military or cadet MGRS users. One map, offline anywhere, and your data stays yours.
+Built for where signal drops: hiking, hunting, overlanding, SAR, fire/EMS, survey, forestry, drone mapping, and military or cadet MGRS users.
 
 
 WORKS OFFLINE, ANYWHERE ON EARTH
 • Import a GeoPDF or a scanned map sheet saved as PDF and georeference it on-device
 • Calibrate an ungeoreferenced PDF with a 3-point fit and review its reported residual
-• Sideload MBTiles offline tile sets - no regional lock-in, no curated country list, no network required
-• Optional terrain heatmap - a DEM-shaded elevation overlay while online lookups are enabled
+• Sideload MBTiles offline tile sets - no regional lock-in, no network required
+• Red night mode with adjustable brightness protects your night vision
 
 KNOW EXACTLY WHERE YOU ARE
-• Live position readout in MGRS (to 10 figures), lat/long, and UTM - plus online crosshair elevation while lookups are enabled
-• North Up or Heading Up map orientation - use touch rotation or let the phone compass rotate the map as you turn
-• North-reference indicator in degrees or NATO mils (6400), labelled for the selected true, magnetic, or grid north
+• Live position readout in MGRS (to 10 figures), lat/long, and UTM
+• North Up or Heading Up - rotate by touch or let the compass turn the map
+• North reference in degrees or NATO mils, for true, magnetic, or grid north
 • Measure distance, area, and bearing - in degrees and mils
+• Elevation profile of any line, with climb, descent and a height readout (online lookups)
+• Line of sight between two points - observer and target heights, earth curvature, dead ground shown
+• Offline sun & moon times: BMNT/EENT, twilight, sunrise/sunset, moonrise/moonset, illumination
 • Drop and label waypoints; record and export your route as a GPX track
 
 MARK UP THE MAP
-• Drawing tools: points, lines, areas, and freehand sketch - each with its own colour, width, and opacity, organised on named layers
+• Hold the map for a point menu: place a symbol, measure from there, add range rings, see sun & moon times, or copy the coordinate
+• Points, lines, areas, and freehand sketch - with colour, width, and opacity, on named layers
+• Range rings - up to 10 geodesic rings around a symbol that follow it when it moves
 • Full undo/redo
 • Search & Rescue, Points of Interest, airsoft, and milsim marker sets
 • NATO APP-6 symbology - build units, add HQ flags, and place control measures and task graphics
+• Import your own symbol packs, e.g. German emergency services (BOS), with offline search
+• Sort the symbol list by newest, name, distance, affiliation or layer
 
 SHARE THE PICTURE, LIVE
-• Unit Sync - when connected, share drawings and symbols across iOS and Android over an end-to-end encrypted channel
-• Live presence - see your team on the map with callsign, heading, and position, all end-to-end encrypted
-• TacMap Chat - send encrypted text or reports to the entire room or one selected live unit, with an unread indicator on the map
-• Optional screen-off presence on iOS and Android, with a separate OPSEC switch and selectable best-effort update interval
-• The relay cannot decrypt mission content, but sees admission/routing, actor/session/control, Chat scope and recipient, IP, timing, and size metadata. “Routed” is not delivery/read proof; member status is relay-reported
-• Conflict alerts - if a teammate edits the same object, you get a notification instead of a silent overwrite
-• Optional online weather + drone flight-safety widget - wind, gusts, visibility, and a SAFE / CAUTION / DANGER read for the map centre
+• Unit Sync - share drawings and symbols across iOS and Android, end-to-end encrypted
+• Live presence - see your team's callsign, heading, and position, end-to-end encrypted
+• TacMap Chat - send encrypted text or reports to the entire room or one selected live unit
+• Optional screen-off presence with a separate OPSEC switch
+• The relay cannot decrypt mission content, but sees admission/routing, session/control, Chat recipient, IP, timing, and size metadata. "Routed" is not delivery/read proof
+• Conflict alerts instead of silent overwrites when a teammate edits the same object
+• Optional online weather + drone flight-safety read: wind, gusts, visibility, SAFE / CAUTION / DANGER
 
 OPEN BY DESIGN - YOUR DATA STAYS YOURS
-• Import and export GeoJSON (RFC 7946) - round-trips cleanly through QGIS, ArcGIS, Felt, Leaflet, and Google Earth
-• Import KML / KMZ from Google Earth and ATAK
+• GeoJSON (RFC 7946) import and export - round-trips through QGIS, ArcGIS, and Felt
+• Import and export KML / KMZ for Google Earth and ATAK - layers become folders, symbols keep their MGRS grid and icon
 • Record and export GPX tracks
-• Export All Mission Objects - one-tap GeoJSON for every symbol, drawing, waypoint, and layer
-• Recorded tracks remain separate GPX files, so mission-object export never hides or changes track data
-• No proprietary format. Everything you make exports to the tools you already use.
+• One-tap export of every symbol, drawing, waypoint, and layer - no proprietary format
 
 PRIVACY CONTROLS
-• Mission data is encrypted in app-private storage; imported map bytes remain private under device file protection
-• Online basemaps and lookups are disabled on first launch and can be enabled independently; while enabled, providers receive your IP and requested map area, query, or lookup coordinates. Coordinate and mission search stays on-device
+• Mission data is encrypted in app-private storage; imported maps stay under device file protection
+• Online basemaps and lookups are off on first launch and can be enabled independently; while enabled, providers receive your IP and requested map area, query, or coordinates. Coordinate and mission search stays on-device
 • No TacMap account, behavioural analytics, advertising identifiers, ads, or developer crash uploads
 • Optional Face ID / Touch ID app lock
 • Universal iPhone and iPad - not gated behind the newest OS
+
+EASY TO START, IN ENGLISH OR GERMAN
+• A guided tour points at each map control on first launch; replay it any time from About
+• Choose English, German or device language in Settings
+• Optional Keep screen on while TacMap is open
 
 
 PAY ONCE - LOCALISED PRICE SHOWN BY THE APP STORE
@@ -119,6 +131,112 @@ Same body as the App Store block above, with these platform swaps:
   already works those terms in naturally.
 
 ## What's New (release note snippet)
+
+The source of truth is `docs/store/localizations/en-US.json` and `de-DE.json`
+(`appStore.whatsNew` / `googlePlay.releaseNotes`); keep the blocks below in sync
+with them and run `scripts/export_store_localizations.py` to check limits.
+
+2.2.0 is a draft: no 2.2.0 version exists in App Store Connect yet. The last
+bullets assume PR #46 (Android parity + iOS calibration/ELEV fixes) merges
+before submission; drop them if it doesn't. The German copy needs a native
+speaker's review.
+
+### 2.2.0 — Apple App Store, English (1,117 / 4,000 characters)
+```
+• Elevation profile: tap the terrain button on the Measure bar or a selected line to see the ground along it, with lowest and highest points, climb and descent. Uses online lookups.
+• Line of sight: on a two-point line, set observer and target heights to see where terrain blocks the view, allowing for earth curvature. Dead ground is greyed out.
+• Night mode: turns the whole screen red and dims it to protect your night vision. Toggle it from the moon button on the map and set the brightness in Settings → Display.
+• KML and KMZ export: send layers, symbols and drawings to Google Earth, ATAK and GIS tools. KMZ with Symbols includes each symbol's image.
+• Hold an empty spot on the map for a second to place a symbol, measure from it, add range rings, see sun and moon times or copy the coordinate.
+• A guided tour points at each map control. Replay it any time from About & Credits.
+• Range rings now follow their symbol when you move it.
+• Fixes: PDF calibration now shows its accuracy and explains why a fit fails, and the elevation readout no longer shows GPS altitude for a crosshair away from your position.
+```
+
+### 2.2.0 — Google Play, English (441 / 500 Unicode characters)
+```
+• Elevation profile and line of sight along measured or drawn lines.
+• Night mode: a red, dimmed screen protects your night vision.
+• KML and KMZ export, with symbol images for Google Earth and ATAK.
+• Hold the map to place a symbol, measure, add range rings, see sun and moon times or copy the coordinate.
+• A guided tour of the map controls.
+• Fingerprint or face unlock for App Lock.
+• Chat announces new messages and opens on the newest.
+```
+
+### 2.2.0 — Apple App Store, German (de-DE) (1,432 / 4,000 characters)
+```
+• Höhenprofil: Tippe in der Messleiste oder bei einer ausgewählten Linie auf die Geländetaste, um das Gelände entlang der Linie mit tiefstem und höchstem Punkt, Anstieg und Abstieg zu sehen. Nutzt Online-Abfragen.
+• Sichtlinie: Lege bei einer Linie zwischen zwei Punkten die Beobachter- und Zielhöhe fest und sieh, wo das Gelände die Sicht verdeckt – unter Berücksichtigung der Erdkrümmung. Nicht einsehbares Gelände wird grau dargestellt.
+• Nachtmodus: Färbt den ganzen Bildschirm rot und dunkelt ihn ab, um deine Nachtsicht zu schützen. Du schaltest ihn über die Mondtaste auf der Karte um und stellst die Helligkeit unter Einstellungen → Anzeige ein.
+• KML- und KMZ-Export: Gib Ebenen, Symbole und Zeichnungen an Google Earth, ATAK und GIS-Programme weiter. „KMZ mit Symbolen“ enthält das Bild jedes Symbols.
+• Halte eine freie Stelle der Karte eine Sekunde lang gedrückt, um dort ein Symbol zu platzieren, von dort zu messen, Entfernungsringe hinzuzufügen, Sonnen- und Mondzeiten anzuzeigen oder die Koordinate zu kopieren.
+• Eine geführte Tour zeigt dir jedes Bedienelement der Karte. Unter „Über TacMap und Mitwirkende“ kannst du sie jederzeit erneut abspielen.
+• Entfernungsringe folgen jetzt ihrem Symbol, wenn du es verschiebst.
+• Korrekturen: Die PDF-Kalibrierung zeigt jetzt ihre Genauigkeit an und erklärt, warum sie fehlschlägt. Die Höhenanzeige zeigt für ein Fadenkreuz abseits deines Standorts keine GPS-Höhe mehr an.
+```
+
+### 2.2.0 — Google Play, German (de-DE) (484 / 500 Unicode characters)
+```
+• Höhenprofil und Sichtlinie entlang gemessener oder gezeichneter Linien.
+• Roter, abgedunkelter Nachtmodus schützt deine Nachtsicht.
+• KML- und KMZ-Export mit Symbolbildern für Google Earth und ATAK.
+• Karte gedrückt halten: Symbol platzieren, messen, Entfernungsringe, Sonne und Mond oder Koordinate kopieren.
+• Geführte Tour durch die Bedienelemente der Karte.
+• App-Sperre mit Fingerabdruck oder Gesichtsentsperrung.
+• Der Chat meldet neue Nachrichten und öffnet bei der neuesten.
+```
+
+### 2.1.0 — Apple App Store, English (470 / 4,000 characters; plain text)
+```
+• Range rings: add up to 10 rings at your chosen spacing around any symbol. They sync, export and undo like other drawings.
+• Sun & moon: nautical and civil twilight (BMNT/EENT, BMCT/EECT), sunrise, sunset, moonrise, moonset and moon illumination for the map centre, calculated offline.
+• Sort the symbol list by newest, name, distance from the crosshair, affiliation or layer.
+• Keep screen on: an optional Display setting stops the screen locking while TacMap is open.
+```
+
+### 2.1.0 — Google Play, English (277 / 500 Unicode characters)
+```
+• Range rings around any symbol: up to 10 at your chosen spacing.
+• Offline sun & moon times: BMNT/EENT, civil twilight, sunrise, sunset, moonrise, moonset and moon illumination.
+• Sort symbols by newest, name, distance, affiliation or layer.
+• Optional Keep screen on setting.
+```
+
+### 2.1.0 — Apple App Store, German (de-DE) (580 / 4,000 characters)
+```
+• Entfernungsringe: Bis zu 10 Ringe im gewählten Abstand um jedes Symbol. Sie werden wie andere Zeichnungen synchronisiert, exportiert und rückgängig gemacht.
+• Sonne & Mond: Nautische und bürgerliche Dämmerung (BMNT/EENT, BMCT/EECT), Sonnenauf- und -untergang, Mondauf- und -untergang sowie Mondbeleuchtung für die Kartenmitte – offline berechnet.
+• Symbolliste nach Neueste, Name, Entfernung zum Fadenkreuz, Zugehörigkeit oder Ebene sortieren.
+• Bildschirm eingeschaltet lassen: Eine optionale Anzeige-Einstellung verhindert die automatische Sperre, solange TacMap geöffnet ist.
+```
+
+### 2.1.0 — Google Play, German (de-DE) (345 / 500 Unicode characters)
+```
+• Entfernungsringe um jedes Symbol: bis zu 10 im gewählten Abstand.
+• Offline-Zeiten für Sonne & Mond: BMNT/EENT, bürgerliche Dämmerung, Sonnenauf- und -untergang, Mondauf- und -untergang und Mondbeleuchtung.
+• Symbole nach Neueste, Name, Entfernung, Zugehörigkeit oder Ebene sortieren.
+• Optionale Einstellung „Bildschirm eingeschaltet lassen“.
+```
+
+### 2.0.2 — Apple App Store (as published; en-AU 66, de-DE 148 characters)
+Shipped as build 68 with custom symbol packs. The localisation-only draft that
+was in the JSON at the time was not used.
+```
+- Imports custom symbol packs.
+- Improved translations for German.
+```
+```
+Neu in TacMap: Mit eigenen Symbolpaketen passt du deine Karten an deine Bedürfnisse an. Außerdem ist TacMap jetzt vollständig auf Deutsch verfügbar.
+```
+
+### 2.0.1 — Apple App Store (as published; en-AU 32 characters)
+```
+German translation/localisation.
+```
+
+Google Play notes for 2.0.1 and 2.0.2 were entered in Play Console and not
+recorded here.
 
 ### 2.0.0 — Apple App Store (893 / 4,000 characters; plain text)
 ```
@@ -191,3 +309,11 @@ New in TacMap 2.0:
   screens 01 and 02 are approved for 2.0; its remaining phone/tablet artwork is
   still blocked. Review every image against its submitted native build rather
   than copying captions across platforms.
+- **2.2 screenshot set (in progress)** - 8 slides in the same order on iPhone,
+  iPad and Android: hero, line of sight, night mode, Unit Sync, sun & moon,
+  GeoPDF, symbol builder, export. Captured by the `testStore*` UI tests from
+  `docs/store/store_situation.geojson`. Until they replace the 2.0 set, the
+  new features (profile/LOS, night mode, KMZ export) appear only in the copy.
+- **Space budget** - the App Store description sits at ~3,930 / 4,000
+  characters after the 2.2 additions. Trim an existing bullet before adding a
+  new one.

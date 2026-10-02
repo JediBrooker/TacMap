@@ -26,7 +26,7 @@ class OfflineTileMapSourceAndroid private constructor(
 
     /** Tile source for the custom (SDK-free) map view. */
     fun renderTileSource(): com.tacmap.map.render.TileSource =
-        com.tacmap.map.render.OfflineRasterTileSource(store, minZoom, maxZoom)
+        com.tacmap.map.render.OfflineRasterTileSource(store, minZoom, maxZoom, path)
 
     override fun close() {
         if (closed.compareAndSet(false, true)) store.close()
@@ -35,12 +35,12 @@ class OfflineTileMapSourceAndroid private constructor(
     internal fun isClosedForTesting(): Boolean = closed.get() && store.isClosedForTesting()
 
     companion object {
-        fun open(path: String): OfflineTileMapSourceAndroid? {
+        fun open(path: String, displayName: String? = null): OfflineTileMapSourceAndroid? {
             val store = MBTilesStore.open(path) ?: return null
             return OfflineTileMapSourceAndroid(
                 path = path,
                 store = store,
-                displayName = store.metadata.name ?: File(path).nameWithoutExtension,
+                displayName = displayName ?: store.metadata.name ?: File(path).nameWithoutExtension,
                 coverage = store.metadata.bounds,
                 minZoom = store.metadata.minZoom,
                 maxZoom = store.metadata.maxZoom,

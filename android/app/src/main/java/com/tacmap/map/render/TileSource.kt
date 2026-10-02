@@ -31,10 +31,36 @@ import kotlin.coroutines.resume
  */
 interface TileSource {
     val minZoom: Int
+    /** The source's native max. The camera can go past it (up to MapCamera.MAX_ZOOM), tiles just overzoom. */
     val maxZoom: Int
     /** Native pixel size of one source tile (256 for XYZ/MBTiles, 512 for Esri static). */
     val tileSizePx: Int
+
+    /** Tile cache identity. Same key = same pixels, so the cache survives the source object being rebuilt. */
+    val cacheKey: String get() = toString()
+
+    /** false when the tile can't have anything on it (off a PDF sheet), saves a request */
+    fun hasContent(tile: TileIndex): Boolean = true
+
+    /** the level the source can serve cheaply for a missing tile at [tileZoom], null when there isn't one */
+    fun fallbackZoom(tileZoom: Int): Int? = null
+
+    /** what the view wants right now, best first. [centreX]/[centreY] = viewport centre in 0..1 world units */
+    fun onWanted(ordered: List<TileIndex>, tileZoom: Int, centreX: Double, centreY: Double) {}
+
+    /** null = couldn't load (may retry), [EMPTY] = loaded, nothing to draw */
     suspend fun loadTile(tile: TileIndex): Bitmap?
+
+    /**
+     * Bumps when the source wants the view to plan again without a tile landing, e.g. the
+     * PDF base raster came in so fallbackZoom has a level now (G r1, R1). null = never
+     */
+    val replanTicks: kotlinx.coroutines.flow.StateFlow<Int>? get() = null
+
+    companion object {
+        /** 1x1 transparent sentinel for "nothing here". Never recycled, never drawn */
+        val EMPTY: Bitmap by lazy { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) }
+    }
 }
 
 /** Coordinate-free provider health. Never retains a URL or tile address. */
@@ -75,7 +101,7 @@ private const val MAX_TILE_PIXELS = 4_194_304L
 private const val MAX_DECODED_TILE_BYTES = 16 * 1024 * 1024
 
 /** Reject decompression bombs before BitmapFactory allocates their pixel buffer. */
-private fun decodeBoundedTile(bytes: ByteArray): Bitmap? {
+internal fun decodeBoundedTile(bytes: ByteArray): Bitmap? {
     if (bytes.isEmpty() || bytes.size > MAX_ENCODED_TILE_BYTES) return null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
@@ -102,6 +128,7 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
     override val minZoom = 0
     override val maxZoom = style.maxZoom
     override val tileSizePx = style.tileSize
+    override val cacheKey: String = "online:${style.name}"
 
     /**
      * The HTTPS URL for one tile, or null if we must not fetch it: past the
@@ -228,8 +255,10 @@ class OfflineRasterTileSource(
     private val store: MBTilesStore,
     override val minZoom: Int,
     override val maxZoom: Int,
+    key: String = "",
 ) : TileSource {
     override val tileSizePx = 256
+    override val cacheKey: String = "offline:$key:${System.identityHashCode(store)}"
 
     override suspend fun loadTile(tile: TileIndex): Bitmap? {
         // BitmapFactory itself is not cancellable. Keep a reference outside the

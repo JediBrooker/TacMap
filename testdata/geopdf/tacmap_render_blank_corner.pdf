@@ -1,0 +1,33 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 480] /Resources <<  >> /Contents 4 0 R /VP [<< /Type /Viewport /Name (Map Layers) /BBox [40 40 560 440] /Measure << /Type /Measure /Subtype /GEO /Bounds [0.125 0 1 0.125 0.875 1 0 0.875] /GPTS [37.772660181093 -122.446107571423 37.776411576942 -122.400512366003 37.804265083249 -122.40679932435 37.800511404924 -122.452411378687] /LPTS [0.125 0 1 0.125 0.875 1 0 0.875] /GCS << /Type /PROJCS /WKT (PROJCS["WGS 84 / UTM zone 10N",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-123],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1]]) >> >> >>] >>
+endobj
+4 0 obj
+<< /Length 153 >>
+stream
+q 1 1 1 rg 0 0 600 480 re f Q
+q 0 0 0 rg 44 44 12 12 re f Q
+q 0 0 0 rg 544 44 12 12 re f Q
+q 0 0 0 rg 544 424 12 12 re f Q
+q 0 0 0 rg 44 424 12 12 re f Q
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000976 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+1180
+%%EOF

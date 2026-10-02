@@ -86,6 +86,7 @@ fun SyncDialog(
     val onlineMembers by manager.onlineMembers.collectAsState()
     val lastErrorMessage by manager.lastError.collectAsState()
     val lastError = lastErrorMessage?.text
+    val pausedActionRequired by manager.pausedActionRequired.collectAsState()
     val backgroundUnitSyncLocation by opsec.backgroundUnitSyncLocation.collectAsState()
     val backgroundUnitSyncInterval by opsec.backgroundUnitSyncInterval.collectAsState()
     var code by remember { mutableStateOf(room ?: "") }
@@ -177,6 +178,15 @@ fun SyncDialog(
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) { Text(L10n.text("Dismiss error")) }
                     }
+                }
+
+                // sync stopped itself (room full, identity rejected, ...): the
+                // only way back besides leaving is an explicit Retry
+                if (pausedActionRequired) {
+                    TextButton(
+                        onClick = manager::retryAfterPause,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) { Text(L10n.text("Retry")) }
                 }
 
                 val joinedRoom = room
@@ -577,6 +587,7 @@ private fun PresenceDropdown(
             onDismissRequest = { expanded = false }
         ) {
             com.tacmap.ui.NightWindowFilter() // menus draw in their own window
+            com.tacmap.ui.PopupBackDismiss { expanded = false }
             options.forEachIndexed { index, option ->
                 DropdownMenuItem(
                     text = { Text(option) },

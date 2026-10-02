@@ -1,0 +1,66 @@
+{
+  "localExactIntersection": {
+    "page": [
+      916.5045667534778,
+      1076.4777789543443
+    ],
+    "modelPlane": [
+      550000.0481258269,
+      4185000.1689096848
+    ],
+    "geodeticMetres": 0.1756968047181255,
+    "predictedPhysicalPixelDisplacementAtActualZ20": [
+      1.0929462432861325,
+      -3.765114158344159
+    ]
+  },
+  "localActualSegments": {
+    "E": [
+      {
+        "segment": [
+          916.35888671875,
+          1053.896484375,
+          916.5388793945312,
+          1081.7964477539062
+        ],
+        "valueAtModelIntersection": 916.5044204291344
+      }
+    ],
+    "N": [
+      {
+        "segment": [
+          901.2391967773438,
+          1076.576904296875,
+          928.9581909179688,
+          1076.3969116210938
+        ],
+        "valueAtModelIntersection": 1076.4778390185297
+      }
+    ]
+  },
+  "sourceSha256": "46d26fdd22bdafd9c47b312a94b7bff0c8b288048bacc88c01fea1806ab2a61f",
+  "selectedIntersection": {
+    "gridNAD83": [
+      550000,
+      4185000
+    ],
+    "independentArtworkPageFit": [
+      916.4953168281884,
+      1076.455097787994
+    ],
+    "modelMapsArtworkToPlane": [
+      549999.9709601902,
+      4184999.9764146563
+    ],
+    "independentGeodeticDisplacementMetres": 0.03742476478492425,
+    "predictedIntrinsicPhysicalPixelDisplacementAtActualZ20": [
+      -0.6489118258158366,
+      0.5227044221054108
+    ]
+  },
+  "physicalScale": {
+    "zoom": 20.0,
+    "density": 2.625
+  },
+  "meaning": "Actual PDF orange paths fitted independently. Source intrinsic registration, before native rasterization. No app georef or generated screenshot."
+}

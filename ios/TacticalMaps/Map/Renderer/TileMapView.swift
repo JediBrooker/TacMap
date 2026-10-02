@@ -2,27 +2,49 @@ import UIKit
 import CoreLocation
 
 /// A self-contained slippy-map view that draws raster tiles for a `MapCamera`
-/// and drives that camera from pan/pinch/rotate gestures. No MapKit: this is the
-/// piece that lets us drop MKMapView. Overlays (symbols, drawings, grid) get
-/// wired on top of it in later steps via the same `camera` projection.
+/// and drives that camera from pan/pinch/rotate gestures. No MapKit. Overlays
+/// (symbols, drawings, grid) sit on top as subviews projected through the
+/// same camera.
+///
+/// Tiles are CALayers under tileRoot (TileLayerCompositor), laid out from a
+/// pure TileDrawPlanner plan: missing tiles show their nearest cached parent
+/// or children so zooming and panning never flash the background (D3-11).
 final class TileMapView: UIView {
 
-    /// Current view state. Setting it redraws and kicks off any missing loads.
+    /// Current view state. Setting it relays out tiles and kicks off loads.
+    /// Zoom is clamped to MapCamera.zoomLimits here, the one sink every
+    /// gesture and programmatic move goes through.
     var camera: MapCamera {
         didSet {
+            // assigning inside didSet doesnt re-enter it, so just carry on
+            let clamped = PDFTileMath.clampCameraZoom(camera.zoom)
+            if clamped != camera.zoom { camera.zoom = clamped }
             guard camera != oldValue else { return }
-            setNeedsDisplay()
+            layoutTiles()
             onCameraChange?(camera)
         }
     }
 
-    /// The basemap tile source. Swapping it clears the cache and redraws.
+    /// The basemap tile source. Swapping it clears the cache and relays out.
     var source: RasterTileSource? {
         didSet {
             sourceGeneration &+= 1
-            cache.removeAllObjects()
+            cache.removeAll()
             cancelAllLoads()
-            setNeedsDisplay()
+            compositor.removeAll()
+            layoutTiles()
+        }
+    }
+
+    /// Imported map switched off: draw nothing (dark background), keep the
+    /// source and its cache so switching back is instant.
+    var tilesHidden = false {
+        didSet {
+            guard tilesHidden != oldValue else { return }
+            compositor.tileRoot.isHidden = tilesHidden
+            // hidden: cancel, but dont tell the source anything (E3)
+            if tilesHidden { cancelAllLoads() }
+            layoutTiles()
         }
     }
 
@@ -37,26 +59,105 @@ final class TileMapView: UIView {
     /// the two-finger rotation recognizer is temporarily ignored.
     var isRotationGestureEnabled = true
 
-    // MARK: tile cache + in-flight
+    /// what shows through gaps and a hidden imported map (contract H, iosWhite)
+    static let backgroundWhite: CGFloat = 0.07
 
-    private let cache = NSCache<NSString, UIImage>()
-    private var inFlight: [String: RasterTileRequest] = [:]
+    #if DEBUG
+    private var lastDeviceAuditCamera: Data?
+    private var lastDeviceAuditFrame: Data?
+    private var deviceAuditFrames = 0
+
+    /// Read-only identity for explicitly opted-in device screenshot verification.
+    /// No PDF title/path/content or key material is included; Release omits this.
+    private func recordDeviceAuditCamera() {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1" else { return }
+        let contextID: Any = (source as? PDFTileSource)?.context.map { $0.id as Any } ?? NSNull()
+        let object: [String: Any] = [
+            "latitude": camera.center.latitude, "longitude": camera.center.longitude,
+            "zoom": camera.zoom, "heading": camera.headingDegrees,
+            "viewportWidth": camera.viewportSize.width, "viewportHeight": camera.viewportSize.height,
+            "sourceID": source.map { String(describing: ObjectIdentifier($0)) } ?? "none",
+            "renderContextID": contextID,
+            "sourceType": source.map { String(reflecting: type(of: $0)) } ?? "none"
+        ]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              encoded != lastDeviceAuditCamera,
+              let text = String(data: encoded, encoding: .utf8) else { return }
+        lastDeviceAuditCamera = encoded
+        NSLog("TASK4_CAMERA %@", text)
+    }
+
+    /// The compositor and this snapshot share the view's main-thread ownership.
+    private func recordDeviceAuditFrame() {
+        guard ProcessInfo.processInfo.environment["TACMAP_DEBUG_DEVICE_AUDIT"] == "1", deviceAuditFrames < 64,
+              let tileZoom = lastTileZoom else { return }
+        let contextID: Any = (source as? PDFTileSource)?.context.map { $0.id as Any } ?? NSNull()
+        let object: [String: Any] = [
+            "latitude": camera.center.latitude, "longitude": camera.center.longitude,
+            "zoom": camera.zoom, "heading": camera.headingDegrees,
+            "viewportWidth": camera.viewportSize.width, "viewportHeight": camera.viewportSize.height,
+            "sourceID": source.map { String(describing: ObjectIdentifier($0)) } ?? "none",
+            "renderContextID": contextID, "sourceGeneration": sourceGeneration,
+            "tileZoom": tileZoom,
+            "paintedCount": compositor.deviceAuditPaintedCount,
+            "complete": compositor.deviceAuditPaintedCount <= 64,
+            "painted": compositor.deviceAuditPaintedItems.map { item in
+                var observation = item
+                let origin = (item["imageID"] as? String).flatMap { (source as? PDFTileSource)?.deviceAuditOrigin(imageID: $0) }
+                observation["origin"] = origin ?? "unproved"
+                return observation
+            }
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              data != lastDeviceAuditFrame else { return }
+        lastDeviceAuditFrame = data
+        deviceAuditFrames += 1
+        PDFDeviceAudit.emit(data: data, kind: "FRAME")
+    }
+    #endif
+
+    // MARK: tiles
+
+    private let compositor = TileLayerCompositor()
+    private let cache: TileImageCache
+    private var inFlight: [TileIndex: PendingTileRequest] = [:]
     private var sourceGeneration: UInt64 = 0
+    private var relayoutQueued = false
+    private var lastPlanSources = Set<TileIndex>()
+    private(set) var lastTileZoom: Int?
+    private var memoryObserver: NSObjectProtocol?
 
-    private func key(_ t: TileIndex) -> String { "\(t.z)/\(t.x)/\(t.y)" }
+    /// what's on screen right now, for tests and the memory trim
+    private(set) var lastPlan = TileDrawPlan(items: [], requests: [])
+
+    /// placeholder registered before the source is called, so a source that
+    /// completes synchronously can't leave a stale entry behind
+    private final class PendingTileRequest {
+        var inner: RasterTileRequest?
+        func cancel() { inner?.cancel() }
+    }
 
     // MARK: init
 
-    init(camera: MapCamera) {
+    init(camera: MapCamera, cacheBytes: Int = TileImageCache.byteLimit()) {
         self.camera = camera
+        self.cache = TileImageCache(byteLimit: cacheBytes)
         super.init(frame: .zero)
-        backgroundColor = UIColor(white: 0.07, alpha: 1) // dark, so gaps aren't white
+        backgroundColor = UIColor(white: Self.backgroundWhite, alpha: 1) // dark, so gaps aren't white
         isOpaque = true
-        cache.countLimit = 400
+        layer.insertSublayer(compositor.tileRoot, at: 0)
         installGestures()
+        memoryObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.didReceiveMemoryWarning() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) unused") }
+
+    deinit {
+        if let memoryObserver { NotificationCenter.default.removeObserver(memoryObserver) }
+        inFlight.values.forEach { $0.cancel() }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -64,56 +165,124 @@ final class TileMapView: UIView {
         if camera.viewportSize != bounds.size {
             camera.viewportSize = bounds.size
         }
+        layoutTiles()
     }
 
-    // MARK: drawing
+    // MARK: layout
 
-    override func draw(_ rect: CGRect) {
-        guard let ctx = UIGraphicsGetCurrentContext(), let source else { return }
-        let tz = TileMath.tileZoom(for: camera.zoom, minZoom: source.minZoom, maxZoom: source.maxZoom)
-        let tiles = TileMath.visibleTiles(camera: camera, tileZoom: tz)
-
-        // The tile layout is computed heading-flat; rotate the whole context by
-        // the camera heading around the viewport centre to apply rotation.
-        ctx.saveGState()
-        let c = CGPoint(x: bounds.midX, y: bounds.midY)
-        ctx.translateBy(x: c.x, y: c.y)
-        ctx.rotate(by: -camera.headingDegrees * .pi / 180)
-        ctx.translateBy(x: -c.x, y: -c.y)
-
-        for tile in tiles {
-            let frame = TileMath.tileFrame(tile, camera: camera) // CGRect
-            if let image = cache.object(forKey: key(tile) as NSString) {
-                // Grow by 0.5px to hide hairline seams between adjacent tiles.
-                image.draw(in: frame.insetBy(dx: -0.5, dy: -0.5))
-            } else {
-                loadTile(tile)
-            }
+    /// Plan, composite, request. Cheap enough for every camera tick: no
+    /// decode, no rendering, just bookkeeping on main.
+    func layoutTiles() {
+        #if DEBUG
+        recordDeviceAuditCamera()
+        #endif
+        compositor.layoutRoot(bounds: bounds, headingDegrees: camera.headingDegrees)
+        guard let source, !tilesHidden, camera.viewportSize.width > 0, camera.viewportSize.height > 0 else {
+            compositor.removeAll()
+            lastPlan = TileDrawPlan(items: [], requests: [])
+            lastPlanSources = []
+            return
         }
-        ctx.restoreGState()
+        let tz = TileMath.tileZoom(for: camera.zoom, minZoom: source.minZoom, maxZoom: source.maxZoom)
+        lastTileZoom = tz
+        if TileMath.isUnderzoomed(tileZoom: tz, cameraZoom: camera.zoom) {
+            compositor.removeAll()
+            lastPlan = TileDrawPlan(items: [], requests: [])
+            lastPlanSources = []
+            // E3: underzoomed counts as hidden, wanted callbacks are skipped
+            cancelAllLoads()
+            return
+        }
+        let visible = TileMath.visibleTiles(camera: camera, tileZoom: tz)
+        let grid = TileGrid(camera: camera, tileZoom: tz)
+        let plan = TileDrawPlanner.plan(visible: visible, state: { [cache] t in
+            if let e = cache.peek(t) {
+                switch e {
+                case .image: return .image
+                case .empty: return .empty
+                }
+            }
+            return source.hasContent(t) ? .missing : .empty
+        }, fallbackZoom: source.fallbackZoom(forTileZoom: tz))
+        compositor.apply(items: plan.items, grid: grid) { [cache] t in
+            if case .image(let img)? = cache.entry(for: t) { return img }
+            return nil
+        }
+        lastPlan = plan
+        lastPlanSources = Set(plan.items.map(\.source))
+        #if DEBUG
+        recordDeviceAuditFrame()
+        #endif
+
+        let wanted = Set(plan.requests)
+        for (t, req) in inFlight where !wanted.contains(t) {
+            req.cancel()
+            inFlight[t] = nil
+        }
+        source.wantedTilesDidChange(plan.requests, tileZoom: tz, centreUnit: TileMath.viewportCentreUnit(camera: camera))
+        for t in plan.requests where inFlight[t] == nil {
+            loadTile(t, from: source)
+        }
+    }
+
+    /// one relayout per runloop turn however many tiles land
+    private func scheduleRelayout() {
+        guard !relayoutQueued else { return }
+        relayoutQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.relayoutQueued = false
+            self.layoutTiles()
+        }
     }
 
     // MARK: loading
 
-    private func loadTile(_ tile: TileIndex) {
-        guard let source else { return }
-        let k = key(tile)
-        guard inFlight[k] == nil else { return }
+    private func loadTile(_ tile: TileIndex, from source: RasterTileSource) {
         let generation = sourceGeneration
+        let pending = PendingTileRequest()
+        inFlight[tile] = pending
         let req = source.loadTile(tile) { [weak self] image in
-            guard let self else { return }
-            guard generation == self.sourceGeneration else { return }
-            self.inFlight[k] = nil
+            guard let self, generation == self.sourceGeneration else { return }
+            if self.inFlight[tile] === pending { self.inFlight[tile] = nil }
             guard let image else { return }
-            self.cache.setObject(image, forKey: k as NSString)
-            self.setNeedsDisplay()
+            if image === RasterTileSourceEmpty.image {
+                self.cache.insert(.empty, for: tile)
+            } else if let cg = image.cgImage {
+                self.cache.insert(.image(cg), for: tile)
+            } else {
+                return
+            }
+            self.scheduleRelayout()
         }
-        if let req { inFlight[k] = req }
+        if let req {
+            pending.inner = req
+        } else if inFlight[tile] === pending {
+            // source declined without a token (eg a failed PDF), dont wedge the key
+            inFlight[tile] = nil
+        }
     }
 
     private func cancelAllLoads() {
         inFlight.values.forEach { $0.cancel() }
         inFlight.removeAll()
+    }
+
+    /// keep only what this frame draws, the rest reloads from the source
+    func didReceiveMemoryWarning() {
+        cache.trim(keeping: lastPlanSources)
+    }
+
+    // test hooks
+    var cachedTileCount: Int { cache.count }
+    var inFlightCount: Int { inFlight.count }
+    var tileRootLayer: CALayer { compositor.tileRoot }
+    func cacheState(_ t: TileIndex) -> TileCacheState {
+        switch cache.peek(t) {
+        case .image?: return .image
+        case .empty?: return .empty
+        case nil: return .missing
+        }
     }
 
     // MARK: gestures
@@ -153,17 +322,18 @@ final class TileMapView: UIView {
 
     @objc private func handlePinch(_ gr: UIPinchGestureRecognizer) {
         if gr.state == .began { onGestureBegan?() }
-        let focal = gr.location(in: self)
-        let anchor = camera.coordinate(for: focal) // coord under the fingers
-
-        // A PDF/blank map has no tile source, but the overlay still draws at any
-        // zoom - so fall back to a sane global range instead of refusing to zoom.
-        // Guarding on `source` here is what broke pinch over an imported PDF.
-        let minZ = Double(source?.minZoom ?? 2)
-        let maxZ = Double(source?.maxZoom ?? 22)
-        var next = camera
-        next.zoom = (camera.zoom + log2(Double(gr.scale))).clamped(to: minZ...maxZ)
+        applyPinch(scale: Double(gr.scale), focal: gr.location(in: self))
         gr.scale = 1
+    }
+
+    /// One pinch step about focal. Clamped only to the global camera range
+    /// (D3-08), never to the source's zoom range: past a source's maxZoom the
+    /// last level just gets scaled up.
+    func applyPinch(scale: Double, focal: CGPoint) {
+        guard scale.isFinite, scale > 0 else { return }
+        let anchor = camera.coordinate(for: focal) // coord under the fingers
+        var next = camera
+        next.zoom = PDFTileMath.pinchZoom(camera.zoom, scale: scale)
         // Keep that coord under the fingers while zooming.
         let landed = next.screenPoint(for: anchor)
         next.center = next.coordinate(for: CGPoint(x: viewportCenter.x + (landed.x - focal.x),
@@ -219,8 +389,4 @@ extension TileMapView: UIGestureRecognizerDelegate {
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
         true
     }
-}
-
-private extension Comparable {
-    func clamped(to r: ClosedRange<Self>) -> Self { min(max(self, r.lowerBound), r.upperBound) }
 }

@@ -92,6 +92,13 @@ final class DrawingStore: ObservableObject {
     /// appears. Weak so we don't extend the window's lifetime.
     weak var undoManager: UndoManager?
 
+    /// Bumped per shape each time a Unit Sync peer's write changes it (see
+    /// SyncRemoteModelApplier). Undoing a local edit checks it so the undo never
+    /// clobbers a newer peer version, their edit wins. Same as Android.
+    private var peerWriteMarks: [UUID: Int] = [:]
+
+    func notePeerWrite(_ id: UUID) { peerWriteMarks[id, default: 0] += 1 }
+
     typealias PersistenceWriter = (Data, URL, String) throws -> Void
 
     private static let defaultURL: URL = {
@@ -182,6 +189,54 @@ final class DrawingStore: ObservableObject {
                                  activeLayerID: activeLayerID ?? candidateLayers.first?.id,
                                  failureMessage: Messages.syncedLayersSaveFailedMessage)
         return additions.count
+    }
+
+    /// Authenticated Unit Sync layers + drawings of one inbound batch or
+    /// snapshot in one durable write and one publish (contract 17). Layers are
+    /// added verbatim, first one wins, existing ids untouched. No undo step,
+    /// see WaypointStore.commitRemoteBatch. Returns false when nothing changed.
+    @discardableResult
+    func commitRemoteBatch(newLayers: [DrawingLayer],
+                           upserts: [DrawingShape],
+                           deletes: Set<UUID>) throws -> Bool {
+        guard !locked else { throw DrawingMutationError.locked }
+        var occupied = Set(layers.map(\.id))
+        let layerAdditions = newLayers.filter { occupied.insert($0.id).inserted }
+        var pending: [UUID: DrawingShape] = [:]
+        var appendOrder: [UUID] = []
+        for shape in upserts {
+            if pending.updateValue(shape, forKey: shape.id) == nil { appendOrder.append(shape.id) }
+        }
+        var candidateShapes: [DrawingShape] = []
+        candidateShapes.reserveCapacity(shapes.count + pending.count)
+        for shape in shapes {
+            if deletes.contains(shape.id) { continue }
+            if let replacement = pending.removeValue(forKey: shape.id) {
+                candidateShapes.append(replacement)
+            } else {
+                candidateShapes.append(shape)
+            }
+        }
+        for id in appendOrder {
+            if let added = pending[id], !deletes.contains(id) { candidateShapes.append(added) }
+        }
+        let shapesChanged = candidateShapes != shapes
+        guard !layerAdditions.isEmpty || shapesChanged else { return false }
+        let candidateLayers = layers + layerAdditions
+        let candidateActive = activeLayerID ?? candidateLayers.first?.id
+        do {
+            try write(layers: candidateLayers, shapes: candidateShapes, activeLayerID: candidateActive)
+        } catch {
+            pendingLoadError = Messages.couldNotSaveDrawingChangeToDiskMessage("").withArgument(0, error.displayMessage)
+            throw DrawingMutationError.persistenceFailed(error)
+        }
+        if !layerAdditions.isEmpty {
+            layers = candidateLayers
+            activeLayerID = candidateActive
+        }
+        if shapesChanged { shapes = candidateShapes }
+        if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
+        return true
     }
 
     func isProtectedDefaultLayer(_ layer: DrawingLayer) -> Bool {
@@ -415,7 +470,9 @@ final class DrawingStore: ObservableObject {
         }
         shapes = candidate
         if pendingLoadError?.id == "id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4" { loadError = nil }
+        let peerMark = peerWriteMarks[shape.id, default: 0]
         undoManager?.registerUndo(withTarget: self) { store in
+            guard store.peerWriteMarks[shape.id, default: 0] == peerMark else { return }
             _ = try? store.commitEdit(old, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
@@ -447,8 +504,12 @@ final class DrawingStore: ObservableObject {
         }
         shapes = candidate
         if pendingLoadError?.id == "id.ui_could_not_save_drawing_change_to_disk_1_951dd3f4" { loadError = nil }
+        let peerMarks = Dictionary(previous.map { ($0.id, peerWriteMarks[$0.id, default: 0]) },
+                                   uniquingKeysWith: { first, _ in first })
         undoManager?.registerUndo(withTarget: self) { store in
-            _ = try? store.commitEdits(previous, actionName: actionName)
+            // e.g. a ring the peer moved since, leave theirs alone and put the rest back
+            let untouched = previous.filter { store.peerWriteMarks[$0.id, default: 0] == peerMarks[$0.id] }
+            _ = try? store.commitEdits(untouched, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
         return previous.count

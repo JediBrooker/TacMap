@@ -146,6 +146,18 @@ const PRESENCE_PEERS = [
     function: "infantry", isHQ: true, lat: oy(-33.7060), lon: ox(150.3048), heading: 0, speed: 0 },
 ];
 
+// --geojson <out>: just write the situation as an importable FeatureCollection
+// and bail. The store capture flows import this on both platforms instead of
+// needing a relay room, so the hero is the same picture everywhere.
+if (process.argv[2] === "--geojson") {
+  const out = process.argv[3] || "store_situation.geojson";
+  const fc = { type: "FeatureCollection", generator: "TacMap",
+    features: SITUATION.map((o) => o.feature) };
+  (await import("node:fs")).writeFileSync(out, JSON.stringify(fc, null, 2) + "\n");
+  console.log(`wrote ${fc.features.length} features to ${out}`);
+  process.exit(0);
+}
+
 const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${authToken}` } });
 let v = 0;
 ws.on("open", () => {

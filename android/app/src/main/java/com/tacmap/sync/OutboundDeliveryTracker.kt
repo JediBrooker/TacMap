@@ -170,6 +170,16 @@ internal class OutboundDeliveryTracker(private val maxAttempts: Int = 5) {
         return updated
     }
 
+    /** Final nack or ack handled elsewhere: forget this exact request. */
+    @Synchronized
+    fun resolve(requestId: String): PendingOutboundDelivery? {
+        val localId = localIdByRequest[requestId] ?: return null
+        val pending = byLocalId[localId]?.takeIf { it.requestId == requestId } ?: return null
+        byLocalId.remove(localId)
+        localIdByRequest.remove(requestId)
+        return pending
+    }
+
     /** Returns a replacement attempt, or null once the bounded watchdog is exhausted. */
     @Synchronized
     fun nextAttempt(requestId: String, generation: Long, sessionDomain: String?): PendingOutboundDelivery? {

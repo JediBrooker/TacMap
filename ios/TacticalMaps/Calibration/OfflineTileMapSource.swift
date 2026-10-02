@@ -14,11 +14,14 @@ final class OfflineTileMapSource: MapSource {
 
     let url: URL
     let store: MBTilesStore
+    /// the ImportedMapLibrary entry this source shows, nil for legacy/test sources
+    let entryID: UUID?
 
-    private init(url: URL, store: MBTilesStore) {
+    private init(url: URL, store: MBTilesStore, entryID: UUID? = nil, displayName: String? = nil) {
         self.url = url
         self.store = store
-        self.displayName = store.metadata.name
+        self.entryID = entryID
+        self.displayName = displayName ?? store.metadata.name
             ?? url.deletingPathExtension().lastPathComponent
         if let b = store.metadata.bounds {
             let center = CLLocationCoordinate2D(
@@ -35,9 +38,9 @@ final class OfflineTileMapSource: MapSource {
         }
     }
 
-    convenience init?(url: URL) {
+    convenience init?(url: URL, entryID: UUID? = nil, displayName: String? = nil) {
         guard let store = MBTilesStore(url: url) else { return nil }
-        self.init(url: url, store: store)
+        self.init(url: url, store: store, entryID: entryID, displayName: displayName)
     }
 
     /// Builds the UI/map wrapper from metadata validated by the detached

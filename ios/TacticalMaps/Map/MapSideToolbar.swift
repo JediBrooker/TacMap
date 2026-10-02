@@ -33,6 +33,9 @@ struct HamburgerMenu: View {
     let onAppLock:       () -> Void
     let onOpsec:         () -> Void
     let onAbout:         () -> Void
+    /// false while a map import runs: a second one waits, it never silently
+    /// cancels the first (D5-09)
+    var importsEnabled = true
 
     @State private var isOpen = false
     /// Stashed action from menu row. Fires from onDismiss so it
@@ -209,7 +212,11 @@ struct HamburgerMenu: View {
             VStack(alignment: .leading, spacing: 0) {
                 sectionHeader(L10n.text("Import"))
                 row(L10n.text("PDF Map…"), systemImage: "doc.badge.plus")               { close(onImport) }
+                    .disabled(!importsEnabled)
+                    .opacity(importsEnabled ? 1 : 0.4)
                 row(L10n.text("Offline Tiles…"), systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
+                    .disabled(!importsEnabled)
+                    .opacity(importsEnabled ? 1 : 0.4)
                 row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.down")         { close(onImportGeoJSON) }
                 row("KML / KMZ…", systemImage: "globe.desk")                  { close(onImportKML) }
                 divider

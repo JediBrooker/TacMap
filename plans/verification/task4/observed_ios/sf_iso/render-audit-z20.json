@@ -1,0 +1,21 @@
+{
+  "screenshotWidth": 1206,
+  "screenshotHeight": 2622,
+  "density": 3.0,
+  "sourceId": "verified-fixture-sf_iso",
+  "contentKey": "sha256:d2e56f6a8b7259d652b3f3c1cfb7ed3697267b5d79d40e4fb96265a703606e75",
+  "actualCamera": {
+    "latitude": 37.76608565506427,
+    "longitude": -122.4435703172107,
+    "zoom": 20,
+    "heading": 0
+  },
+  "measurementBounds": [
+    240,
+    470,
+    960,
+    2330
+  ],
+  "rendererVersionAtCapture": 1,
+  "canonicalWarpBoundAtCapture": 0.25
+}

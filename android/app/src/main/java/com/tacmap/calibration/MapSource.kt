@@ -116,10 +116,12 @@ data class Wgs84Bounds(
     }
 }
 
-/** Calibration state for a PDF source */
+/** A PDF source's real georeference: parsed off the GeoPDF, or fitted to the user's fiduciaries. */
 sealed interface Calibration {
-    data class Parsed(val crs: String, val transform: AffineTransform2D) : Calibration
-    data class Fiduciaries(val fids: List<Fiduciary>, val transform: AffineTransform2D) : Calibration
+    val georef: PdfGeoreference
+
+    data class Parsed(override val georef: PdfGeoreference) : Calibration
+    data class Fiduciaries(val fids: List<Fiduciary>, override val georef: PdfGeoreference) : Calibration
 }
 
 /** Online raster basemap (Esri Satellite/Topo or OSM Topo/Street), rendered via

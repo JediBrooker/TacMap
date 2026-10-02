@@ -1,0 +1,15 @@
+{
+  "actualCamera": {
+    "latitude": 37.8110685315122,
+    "longitude": -122.43190634132216,
+    "zoom": 20.0,
+    "heading": 0.0
+  },
+  "contentKey": "sha256:08d3cffa0a3ac0e3ff436ef34aa3b823a79f463c3099f06a3264853c746fa8db",
+  "sourceId": "31ee8698-b4bb-423b-a01b-4176394ada03",
+  "density": 2.625,
+  "screenshotWidth": 1080,
+  "screenshotHeight": 2400,
+  "rendererVersionAtCapture": 1,
+  "canonicalWarpBoundAtCapture": 0.25
+}

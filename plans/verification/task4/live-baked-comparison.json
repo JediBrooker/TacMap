@@ -1,0 +1,263 @@
+[
+  {
+    "platform": "ios",
+    "fixture": "rot5_iso",
+    "live": "rot5_iso__live_z14.png",
+    "baked": "rot5_iso__baked_z14.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "a17e4e0899fc65dfef60845496f999d61941770acf6ab16c8b4535c379fed9fb",
+      "a17e4e0899fc65dfef60845496f999d61941770acf6ab16c8b4535c379fed9fb"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 37073,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "ios",
+    "fixture": "rot5_iso",
+    "live": "rot5_iso__live_z14.png",
+    "baked": "rot5_iso__baked_z14_reopen.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "a17e4e0899fc65dfef60845496f999d61941770acf6ab16c8b4535c379fed9fb",
+      "7cb31a112f2b1a1a67355cb3adf5cecc33b05aa23313717b296e50202b962ba1"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": 72.34775099542571,
+    "exactCropPixelsMatch": false,
+    "inkFeatureRMS255": 0.14457093457557815,
+    "inkPixelCount": 37080,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "ios",
+    "fixture": "render_dense",
+    "live": "render_dense__live_z14.png",
+    "baked": "render_dense__baked_z14.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "46f556db5d46867d3078df64cd1bd3213d0efe3b33fc07bf6c190c6295ed8855",
+      "46f556db5d46867d3078df64cd1bd3213d0efe3b33fc07bf6c190c6295ed8855"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 259026,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "ios",
+    "fixture": "render_dense",
+    "live": "render_dense__live_z14.png",
+    "baked": "render_dense__baked_z14_reopen.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "46f556db5d46867d3078df64cd1bd3213d0efe3b33fc07bf6c190c6295ed8855",
+      "8d7bd3506e26ada0bb02b4a3bcc2f081861c22b1435418e2ce18df715bee3496"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": 58.64680639729599,
+    "exactCropPixelsMatch": false,
+    "inkFeatureRMS255": 0.44181938146346844,
+    "inkPixelCount": 259347,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "ios",
+    "fixture": "real_usgs_sf_north",
+    "live": "real_usgs_sf_north__live_z14.png",
+    "baked": "real_usgs_sf_north__baked_z14.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "799f97299f886d7b1246f157876da292c08e99e15a74435d888dcbcd0192bc38",
+      "1076eb926eda6f4a2035cdab102c2416cd7b76097d8323b83fb033d0273eb6fe"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 1289303,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "ios",
+    "fixture": "real_usgs_sf_north",
+    "live": "real_usgs_sf_north__live_z14.png",
+    "baked": "real_usgs_sf_north__baked_z14_reopen.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "799f97299f886d7b1246f157876da292c08e99e15a74435d888dcbcd0192bc38",
+      "06ef185b088880eb1f247d67b5f110f0c8d7da06d7e3eaab7cc9fe39668a4e78"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": 28.855868947344216,
+    "exactCropPixelsMatch": false,
+    "inkFeatureRMS255": 9.258804836716843,
+    "inkPixelCount": 1295259,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "FAIL",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "android",
+    "fixture": "real_usgs_sf_north",
+    "live": "live-z16.png",
+    "baked": "baked-z16.png",
+    "cropPhysicalPx": [
+      200,
+      360,
+      870,
+      2080
+    ],
+    "imageSha256": [
+      "f4bbcddd048445269aa307c8f211902eb03831b7f2a49670fcbcbca022962458",
+      "a921e5d270bddce690e84885514e6ac26b90a6015fa2546dbd2e7119e06f72c3"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 140998,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE"
+  },
+  {
+    "platform": "android",
+    "fixture": "real_usgs_sf_north",
+    "live": "live-z18.png",
+    "baked": "baked-z18.png",
+    "cropPhysicalPx": [
+      200,
+      360,
+      870,
+      2080
+    ],
+    "imageSha256": [
+      "132c50ef5848d91e406eb8f5db61edd10b6fb2b840768c02d1c5738c43e0a7a7",
+      "07443d002bace9897f4d2dafe387cf6770e87b0ce504c107b7d2a2a4772b1ac5"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": false,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 63556,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "OVERZOOM_NOT_IN_COMPLETED_BAKE_RANGE"
+  },
+  {
+    "platform": "android",
+    "fixture": "real_usgs_sf_north",
+    "live": "live-z20.png",
+    "baked": "baked-z20.png",
+    "cropPhysicalPx": [
+      200,
+      360,
+      870,
+      2080
+    ],
+    "imageSha256": [
+      "28fa51d196576760e45cdde6f88c39e15da68b459be035f2f3c6f1725be95956",
+      "921c3644e2eed086c3ca25a217b235dda5cee91ef96c0fa6f648759e629dbf8c"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": false,
+    "fullCropPSNRdB": null,
+    "exactCropPixelsMatch": true,
+    "inkFeatureRMS255": 0.0,
+    "inkPixelCount": 152813,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "OVERZOOM_NOT_IN_COMPLETED_BAKE_RANGE"
+  }
+]

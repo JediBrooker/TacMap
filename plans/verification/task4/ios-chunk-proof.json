@@ -1,0 +1,14 @@
+[
+  {
+    "phase": "phase8-final",
+    "completeRecords": 68,
+    "independentReconstructionMatchesOwnerByteValues": true,
+    "missing": 0
+  },
+  {
+    "phase": "canberra-final",
+    "completeRecords": 15,
+    "independentReconstructionMatchesOwnerByteValues": true,
+    "missing": 0
+  }
+]

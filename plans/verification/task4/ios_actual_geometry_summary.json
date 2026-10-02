@@ -1,0 +1,280 @@
+[
+  {
+    "fixture": "sf_iso",
+    "sourceSha256": "d2e56f6a8b7259d652b3f3c1cfb7ed3697267b5d79d40e4fb96265a703606e75",
+    "actualCamera": {
+      "latitude": 37.76608565506427,
+      "longitude": -122.4435703172107,
+      "zoom": 20,
+      "heading": 0
+    },
+    "nonceAndCameraAndHashMatched": true,
+    "geometryReference": "Independent construction affine/PROJ versus actual completed native cell transforms and physically painted bitmap bounds. No raster ink estimator.",
+    "denseViewport": {
+      "samples": 425,
+      "maxAbsPhysicalPxByAxis": [
+        0.614154467402841,
+        0.06309743592282757
+      ],
+      "maxNormPhysicalPx": 0.616153173037335,
+      "rangeByAxis": [
+        [
+          0.0016821582976263016,
+          0.614154467402841
+        ],
+        [
+          7.039196498226374e-05,
+          0.06309743592282757
+        ]
+      ]
+    },
+    "printedGridLineSamples": {
+      "samples": 161,
+      "maxAbsPhysicalPxByAxis": [
+        0.5827461240868956,
+        0.06091058014533246
+      ],
+      "maxNormPhysicalPx": 0.5859207658992303,
+      "rangeByAxis": [
+        [
+          0.0002679509220797627,
+          0.5827461240868956
+        ],
+        [
+          0.011182125588675262,
+          0.06091058014533246
+        ]
+      ]
+    },
+    "actuallyPaintedJobs": [
+      {
+        "job": {
+          "z": 16,
+          "x": 10477,
+          "y": 25333,
+          "cols": 1,
+          "rows": 1
+        },
+        "path": "vector",
+        "tilePx": 768,
+        "detailZoom": 16,
+        "cells": 1
+      },
+      {
+        "job": {
+          "z": 16,
+          "x": 10477,
+          "y": 25332,
+          "cols": 1,
+          "rows": 1
+        },
+        "path": "vector",
+        "tilePx": 768,
+        "detailZoom": 16,
+        "cells": 1
+      }
+    ]
+  },
+  {
+    "fixture": "edge_iso",
+    "sourceSha256": "46d1389e833d1c37faac647eb2a11d11001efa51d17aabe65a917895fd6506f9",
+    "actualCamera": {
+      "latitude": 49.65738171542689,
+      "longitude": 17.688177463840717,
+      "zoom": 20,
+      "heading": 0
+    },
+    "nonceAndCameraAndHashMatched": true,
+    "geometryReference": "Independent construction affine/PROJ versus actual completed native cell transforms and physically painted bitmap bounds. No raster ink estimator.",
+    "denseViewport": {
+      "samples": 425,
+      "maxAbsPhysicalPxByAxis": [
+        0.05459464091109112,
+        0.06540871624019928
+      ],
+      "maxNormPhysicalPx": 0.0656204211646101,
+      "rangeByAxis": [
+        [
+          0.0045726441021543,
+          0.05459464091109112
+        ],
+        [
+          -0.06540871624019928,
+          0.012980304833035916
+        ]
+      ]
+    },
+    "printedGridLineSamples": {
+      "samples": 159,
+      "maxAbsPhysicalPxByAxis": [
+        0.051117228421617256,
+        0.05948236917060967
+      ],
+      "maxNormPhysicalPx": 0.06103978149430261,
+      "rangeByAxis": [
+        [
+          0.0049294719613044435,
+          0.051117228421617256
+        ],
+        [
+          -0.05948236917060967,
+          -0.010703224155349744
+        ]
+      ]
+    },
+    "actuallyPaintedJobs": [
+      {
+        "job": {
+          "z": 16,
+          "x": 35988,
+          "y": 22322,
+          "cols": 1,
+          "rows": 1
+        },
+        "path": "vector",
+        "tilePx": 768,
+        "detailZoom": 16,
+        "cells": 1
+      },
+      {
+        "job": {
+          "z": 16,
+          "x": 35987,
+          "y": 22322,
+          "cols": 1,
+          "rows": 1
+        },
+        "path": "vector",
+        "tilePx": 768,
+        "detailZoom": 16,
+        "cells": 1
+      }
+    ]
+  },
+  {
+    "fixture": "syd_iso",
+    "sourceSha256": "1bd482c71aba805fcdd01d3be0d7a44cbd76cb792cdbe9e253690f510f36d34d",
+    "actualCamera": {
+      "latitude": -33.89444983318022,
+      "longitude": 151.1507983885073,
+      "zoom": 20,
+      "heading": 0
+    },
+    "nonceAndCameraAndHashMatched": true,
+    "geometryReference": "Independent construction affine/PROJ versus actual completed native cell transforms and physically painted bitmap bounds. No raster ink estimator.",
+    "denseViewport": {
+      "samples": 425,
+      "maxAbsPhysicalPxByAxis": [
+        0.04535843756457325,
+        0.03459208205458708
+      ],
+      "maxNormPhysicalPx": 0.04998400155194627,
+      "rangeByAxis": [
+        [
+          -0.04535843756457325,
+          -0.018223938168375753
+        ],
+        [
+          -6.770153413526714e-05,
+          0.03459208205458708
+        ]
+      ]
+    },
+    "printedGridLineSamples": {
+      "samples": 160,
+      "maxAbsPhysicalPxByAxis": [
+        0.03653931873532201,
+        0.03154915323648311
+      ],
+      "maxNormPhysicalPx": 0.04716699362560743,
+      "rangeByAxis": [
+        [
+          -0.03653931873532201,
+          -0.020066098172037528
+        ],
+        [
+          0.009650319574575406,
+          0.03154915323648311
+        ]
+      ]
+    },
+    "actuallyPaintedJobs": [
+      {
+        "job": {
+          "z": 16,
+          "x": 60284,
+          "y": 39333,
+          "cols": 1,
+          "rows": 1
+        },
+        "path": "vector",
+        "tilePx": 768,
+        "detailZoom": 16,
+        "cells": 1
+      }
+    ]
+  },
+  {
+    "fixture": "cbr50k_iso",
+    "sourceSha256": "ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+    "actualCamera": {
+      "latitude": -35.31513369009902,
+      "longitude": 149.0900991912884,
+      "zoom": 20,
+      "heading": 0
+    },
+    "nonceAndCameraAndHashMatched": true,
+    "geometryReference": "Independent construction affine/PROJ versus actual completed native cell transforms and physically painted bitmap bounds. No raster ink estimator.",
+    "denseViewport": {
+      "samples": 425,
+      "maxAbsPhysicalPxByAxis": [
+        1.1376326077152044,
+        0.07578098145313561
+      ],
+      "maxNormPhysicalPx": 1.1399180885989797,
+      "rangeByAxis": [
+        [
+          -1.1376326077152044,
+          -0.9703084833454341
+        ],
+        [
+          -0.07578098145313561,
+          -0.024902186705730855
+        ]
+      ]
+    },
+    "printedGridLineSamples": {
+      "samples": 160,
+      "maxAbsPhysicalPxByAxis": [
+        1.0975361718672048,
+        0.07473375201607269
+      ],
+      "maxNormPhysicalPx": 1.100077625555269,
+      "rangeByAxis": [
+        [
+          -1.0975361718672048,
+          -0.9879035654781205
+        ],
+        [
+          -0.07473375201607269,
+          -0.027488244116739224
+        ]
+      ]
+    },
+    "actuallyPaintedJobs": [
+      {
+        "job": {
+          "z": 15,
+          "x": 29954,
+          "y": 19823,
+          "cols": 1,
+          "rows": 1
+        },
+        "path": "vector",
+        "tilePx": 768,
+        "detailZoom": 15,
+        "cells": 1
+      }
+    ]
+  }
+]

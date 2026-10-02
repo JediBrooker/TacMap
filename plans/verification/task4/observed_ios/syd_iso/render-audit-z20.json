@@ -1,0 +1,21 @@
+{
+  "screenshotWidth": 1206,
+  "screenshotHeight": 2622,
+  "density": 3.0,
+  "sourceId": "verified-fixture-syd_iso",
+  "contentKey": "sha256:1bd482c71aba805fcdd01d3be0d7a44cbd76cb792cdbe9e253690f510f36d34d",
+  "actualCamera": {
+    "latitude": -33.89444983318022,
+    "longitude": 151.1507983885073,
+    "zoom": 20,
+    "heading": 0
+  },
+  "measurementBounds": [
+    240,
+    470,
+    960,
+    2330
+  ],
+  "rendererVersionAtCapture": 1,
+  "canonicalWarpBoundAtCapture": 0.25
+}

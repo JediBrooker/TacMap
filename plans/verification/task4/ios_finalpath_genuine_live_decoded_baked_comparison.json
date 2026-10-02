@@ -1,0 +1,98 @@
+[
+  {
+    "platform": "ios",
+    "fixture": "rot5_iso",
+    "live": "rot5_iso__cold_live_z14_after_removal.png",
+    "baked": "rot5_iso__baked_z14_reopen.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "b70ef8c3eefbf0bafacfa675050ab2358f205e26d7cbfbf6d0422220ec1584fe",
+      "fb7c4ee3655bbd861702ec1116c2408a12d86bbc6d5a182aa13b92f2702e342a"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": 72.47255102360727,
+    "exactCropPixelsMatch": false,
+    "inkFeatureRMS255": 0.14789905136096618,
+    "inkPixelCount": 37091,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE",
+    "genuineBaselineOwnLiveTiles": 12,
+    "currentFinalReopenOwnDecodedBakeTiles": 12,
+    "comparisonOrder": "Preserved final freshly regenerated decoded-bake screenshot compared to later cold live after normal Remove; source/camera identical. No intermediate-bake baseline."
+  },
+  {
+    "platform": "ios",
+    "fixture": "render_dense",
+    "live": "render_dense__cold_live_z14_after_removal.png",
+    "baked": "render_dense__baked_z14_reopen.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "ae485d62652404a6d24e849a2046a2aa1ee085f0330387a6f79e8a29cf272dcf",
+      "83faec673973d4b8b69f6e80d18ac83f107cc83c943266965ecdada40da34305"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": 58.59580759338803,
+    "exactCropPixelsMatch": false,
+    "inkFeatureRMS255": 0.4445976002151592,
+    "inkPixelCount": 260583,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "PASS",
+    "status": "COMPARED_IN_BAKE_RANGE",
+    "genuineBaselineOwnLiveTiles": 8,
+    "currentFinalReopenOwnDecodedBakeTiles": 8,
+    "comparisonOrder": "Preserved final freshly regenerated decoded-bake screenshot compared to later cold live after normal Remove; source/camera identical. No intermediate-bake baseline."
+  },
+  {
+    "platform": "ios",
+    "fixture": "real_usgs_sf_north",
+    "live": "real_usgs_sf_north__cold_live_z14_after_removal.png",
+    "baked": "real_usgs_sf_north__baked_z14_reopen.png",
+    "cropPhysicalPx": [
+      240,
+      470,
+      960,
+      2330
+    ],
+    "imageSha256": [
+      "5160ce4fa3b3d5c0488bb467d6d19f66ec2ed7a2947e13a589f6718d0ce79a90",
+      "bfcccb30fb49b276d295836a35eb827ec64e7766efe0a43e3800cdc99d65c452"
+    ],
+    "sameActualCameraAndSource": true,
+    "withinCompletedBakeRange": true,
+    "fullCropPSNRdB": 28.714521721276505,
+    "exactCropPixelsMatch": false,
+    "inkFeatureRMS255": 9.399405387064887,
+    "inkPixelCount": 1296226,
+    "diagnosticBestIntegerTranslationPx": [
+      0,
+      0
+    ],
+    "diagnosticIntegerTranslationLimit": "Bounded -3..3 same-camera search; zero does not prove \u22641 subpixel registration. JPEG/antialiasing and unchanged UI grid can affect result.",
+    "rawFullCrop35dBStatus": "FAIL",
+    "status": "COMPARED_IN_BAKE_RANGE",
+    "genuineBaselineOwnLiveTiles": 10,
+    "currentFinalReopenOwnDecodedBakeTiles": 10,
+    "comparisonOrder": "Preserved final freshly regenerated decoded-bake screenshot compared to later cold live after normal Remove; source/camera identical. No intermediate-bake baseline."
+  }
+]

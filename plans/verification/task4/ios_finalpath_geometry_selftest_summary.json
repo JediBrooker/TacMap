@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "knownTranslations": [
+    {
+      "dxPhysicalPx": 3,
+      "dyPhysicalPx": -2,
+      "fixtures": 1,
+      "maxKnownTranslationErrorPx": 0
+    },
+    {
+      "dxPhysicalPx": -3,
+      "dyPhysicalPx": 2,
+      "fixtures": 1,
+      "maxKnownTranslationErrorPx": 0
+    }
+  ],
+  "identityOrOmissionNegativesRejected": [
+    "nonce",
+    "source",
+    "missing-job",
+    "omitted-frame"
+  ]
+}

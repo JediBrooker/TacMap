@@ -689,10 +689,12 @@ class SyncProtocolV3Test {
         assertTrue(stored.has("presenceSeq"))
         assertFalse(stored.has("presenceSessions"))
 
+        // presence counters are persisted in strides now (plans/04 section
+        // 17.1), so a reload without a clean point gets the crash floor 7 + 15
         val reloaded = SyncReplayState("presence-reconnect", dir)
         assertTrue(reloaded.load())
         assertEquals(firstSession, reloaded.getPresenceSessionDomain(actorA))
-        assertEquals(7L, reloaded.getPresenceCounter(actorA))
+        assertEquals(22L, reloaded.getPresenceCounter(actorA))
 
         // The relay may return the exact still-live signed hello after this
         // client reconnects. Reactivate it, but never reset its replay counter.
@@ -701,7 +703,8 @@ class SyncProtocolV3Test {
         ))
         assertFalse(reloaded.canAcceptPresence(actorA, publicKey, firstSession, 7))
         assertFalse(reloaded.commitPresence(actorA, publicKey, firstSession, 6))
-        assertTrue(reloaded.commitPresence(actorA, publicKey, firstSession, 8))
+        assertFalse(reloaded.commitPresence(actorA, publicKey, firstSession, 22))
+        assertTrue(reloaded.commitPresence(actorA, publicKey, firstSession, 23))
 
         // Equal epoch with a different session is a replay/substitution.
         assertFalse(reloaded.commitActorHello(
@@ -738,7 +741,8 @@ class SyncProtocolV3Test {
         val reloaded = SyncReplayState(room, dir)
         assertTrue(reloaded.load())
         assertEquals(session, reloaded.getPresenceSessionDomain(actorA))
-        assertEquals(4L, reloaded.getPresenceCounter(actorA))
+        // not a clean point, so the stride crash floor applies (plans/04 section 17.1)
+        assertEquals(4L + PresenceFencePersistence.CRASH_FLOOR_ADD, reloaded.getPresenceCounter(actorA))
         assertTrue(current.exists())
         assertFalse(legacy.exists())
         assertFalse(current.name.contains(room))

@@ -1,0 +1,3826 @@
+{
+  "scope": "34 binding synthetic PDFs plus pinned real USGS; import blank probe precedes library commit. Additional independent camera anchors preserve five original cameras.",
+  "entries": [
+    {
+      "id": "sf_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_sf_iso.pdf",
+      "sha256": "d2e56f6a8b7259d652b3f3c1cfb7ed3697267b5d79d40e4fb96265a703606e75",
+      "bytes": 7759,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/sf_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          545365.0,
+          0.0,
+          8.81944444449618,
+          4175365.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944444443947,
+          4.17106046820989e-11,
+          545364.999999964,
+          -4.85980072645135e-11,
+          8.81944444443702,
+          4175365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "sf_esri",
+      "relativeFile": "testdata/geopdf/tacmap_grid_sf_esri.pdf",
+      "sha256": "8e96dcaa3043b1685fd2b81266033e7e5d686c18cfc5733e9b7d53d3a3ed0e5e",
+      "bytes": 7812,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/sf_esri",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          545365.0,
+          0.0,
+          8.81944444449618,
+          4175365.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944444439462,
+          -2.45040428423649e-11,
+          545365.00000004,
+          2.60014182198605e-11,
+          8.8194444444239,
+          4175364.99999999
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "sf_lgictm",
+      "relativeFile": "testdata/geopdf/tacmap_grid_sf_lgictm.pdf",
+      "sha256": "48ea984e801f4c2bbb621040788ad95ea575504781a3af26f930efc3d50f8c35",
+      "bytes": 7260,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/sf_lgictm",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          545365.0,
+          0.0,
+          8.81944444449618,
+          4175365.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.819444444496,
+          0.0,
+          545365.0,
+          0.0,
+          8.819444444496,
+          4175365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "sf_lgireg",
+      "relativeFile": "testdata/geopdf/tacmap_grid_sf_lgireg.pdf",
+      "sha256": "6e215bc23e9c3527de27753713a1125eb2e8e0defb97fe74df8ea2d1c922b431",
+      "bytes": 7276,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/sf_lgireg",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          545365.0,
+          0.0,
+          8.81944444449618,
+          4175365.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944443964683,
+          0.0,
+          545365.000000345,
+          6.68436499203292e-16,
+          8.81944444612872,
+          4175364.99999988
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "sf_plain",
+      "relativeFile": "testdata/geopdf/tacmap_grid_sf_plain.pdf",
+      "sha256": "df9807612b3ec54a525725b939bb168faaa1860638f24870c3e3834a7ad91224",
+      "bytes": 6976,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndCalibrate",
+      "expectedGeorefOutcome": "none",
+      "expectedGeorefOrigin": "none",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/sf_plain",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [
+        {
+          "pageX": 185.3858268,
+          "pageY": 185.3858268,
+          "reference": "10SEG 47000 77000",
+          "plane": [
+            547000.0,
+            4177000.0
+          ]
+        },
+        {
+          "pageX": 638.9291339,
+          "pageY": 185.3858268,
+          "reference": "10SEG 51000 77000",
+          "plane": [
+            551000.0,
+            4177000.0
+          ]
+        },
+        {
+          "pageX": 638.9291339,
+          "pageY": 865.7007874,
+          "reference": "10SEG 51000 83000",
+          "plane": [
+            551000.0,
+            4183000.0
+          ]
+        },
+        {
+          "pageX": 185.3858268,
+          "pageY": 865.7007874,
+          "reference": "10SEG 47000 83000",
+          "plane": [
+            547000.0,
+            4183000.0
+          ]
+        }
+      ],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          545365.0,
+          0.0,
+          8.81944444449618,
+          4175365.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {}
+    },
+    {
+      "id": "edge_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_edge_iso.pdf",
+      "sha256": "46d1389e833d1c37faac647eb2a11d11001efa51d17aabe65a917895fd6506f9",
+      "bytes": 8214,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1051.0866142,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        49.65731241016626,
+        17.68806278232205
+      ],
+      "centerPrintedPlane": [
+        694000.0,
+        5504000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/edge_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 15.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 33,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          689365.0,
+          0.0,
+          8.81944444403052,
+          5499365.0
+        ],
+        "frame": {
+          "X0": 690000,
+          "Y0": 5500000,
+          "W": 8000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              691000.0,
+              5501000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "33UXR 91000 01000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              697000.0,
+              5501000.0
+            ],
+            "page": [
+              865.7007874,
+              185.3858268
+            ],
+            "label": "33UXR 97000 01000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              697000.0,
+              5507000.0
+            ],
+            "page": [
+              865.7007874,
+              865.7007874
+            ],
+            "label": "33UXR 97000 07000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              691000.0,
+              5507000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "33UXR 91000 07000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          49.65774556607812,
+          17.68877954715287
+        ],
+        "16": [
+          49.65774556607812,
+          17.68877954715287
+        ],
+        "18": [
+          49.6573557259682,
+          17.68813445823308
+        ],
+        "20": [
+          49.6573557259682,
+          17.68813445823308
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          49.6573557259682,
+          17.68813445823308
+        ],
+        "phase8m": [
+          49.65738171542689,
+          17.688177463840717
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.8194444444304,
+          -2.52195921348036e-11,
+          689365.000000029,
+          -4.41483925960193e-11,
+          8.81944444442983,
+          5499365.00000002
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 15.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 33,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "edge_lgictm",
+      "relativeFile": "testdata/geopdf/tacmap_grid_edge_lgictm.pdf",
+      "sha256": "f41f3ab9c0bc60bb79111a22af128ffe1275ea705f39eb300d062fc36b6d6a3e",
+      "bytes": 7726,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1051.0866142,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        49.65731241016626,
+        17.68806278232205
+      ],
+      "centerPrintedPlane": [
+        694000.0,
+        5504000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/edge_lgictm",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 15.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 33,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          689365.0,
+          0.0,
+          8.81944444403052,
+          5499365.0
+        ],
+        "frame": {
+          "X0": 690000,
+          "Y0": 5500000,
+          "W": 8000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              691000.0,
+              5501000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "33UXR 91000 01000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              697000.0,
+              5501000.0
+            ],
+            "page": [
+              865.7007874,
+              185.3858268
+            ],
+            "label": "33UXR 97000 01000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              697000.0,
+              5507000.0
+            ],
+            "page": [
+              865.7007874,
+              865.7007874
+            ],
+            "label": "33UXR 97000 07000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              691000.0,
+              5507000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "33UXR 91000 07000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          49.65774556607812,
+          17.68877954715287
+        ],
+        "16": [
+          49.65774556607812,
+          17.68877954715287
+        ],
+        "18": [
+          49.6573557259682,
+          17.68813445823308
+        ],
+        "20": [
+          49.6573557259682,
+          17.68813445823308
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          49.6573557259682,
+          17.68813445823308
+        ],
+        "phase8m": [
+          49.65738171542689,
+          17.688177463840717
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.819444444496,
+          0.0,
+          689365.0,
+          0.0,
+          8.819444444031,
+          5499365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 15.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 33,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "syd_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_syd_iso.pdf",
+      "sha256": "1bd482c71aba805fcdd01d3be0d7a44cbd76cb792cdbe9e253690f510f36d34d",
+      "bytes": 7764,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        -33.89452064964087,
+        151.15071035451408
+      ],
+      "centerPrintedPlane": [
+        329000.0,
+        6248000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/syd_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 153.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 56,
+          "hemisphere": "S"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444443798,
+          0.0,
+          325365.0,
+          0.0,
+          8.81944444403052,
+          6243365.0
+        ],
+        "frame": {
+          "X0": 326000,
+          "Y0": 6244000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              327000.0,
+              6245000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "56HLH 27000 45000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              331000.0,
+              6245000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "56HLH 31000 45000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              331000.0,
+              6251000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "56HLH 31000 51000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              327000.0,
+              6251000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "56HLH 27000 51000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          -33.894078045636604,
+          151.15126056458595
+        ],
+        "16": [
+          -33.894078045636604,
+          151.15126056458595
+        ],
+        "18": [
+          -33.89447638936099,
+          151.1507653757769
+        ],
+        "20": [
+          -33.89447638936099,
+          151.1507653757769
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          -33.89447638936099,
+          151.1507653757769
+        ],
+        "phase8m": [
+          -33.89444983318022,
+          151.1507983885073
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944444441971,
+          1.05882012622644e-11,
+          325364.999999972,
+          7.52860029462224e-12,
+          8.81944444439133,
+          6243365.00000003
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 153.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 56,
+          "hemisphere": "S"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "syd_lgictm",
+      "relativeFile": "testdata/geopdf/tacmap_grid_syd_lgictm.pdf",
+      "sha256": "ab1d0f0b1cd73d299ed042a6a268ff28a92f63262e554f915b0fbf5510054c40",
+      "bytes": 7261,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        -33.89452064964087,
+        151.15071035451408
+      ],
+      "centerPrintedPlane": [
+        329000.0,
+        6248000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/syd_lgictm",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 153.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 56,
+          "hemisphere": "S"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444443798,
+          0.0,
+          325365.0,
+          0.0,
+          8.81944444403052,
+          6243365.0
+        ],
+        "frame": {
+          "X0": 326000,
+          "Y0": 6244000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              327000.0,
+              6245000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "56HLH 27000 45000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              331000.0,
+              6245000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "56HLH 31000 45000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              331000.0,
+              6251000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "56HLH 31000 51000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              327000.0,
+              6251000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "56HLH 27000 51000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          -33.894078045636604,
+          151.15126056458595
+        ],
+        "16": [
+          -33.894078045636604,
+          151.15126056458595
+        ],
+        "18": [
+          -33.89447638936099,
+          151.1507653757769
+        ],
+        "20": [
+          -33.89447638936099,
+          151.1507653757769
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          -33.89447638936099,
+          151.1507653757769
+        ],
+        "phase8m": [
+          -33.89444983318022,
+          151.1507983885073
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.819444444438,
+          0.0,
+          325365.0,
+          0.0,
+          8.819444444031,
+          6243365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 153.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 56,
+          "hemisphere": "S"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "rot5_plain",
+      "relativeFile": "testdata/geopdf/tacmap_grid_rot5_plain.pdf",
+      "sha256": "dc21b2d3305dfbf15ff2e9b105b1429a70941b5d547a8ca839bd832578b47cb3",
+      "bytes": 7029,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        900.7839644,
+        1106.9282314
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndCalibrate",
+      "expectedGeorefOutcome": "none",
+      "expectedGeorefOrigin": "none",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/rot5_plain",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [
+        {
+          "pageX": 254.1299411,
+          "pageY": 194.8365854,
+          "reference": "10SEG 47000 77000",
+          "plane": [
+            547000.0,
+            4177000.0
+          ]
+        },
+        {
+          "pageX": 705.947379,
+          "pageY": 234.3654892,
+          "reference": "10SEG 51000 77000",
+          "plane": [
+            551000.0,
+            4177000.0
+          ]
+        },
+        {
+          "pageX": 646.6540233,
+          "pageY": 912.091646,
+          "reference": "10SEG 51000 83000",
+          "plane": [
+            551000.0,
+            4183000.0
+          ]
+        },
+        {
+          "pageX": 194.8365854,
+          "pageY": 872.5627422,
+          "reference": "10SEG 47000 83000",
+          "plane": [
+            547000.0,
+            4183000.0
+          ]
+        }
+      ],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.78588379558641,
+          0.768665231065825,
+          544617.479759399,
+          -0.768665231298655,
+          8.78588379547,
+          4175483.52925131
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              254.1299411,
+              194.8365854
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              705.947379,
+              234.3654892
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              646.6540233,
+              912.091646
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              194.8365854,
+              872.5627422
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {}
+    },
+    {
+      "id": "rot5_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_rot5_iso.pdf",
+      "sha256": "ab8c24a28b4fed326e92efe46f6c7d44c8148ae063552f4129f6b6718ed5b473",
+      "bytes": 7917,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        900.7839644,
+        1106.9282314
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/rot5_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.78588379558641,
+          0.768665231065825,
+          544617.479759399,
+          -0.768665231298655,
+          8.78588379547,
+          4175483.52925131
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              254.1299411,
+              194.8365854
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              705.947379,
+              234.3654892
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              646.6540233,
+              912.091646
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              194.8365854,
+              872.5627422
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.78588379566483,
+          0.768665231217709,
+          544617.479759364,
+          -0.768665231228372,
+          8.78588379565687,
+          4175483.52925131
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "offset_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_offset_iso.pdf",
+      "sha256": "a708858ca0d82378f356d77db33e9682ae3627aa9fddd21f2857a9503e4ff44a",
+      "bytes": 7944,
+      "page": 0,
+      "mediaBox": [
+        100.0,
+        150.0,
+        924.3149606,
+        1201.0866142
+      ],
+      "cropBox": [
+        120.0,
+        170.0,
+        904.3149606,
+        1181.0866142
+      ],
+      "rotate": 0,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/offset_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          544483.055555556,
+          0.0,
+          8.81944444449618,
+          4174042.08333333
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              285.3858268,
+              335.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              738.9291339,
+              335.3858268
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              738.9291339,
+              1015.7007874
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              285.3858268,
+              1015.7007874
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944444443947,
+          4.17106046820989e-11,
+          544483.055555513,
+          -4.85980072645135e-11,
+          8.81944444443702,
+          4174042.08333333
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "rot90_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_rot90_iso.pdf",
+      "sha256": "7de83abbbea39126ab910c21d46de526dd63b06d62aaaf2c328fcfd0ed921ffc",
+      "bytes": 7773,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1051.0866142,
+        824.3149606
+      ],
+      "cropBox": null,
+      "rotate": 90,
+      "center": [
+        37.766013981223544,
+        -122.44366168425168
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/rot90_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          0.0,
+          8.81944444449618,
+          545365.0,
+          -8.81944444449618,
+          0.0,
+          4184635.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              865.7007874,
+              185.3858268
+            ],
+            "label": "10SEG 47000 77000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              865.7007874,
+              638.9291339
+            ],
+            "label": "10SEG 51000 77000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              638.9291339
+            ],
+            "label": "10SEG 51000 83000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "10SEG 47000 83000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "16": [
+          37.766461941528725,
+          -122.4430906373525
+        ],
+        "18": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "20": [
+          37.76605877738256,
+          -122.44360457987173
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76605877738256,
+          -122.44360457987173
+        ],
+        "phase8m": [
+          37.76608565506427,
+          -122.4435703172107
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          -4.17099479954596e-11,
+          8.81944444443948,
+          545365.000000007,
+          -8.81944444443701,
+          -4.85997532067246e-11,
+          4184634.99999999
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "cbr50k_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_cbr50k_iso.pdf",
+      "sha256": "ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+      "bytes": 14198,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1277.8582677,
+        1277.8582677
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        -35.315179695384806,
+        149.09004538239137
+      ],
+      "centerPrintedPlane": [
+        690000.0,
+        6090000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/cbr50k_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 147.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 55,
+          "hemisphere": "S"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          17.638888888876,
+          0.0,
+          678730.0,
+          0.0,
+          17.6388888889924,
+          6078730.0
+        ],
+        "frame": {
+          "X0": 680000,
+          "Y0": 6080000,
+          "W": 20000,
+          "H": 20000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              681000.0,
+              6081000.0
+            ],
+            "page": [
+              128.6929134,
+              128.6929134
+            ],
+            "label": "55HFA 81000 81000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              699000.0,
+              6081000.0
+            ],
+            "page": [
+              1149.1653543,
+              128.6929134
+            ],
+            "label": "55HFA 99000 81000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              699000.0,
+              6099000.0
+            ],
+            "page": [
+              1149.1653543,
+              1149.1653543
+            ],
+            "label": "55HFA 99000 99000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              681000.0,
+              6099000.0
+            ],
+            "page": [
+              128.6929134,
+              1149.1653543
+            ],
+            "label": "55HFA 81000 99000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          -35.314719641528576,
+          149.09058346862184
+        ],
+        "16": [
+          -35.314719641528576,
+          149.09058346862184
+        ],
+        "18": [
+          -35.31513369009902,
+          149.0900991912884
+        ],
+        "20": [
+          -35.31513369009902,
+          149.0900991912884
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          -35.31513369009902,
+          149.0900991912884
+        ],
+        "phase8m": [
+          -35.31510608691689,
+          149.0901314765974
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          17.6388888888916,
+          1.1448980364582e-11,
+          678729.999999991,
+          -1.43748606104863e-11,
+          17.6388888889008,
+          6078730.00000003
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 147.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 55,
+          "hemisphere": "S"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "cbr50k_plain",
+      "relativeFile": "testdata/geopdf/tacmap_grid_cbr50k_plain.pdf",
+      "sha256": "03cc090b692bb51b8b3b63f38bbaa20d3a25dced24750183e9c94ec081398eee",
+      "bytes": 13190,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1277.8582677,
+        1277.8582677
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        -35.315179695384806,
+        149.09004538239137
+      ],
+      "centerPrintedPlane": [
+        690000.0,
+        6090000.0
+      ],
+      "expectedImportOutcome": "addAndCalibrate",
+      "expectedGeorefOutcome": "none",
+      "expectedGeorefOrigin": "none",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "bindingSource": "pdf_georef.json:sheets/cbr50k_plain",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [
+        {
+          "pageX": 128.6929134,
+          "pageY": 128.6929134,
+          "reference": "55HFA 81000 81000",
+          "plane": [
+            681000.0,
+            6081000.0
+          ]
+        },
+        {
+          "pageX": 1149.1653543,
+          "pageY": 128.6929134,
+          "reference": "55HFA 99000 81000",
+          "plane": [
+            699000.0,
+            6081000.0
+          ]
+        },
+        {
+          "pageX": 1149.1653543,
+          "pageY": 1149.1653543,
+          "reference": "55HFA 99000 99000",
+          "plane": [
+            699000.0,
+            6099000.0
+          ]
+        },
+        {
+          "pageX": 128.6929134,
+          "pageY": 1149.1653543,
+          "reference": "55HFA 81000 99000",
+          "plane": [
+            681000.0,
+            6099000.0
+          ]
+        }
+      ],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 147.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 55,
+          "hemisphere": "S"
+        },
+        "datum": "WGS84",
+        "pageToPlane": [
+          17.638888888876,
+          0.0,
+          678730.0,
+          0.0,
+          17.6388888889924,
+          6078730.0
+        ],
+        "frame": {
+          "X0": 680000,
+          "Y0": 6080000,
+          "W": 20000,
+          "H": 20000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              681000.0,
+              6081000.0
+            ],
+            "page": [
+              128.6929134,
+              128.6929134
+            ],
+            "label": "55HFA 81000 81000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              699000.0,
+              6081000.0
+            ],
+            "page": [
+              1149.1653543,
+              128.6929134
+            ],
+            "label": "55HFA 99000 81000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              699000.0,
+              6099000.0
+            ],
+            "page": [
+              1149.1653543,
+              1149.1653543
+            ],
+            "label": "55HFA 99000 99000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              681000.0,
+              6099000.0
+            ],
+            "page": [
+              128.6929134,
+              1149.1653543
+            ],
+            "label": "55HFA 81000 99000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          -35.314719641528576,
+          149.09058346862184
+        ],
+        "16": [
+          -35.314719641528576,
+          149.09058346862184
+        ],
+        "18": [
+          -35.31513369009902,
+          149.0900991912884
+        ],
+        "20": [
+          -35.31513369009902,
+          149.0900991912884
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          -35.31513369009902,
+          149.0900991912884
+        ],
+        "phase8m": [
+          -35.31510608691689,
+          149.0901314765974
+        ]
+      },
+      "expectedReference": {}
+    },
+    {
+      "id": "lcc_lgile",
+      "relativeFile": "testdata/geopdf/tacmap_grid_lcc_lgile.pdf",
+      "sha256": "c2427f7902abe1d2ec77e83e173debb8eb7ebdd1241400da12ca6aff624e455b",
+      "bytes": 7756,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.75341760363157,
+        -122.4755810282037
+      ],
+      "centerPrintedPlane": [
+        11000.0,
+        28000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "independent-projection-datum-reference",
+      "metricNote": "Printed lambertConformalConic2SP / NAD27 coordinate grid differs from WGS84 MGRS; direct red/grey coincidence is not an acceptance criterion. Compare independent construction/reference coordinates, raster geometry and live/baked consistency.",
+      "bindingSource": "pdf_georef.json:sheets/lcc_lgile",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "lambertConformalConic2SP",
+          "lat1": 33.0,
+          "lat2": 45.0,
+          "lat0": 37.5,
+          "lon0": -122.6,
+          "fe": 0.0,
+          "fn": 0.0
+        },
+        "datum": "NAD27",
+        "pageToPlane": [
+          8.81944444444434,
+          0.0,
+          7365.0,
+          0.0,
+          8.81944444444525,
+          23365.0
+        ],
+        "frame": {
+          "X0": 8000,
+          "Y0": 24000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              9000.0,
+              25000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "9000mE 25000mN"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              13000.0,
+              25000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "13000mE 25000mN"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              13000.0,
+              31000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "13000mE 31000mN"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              9000.0,
+              31000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "9000mE 31000mN"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.75386981824476,
+          -122.47500990955847
+        ],
+        "16": [
+          37.75386981824476,
+          -122.47500990955847
+        ],
+        "18": [
+          37.75346282521898,
+          -122.47552391666133
+        ],
+        "20": [
+          37.75346282521898,
+          -122.47552391666133
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.75346282521898,
+          -122.47552391666133
+        ],
+        "phase8m": [
+          37.753489958158006,
+          -122.47548964970154
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.819444444444,
+          0.0,
+          7365.0,
+          0.0,
+          8.819444444445,
+          23365.0
+        ],
+        "crs": {
+          "kind": "lambertConformalConic2SP",
+          "lat1": 33.0,
+          "lat2": 45.0,
+          "lat0": 37.5,
+          "lon0": -122.6,
+          "fe": 0.0,
+          "fn": 0.0
+        },
+        "datum": {
+          "id": "NAD27"
+        }
+      }
+    },
+    {
+      "id": "geog_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_geog_iso.pdf",
+      "sha256": "d91f411e56aa2fcdfc23b2ab77af7bc1876746ee18d55edbc051a9e23bf790f6",
+      "bytes": 7684,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        736.5159585,
+        894.0
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.81666666666666,
+        -122.43333333333334
+      ],
+      "centerPrintedPlane": [
+        -122.43333333333334,
+        37.81666666666666
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "independent-projection-datum-reference",
+      "metricNote": "Printed geographic / NAD83 coordinate grid differs from WGS84 MGRS; direct red/grey coincidence is not an acceptance criterion. Compare independent construction/reference coordinates, raster geometry and live/baked consistency.",
+      "bindingSource": "pdf_georef.json:sheets/geog_iso",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "geographic"
+        },
+        "datum": "NAD83",
+        "pageToPlane": [
+          0.000210964781970802,
+          0.0,
+          -122.515189464302,
+          0.0,
+          0.000166666666665094,
+          37.738
+        ],
+        "frame": {
+          "X0": -122.5,
+          "Y0": 37.75,
+          "W": 0.125,
+          "H": 0.125
+        },
+        "gridStep": 0.016666666666666666,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              -122.483333333333,
+              37.7666666666667
+            ],
+            "page": [
+              151.0021278,
+              172.0
+            ],
+            "label": "37 deg 46' N 122 deg 29' W"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              -122.391666666667,
+              37.7666666666667
+            ],
+            "page": [
+              585.5138307,
+              172.0
+            ],
+            "label": "37 deg 46' N 122 23.500'W"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              -122.391666666667,
+              37.8583333333333
+            ],
+            "page": [
+              585.5138307,
+              722.0
+            ],
+            "label": "37 51.500'N 122 23.500'W"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              -122.483333333333,
+              37.8583333333333
+            ],
+            "page": [
+              151.0021278,
+              722.0
+            ],
+            "label": "37 51.500'N 122 deg 29' W"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.81711714548407,
+          -122.43276547848217
+        ],
+        "16": [
+          37.81711714548407,
+          -122.43276547848217
+        ],
+        "18": [
+          37.816711714548404,
+          -122.43327654784822
+        ],
+        "20": [
+          37.816711714548404,
+          -122.43327654784822
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.816711714548404,
+          -122.43327654784822
+        ],
+        "phase8m": [
+          37.81673874327745,
+          -122.43324247655715
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          0.000210964781973222,
+          0.0,
+          -122.515189464302,
+          1.17108979165849e-20,
+          0.000166666666666667,
+          37.738
+        ],
+        "crs": {
+          "kind": "geographic"
+        },
+        "datum": {
+          "id": "NAD83"
+        }
+      }
+    },
+    {
+      "id": "hols_epsg",
+      "relativeFile": "testdata/geopdf/tacmap_grid_hols_epsg.pdf",
+      "sha256": "a24e4876a368555a71d974dfac39566a1fa8ec6a6f8a38b1835e14a17d83adf3",
+      "bytes": 7387,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        -33.999229621583744,
+        150.93192615139793
+      ],
+      "centerPrintedPlane": [
+        309000.0,
+        6236000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "independent-projection-datum-reference",
+      "metricNote": "Printed transverseMercator / GDA94 coordinate grid differs from WGS84 MGRS; direct red/grey coincidence is not an acceptance criterion. Compare independent construction/reference coordinates, raster geometry and live/baked consistency.",
+      "bindingSource": "pdf_georef.json:sheets/hols_epsg",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 153.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 56,
+          "hemisphere": "S"
+        },
+        "datum": "GDA94",
+        "pageToPlane": [
+          8.81944444443798,
+          0.0,
+          305365.0,
+          0.0,
+          8.81944444403052,
+          6231365.0
+        ],
+        "frame": {
+          "X0": 306000,
+          "Y0": 6232000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              307000.0,
+              6233000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "56HLH 07000 33000"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              311000.0,
+              6233000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "56HLH 11000 33000"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              311000.0,
+              6239000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "56HLH 11000 39000"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              307000.0,
+              6239000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "56HLH 07000 39000"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          -33.99878806859538,
+          150.93247814672463
+        ],
+        "16": [
+          -33.99878806859538,
+          150.93247814672463
+        ],
+        "18": [
+          -33.999185466407354,
+          150.9319813511874
+        ],
+        "20": [
+          -33.999185466407354,
+          150.9319813511874
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          -33.999185466407354,
+          150.9319813511874
+        ],
+        "phase8m": [
+          -33.99915897328844,
+          150.9320144710337
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944444444285,
+          1.68447668982105e-11,
+          305364.999999987,
+          4.24376964845047e-11,
+          8.81944444443394,
+          6231364.99999995
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": 153.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 10000000.0,
+          "utmZone": 56,
+          "hemisphere": "S"
+        },
+        "datum": {
+          "id": "GDA94"
+        }
+      }
+    },
+    {
+      "id": "sf27_iso",
+      "relativeFile": "testdata/geopdf/tacmap_grid_sf27_iso.pdf",
+      "sha256": "b58a32c253a1271c09371e563a2d1e8aa2d40caa19971b7b76a8685211649493",
+      "bytes": 7814,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.767763757035354,
+        -122.44471248263764
+      ],
+      "centerPrintedPlane": [
+        549000.0,
+        4180000.0
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "independent-projection-datum-reference",
+      "metricNote": "Printed transverseMercator / NAD27 coordinate grid differs from WGS84 MGRS; direct red/grey coincidence is not an acceptance criterion. Compare independent construction/reference coordinates, raster geometry and live/baked consistency.",
+      "bindingSource": "pdf_georef.json:sheets/sf27_iso",
+      "gridSpacingM": 1000.0,
+      "calibrationPoints": [],
+      "constructionTruth": {
+        "plane": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": "NAD27",
+        "pageToPlane": [
+          8.81944444449618,
+          0.0,
+          545365.0,
+          0.0,
+          8.81944444449618,
+          4175365.0
+        ],
+        "frame": {
+          "X0": 546000,
+          "Y0": 4176000,
+          "W": 6000,
+          "H": 8000
+        },
+        "gridStep": 1000.0,
+        "fiducialTargets": [
+          {
+            "id": "F1",
+            "plane": [
+              547000.0,
+              4177000.0
+            ],
+            "page": [
+              185.3858268,
+              185.3858268
+            ],
+            "label": "547000mE 4177000mN"
+          },
+          {
+            "id": "F2",
+            "plane": [
+              551000.0,
+              4177000.0
+            ],
+            "page": [
+              638.9291339,
+              185.3858268
+            ],
+            "label": "551000mE 4177000mN"
+          },
+          {
+            "id": "F3",
+            "plane": [
+              551000.0,
+              4183000.0
+            ],
+            "page": [
+              638.9291339,
+              865.7007874
+            ],
+            "label": "551000mE 4183000mN"
+          },
+          {
+            "id": "F4",
+            "plane": [
+              547000.0,
+              4183000.0
+            ],
+            "page": [
+              185.3858268,
+              865.7007874
+            ],
+            "label": "547000mE 4183000mN"
+          }
+        ]
+      },
+      "measurementCentersByZoom": {
+        "14": [
+          37.76821172325813,
+          -122.44414142712245
+        ],
+        "16": [
+          37.76821172325813,
+          -122.44414142712245
+        ],
+        "18": [
+          37.76780855378614,
+          -122.44465537739612
+        ],
+        "20": [
+          37.76780855378614,
+          -122.44465537739612
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.76780855378614,
+          -122.44465537739612
+        ],
+        "phase8m": [
+          37.767835431822895,
+          -122.44462111421817
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.81944444440944,
+          -2.66305101427449e-11,
+          545365.000000038,
+          1.67683980281358e-11,
+          8.81944444442085,
+          4175365.00000001
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "NAD27"
+        }
+      }
+    },
+    {
+      "id": "usgs_sf_north",
+      "relativeFile": "testdata/geopdf/tacmap_usgs_sf_north_vp.pdf",
+      "sha256": "08d3cffa0a3ac0e3ff436ef34aa3b823a79f463c3099f06a3264853c746fa8db",
+      "bytes": 4971,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1728.0,
+        2088.0
+      ],
+      "cropBox": [
+        0.0,
+        0.0,
+        1728.0,
+        2088.0
+      ],
+      "rotate": 0,
+      "center": [
+        37.81102374169908,
+        -122.43196348768714
+      ],
+      "centerPrintedPlane": [
+        550000,
+        4185000
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "printed-WGS84-UTM-overlap",
+      "metricNote": "Synthetic USGS stand-in grid drawn from independent PROJ fixture model, not real USGS artwork.",
+      "bindingSource": "pdf_georef.json:sheets/usgs_sf_north",
+      "gridSpacingM": 1000,
+      "calibrationPoints": [],
+      "measurementCentersByZoom": {
+        "14": [
+          37.81147163854243,
+          -122.43139202093093
+        ],
+        "16": [
+          37.81147163854243,
+          -122.43139202093093
+        ],
+        "18": [
+          37.8110685315122,
+          -122.43190634132216
+        ],
+        "20": [
+          37.8110685315122,
+          -122.43190634132216
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.8110685315122,
+          -122.43190634132216
+        ],
+        "phase8m": [
+          37.81109540538633,
+          -122.43187205347007
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.46701544518214,
+          -0.0508626199130676,
+          542294.742283661,
+          0.0507963831034679,
+          8.46628267220587,
+          4175839.84862562
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "NAD83"
+        }
+      }
+    },
+    {
+      "id": "vp_runs_out_lgidict_too",
+      "relativeFile": "testdata/geopdf/tacmap_budget_vp_runs_out_lgidict_too.pdf",
+      "sha256": "570066dcac0975118cf97396cf2b7a79991099bc54bd2e24351122c24abe5c79",
+      "bytes": 19128,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "reject",
+      "expectedGeorefReason": "malformed",
+      "expectedImportDecisionBeforeProbe": "addRejected",
+      "expectedGeorefOrigin": null,
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-georef-reject",
+      "metricNote": "No ink. Binding georef parser reject is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/vp_runs_out_lgidict_too",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {}
+    },
+    {
+      "id": "lgidict_runs_out_after_layers",
+      "relativeFile": "testdata/geopdf/tacmap_budget_lgidict_runs_out_after_layers.pdf",
+      "sha256": "fda7b860a0a797f3f6f36cc03274bdb36c01849e59f8cf72c99769aa7ec8df97",
+      "bytes": 18687,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "reject",
+      "expectedGeorefReason": "malformed",
+      "expectedImportDecisionBeforeProbe": "addRejected",
+      "expectedGeorefOrigin": null,
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-georef-reject",
+      "metricNote": "No ink. Binding georef parser reject is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/lgidict_runs_out_after_layers",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {}
+    },
+    {
+      "id": "vp_read_in_full_then_lgidict_runs_out",
+      "relativeFile": "testdata/geopdf/tacmap_budget_vp_read_in_full_then_lgidict_runs_out.pdf",
+      "sha256": "b1c2423298570f3d56b6fabe43e64ee2879a5f428ec4806d1ca317bdc00097cc",
+      "bytes": 19195,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefReason": null,
+      "expectedImportDecisionBeforeProbe": "addAndActivate",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-blank",
+      "metricNote": "No ink. Binding georef parser accept is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/vp_read_in_full_then_lgidict_runs_out",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.81944444443947,
+          4.17106046820989e-11,
+          545364.999999964,
+          -4.85980072645135e-11,
+          8.81944444443702,
+          4175365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "vp_rejected_then_lgidict_runs_out",
+      "relativeFile": "testdata/geopdf/tacmap_budget_vp_rejected_then_lgidict_runs_out.pdf",
+      "sha256": "c6642f2469aaa386f4a58b46753bf6f71dde0f34ff0b13b643d85bcfe076c1b6",
+      "bytes": 19195,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "reject",
+      "expectedGeorefReason": "rmsGate",
+      "expectedImportDecisionBeforeProbe": "addRejected",
+      "expectedGeorefOrigin": null,
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-georef-reject",
+      "metricNote": "No ink. Binding georef parser reject is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/vp_rejected_then_lgidict_runs_out",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {}
+    },
+    {
+      "id": "exactly_at_limit",
+      "relativeFile": "testdata/geopdf/tacmap_budget_exactly_at_limit.pdf",
+      "sha256": "b0d626d7e376de9e898fea4466ba96966efa10c81d83a50b6dfa5320899226d8",
+      "bytes": 34913,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefReason": null,
+      "expectedImportDecisionBeforeProbe": "addAndActivate",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-blank",
+      "metricNote": "No ink. Binding georef parser accept is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/exactly_at_limit",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.819444444496,
+          0.0,
+          545365.0,
+          0.0,
+          8.819444444496,
+          4175365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "one_over_limit",
+      "relativeFile": "testdata/geopdf/tacmap_budget_one_over_limit.pdf",
+      "sha256": "379b9a0f568fe153eb35ac9999cf9a08aedbd3b4cd7246d984deb9d796387bb4",
+      "bytes": 34915,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "reject",
+      "expectedGeorefReason": "malformed",
+      "expectedImportDecisionBeforeProbe": "addRejected",
+      "expectedGeorefOrigin": null,
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-georef-reject",
+      "metricNote": "No ink. Binding georef parser reject is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/one_over_limit",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {}
+    },
+    {
+      "id": "oversized_array_not_charged",
+      "relativeFile": "testdata/geopdf/tacmap_budget_oversized_array_not_charged.pdf",
+      "sha256": "620a81c269211d7d3908b7b1924bd06cc10478a78bfd327545e85d40dacf6047",
+      "bytes": 34958,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefReason": null,
+      "expectedImportDecisionBeforeProbe": "addAndActivate",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-blank",
+      "metricNote": "No ink. Binding georef parser accept is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/oversized_array_not_charged",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.819444444496,
+          0.0,
+          545365.0,
+          0.0,
+          8.819444444496,
+          4175365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "non_geo_viewports_not_charged",
+      "relativeFile": "testdata/geopdf/tacmap_budget_non_geo_viewports_not_charged.pdf",
+      "sha256": "a7fa0ba8653c49116eefaf7c85a6b003449e9b0a11e822a137db3b1b67124959",
+      "bytes": 18225,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefReason": null,
+      "expectedImportDecisionBeforeProbe": "addAndActivate",
+      "expectedGeorefOrigin": "lgiDict",
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-blank",
+      "metricNote": "No ink. Binding georef parser accept is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/non_geo_viewports_not_charged",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.819444444496,
+          0.0,
+          545365.0,
+          0.0,
+          8.819444444496,
+          4175365.0
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "catalog_vp_runs_out",
+      "relativeFile": "testdata/geopdf/tacmap_budget_catalog_vp_runs_out.pdf",
+      "sha256": "be15f34f70d8dbf7168d7810decc6bbd9879b00ba1b23969a9429db2877cbdf1",
+      "bytes": 18623,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "reject",
+      "expectedGeorefReason": "malformed",
+      "expectedImportDecisionBeforeProbe": "addRejected",
+      "expectedGeorefOrigin": null,
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-georef-reject",
+      "metricNote": "No ink. Binding georef parser reject is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/catalog_vp_runs_out",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {}
+    },
+    {
+      "id": "registration_rows_charged",
+      "relativeFile": "testdata/geopdf/tacmap_budget_registration_rows_charged.pdf",
+      "sha256": "1e4182bf34a645c7a854f284a4b68474feea5a98d28f7dda6a52a593c0fd330f",
+      "bytes": 30866,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        824.3149606,
+        1051.0866142
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "reject",
+      "expectedGeorefReason": "malformed",
+      "expectedImportDecisionBeforeProbe": "addRejected",
+      "expectedGeorefOrigin": null,
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-georef-reject",
+      "metricNote": "No ink. Binding georef parser reject is distinct from final normal import: contract M probe draws georef or provisional rejected-page placement before any library commit, so exact blank failure/no library entry dominates.",
+      "bindingSource": "pdf_georef.json:rejections/pageBudgetCases/registration_rows_charged",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {}
+    },
+    {
+      "id": "render_markers",
+      "relativeFile": "testdata/geopdf/tacmap_render_markers.pdf",
+      "sha256": "157e7ae89ddf8433283fb548e767112b70ea8a7d8724b780454b18de312f495f",
+      "bytes": 1773,
+      "page": 0,
+      "mediaBox": [
+        100.0,
+        100.0,
+        700.0,
+        500.0
+      ],
+      "cropBox": [
+        120.0,
+        115.0,
+        680.0,
+        490.0
+      ],
+      "rotate": 90,
+      "center": [
+        37.76601398122353,
+        -122.4436616842517
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "raster-feature-geometry",
+      "metricNote": "No comparable printed 1000m grid. Markers: corner/ring crop/orientation. Dense: red 12pt spacing is not 1000m; use image feature/raster live-baked seam comparison.",
+      "bindingSource": "pdf_tile_render.json:markers",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          0.461574058572192,
+          8.80735770233059,
+          546133.742017944,
+          -8.80735770240177,
+          0.461574058609881,
+          4183294.08941606
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "render_blank",
+      "relativeFile": "testdata/geopdf/tacmap_render_blank.pdf",
+      "sha256": "e819e5487a98afacdb337e4cb56067815eb1c719928d83a364d16805755645a5",
+      "bytes": 1228,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        400.0,
+        300.0
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.774917387568635,
+        -122.42088475359895
+      ],
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "noInk",
+      "metricClass": "expected-blank",
+      "metricNote": "No comparable printed 1000m grid. Markers: corner/ring crop/orientation. Dense: red 12pt spacing is not 1000m; use image feature/raster live-baked seam comparison.",
+      "bindingSource": "pdf_tile_render.json:blank",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.81944444443555,
+          2.46263180787747e-12,
+          549236.111111138,
+          -4.07455205378129e-11,
+          8.81944444441469,
+          4179677.08333335
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "render_dense",
+      "relativeFile": "testdata/geopdf/tacmap_render_dense.pdf",
+      "sha256": "8ca38e0c3ae013e9c2e12bbf7a4087e9e6531b73c8a0fb2ca8a9b8d930f1d9ec",
+      "bytes": 4231,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        612.0,
+        792.0
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": [
+        37.75702779496351,
+        -122.44940517757938
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "raster-feature-geometry",
+      "metricNote": "No comparable printed 1000m grid. Markers: corner/ring crop/orientation. Dense: red 12pt spacing is not 1000m; use image feature/raster live-baked seam comparison.",
+      "bindingSource": "pdf_tile_render.json:dense",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.81944444439473,
+          -1.7518390087825e-11,
+          545796.840277781,
+          2.06586425928588e-11,
+          8.81944444444711,
+          4175503.09027776
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "render_blank_corner",
+      "relativeFile": "testdata/geopdf/tacmap_render_blank_corner.pdf",
+      "sha256": "877454859d6742f04eebff260d18a9983fbe9d84127c44dc31a6ea8777a0fe7e",
+      "bytes": 1344,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        600.0,
+        480.0
+      ],
+      "cropBox": null,
+      "rotate": 0,
+      "center": null,
+      "expectedImportOutcome": "renderFailure:blank",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "noInkInsideCrop",
+      "metricClass": "expected-blank",
+      "metricNote": "All four black marks lie outside Bounds quad. Clipped raster must fail blank; counting bounding-box corner ink is incorrect.",
+      "bindingSource": "pdf_tile_render.json:blankCheck",
+      "gridSpacingM": null,
+      "calibrationPoints": [],
+      "expectedReference": {
+        "affine": [
+          8.81944444449368,
+          7.28776349432633e-11,
+          547854.166666649,
+          1.2565708776385e-10,
+          8.81944444449358,
+          4180383.33333326
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "WGS84"
+        }
+      }
+    },
+    {
+      "id": "real_usgs_sf_north",
+      "relativeFile": "samples/USGS_SF_North.pdf",
+      "sha256": "46d26fdd22bdafd9c47b312a94b7bff0c8b288048bacc88c01fea1806ab2a61f",
+      "bytes": 39825346,
+      "page": 0,
+      "mediaBox": [
+        0.0,
+        0.0,
+        1728.0,
+        2088.0
+      ],
+      "rotate": 0,
+      "center": [
+        37.81102374169908,
+        -122.43196348768714
+      ],
+      "centerPrintedPlane": [
+        550000,
+        4185000
+      ],
+      "expectedImportOutcome": "addAndActivate",
+      "expectedGeorefOutcome": "accept",
+      "expectedGeorefOrigin": "adobeVP",
+      "expectedRenderOutcome": "ink",
+      "metricClass": "real-USGS-orange-grid-reference",
+      "metricNote": "Real orange NAD83 grid: pinned independently measured PDF artwork. Affine control model has up to 0.694m intrinsic printed-artwork displacement; report raw <=1 physical pixel separately from renderer residual relative to artwork/reference. Do not dismiss highzoom raw displacement as renderer error or call it a pass.",
+      "gridSpacingM": 1000,
+      "calibrationPoints": [],
+      "measurementCentersByZoom": {
+        "14": [
+          37.81147163854243,
+          -122.43139202093093
+        ],
+        "16": [
+          37.81147163854243,
+          -122.43139202093093
+        ],
+        "18": [
+          37.8110685315122,
+          -122.43190634132216
+        ],
+        "20": [
+          37.8110685315122,
+          -122.43190634132216
+        ]
+      },
+      "measurementPhaseCenters": {
+        "phase5m": [
+          37.8110685315122,
+          -122.43190634132216
+        ],
+        "phase8m": [
+          37.81109540538633,
+          -122.43187205347007
+        ]
+      },
+      "expectedReference": {
+        "affine": [
+          8.46701544518214,
+          -0.0508626199130676,
+          542294.742283661,
+          0.0507963831034679,
+          8.46628267220587,
+          4175839.84862562
+        ],
+        "crs": {
+          "kind": "transverseMercator",
+          "lat0": 0.0,
+          "lon0": -123.0,
+          "k0": 0.9996,
+          "fe": 500000.0,
+          "fn": 0.0,
+          "utmZone": 10,
+          "hemisphere": "N"
+        },
+        "datum": {
+          "id": "NAD83"
+        }
+      }
+    }
+  ]
+}

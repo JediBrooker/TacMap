@@ -14,6 +14,9 @@
 <meta property="og:url" content="https://tacmap.app/">
 <meta property="og:image" content="https://tacmap.app/assets/brand/app-icon-512.png">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" hreflang="en" href="https://tacmap.app/">
+<link rel="alternate" hreflang="de" href="https://tacmap.app/de">
+<link rel="alternate" hreflang="x-default" href="https://tacmap.app/">
 <style>
   :root{
     --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -68,7 +71,9 @@
     display:inline-flex;align-items:center;gap:10px;
   }
   .eyebrow::before{content:"";width:22px;height:1px;background:var(--signal)}
-  h1,h2,h3{font-family:var(--font-sans);line-height:1.02;letter-spacing:-.01em}
+  /* break-word only kicks in when a single word is wider than the line,
+     mostly for the long german compounds on /de at phone width */
+  h1,h2,h3{font-family:var(--font-sans);line-height:1.02;letter-spacing:-.01em;overflow-wrap:break-word}
 
   /* ---- top nav ---- */
   header.nav{position:sticky;top:0;z-index:20;
@@ -173,7 +178,10 @@
   @media(max-width:900px){#custom-symbols .feats{grid-template-columns:1fr}}
 
   /* ---- compare ---- */
-  .cmp{margin-top:40px;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  /* overflow-x auto not hidden, on a narrow phone the last column used to get
+     clipped silently. now it tightens up first and scrolls inside the box if
+     it still doesnt fit */
+  .cmp{margin-top:40px;border:1px solid var(--line);border-radius:5px;overflow-x:auto}
   .cmp table{width:100%;border-collapse:collapse;font-size:15px}
   .cmp th,.cmp td{text-align:left;padding:15px 18px;border-bottom:1px solid var(--line-2);
     vertical-align:top}
@@ -184,6 +192,7 @@
   .cmp td:first-child{color:var(--ink-dim);font-family:var(--font-mono);font-size:13px}
   .cmp td.us{color:var(--ink);font-weight:500}
   .cmp tr:last-child td{border-bottom:none}
+  @media(max-width:600px){.cmp th,.cmp td{padding:12px 8px;hyphens:auto}}
   .cmp-note{margin-top:16px;font-size:14px;color:var(--ink-faint);max-width:62ch}
 
   /* ---- feature list ---- */
@@ -193,7 +202,16 @@
   .feat .fnum{font-family:var(--font-mono);font-size:12px;color:var(--signal);letter-spacing:.1em}
   .feat h3{font-size:22px;font-weight:600;margin:14px 0 10px}
   .feat p{color:var(--ink-dim);font-size:15.5px}
+  /* small print on a card, eg where the data comes from and what gets sent */
+  .feat p.note{margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2);font-size:14px}
   @media(max-width:760px){.feats{grid-template-columns:1fr}}
+  .also{margin-top:22px;color:var(--ink-dim);font-size:15px;max-width:74ch}
+
+  /* feature video, a short muted loop cut from real app captures
+     (scripts/build_preview_video.py) */
+  .feature-video{margin-top:40px;border:1px solid var(--line);border-radius:6px;
+    overflow:hidden;background:var(--void-2)}
+  .feature-video video{display:block;width:100%;height:auto;max-height:78vh;object-fit:contain}
 
   /* ---- screens rail ---- */
   .rail{margin-top:40px;display:flex;gap:18px;overflow-x:auto;overflow-y:hidden;
@@ -240,6 +258,9 @@
   .vlink .vt{font-family:var(--font-sans);font-weight:600;font-size:17px}
   .vlink .vd{font-size:13px;color:var(--ink-dim);margin-top:3px}
   .vlink .arrow{color:var(--signal);font-family:var(--font-mono);flex:none}
+  /* long german words pushed the arrow off a 320px screen */
+  .vlink>span:first-child{min-width:0}
+  .vlink span:lang(de){hyphens:auto}
   @media(max-width:900px){.verify .vgrid{grid-template-columns:1fr;gap:32px}}
 
   /* ---- faq ---- */
@@ -268,7 +289,7 @@
   footer{border-top:1px solid var(--line-2);padding:40px 0;background:var(--void-2)}
   .foot-in{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
   .foot-in .mono{font-size:12px;color:var(--ink-faint);letter-spacing:.06em}
-  .foot-links{display:flex;gap:22px}
+  .foot-links{display:flex;flex-wrap:wrap;gap:10px 22px}
   .foot-links a{font-size:13px;color:var(--ink-dim)}
   .foot-links a:hover{color:var(--ink)}
 
@@ -309,6 +330,7 @@
     <nav class="nav-links" id="section-navigation" aria-label="Main navigation">
       <a href="#compare">vs TAK</a>
       <a href="#capabilities">Capabilities</a>
+      <a href="#field-tools">Field tools</a>
       <a href="#custom-symbols">Custom symbols</a>
       <a href="#verify">Security</a>
       <a href="#faq">FAQ</a>
@@ -439,8 +461,11 @@
         <div class="fnum">C-05</div>
         <h3>Bring your own maps</h3>
         <p>Import PDF, GeoPDF, and MBTiles packs. TacMap reads embedded
-          georeferencing where available and calibrates ordinary map sheets
-          on-device when it is not.</p>
+          georeferencing in the sheet's own projection and datum, so the MGRS
+          grid sits on the printed grid, and calibrates ordinary map sheets
+          on-device from four grid references when it is not. Sheets stay sharp
+          as you zoom and can be baked to offline tiles. Mission objects come in
+          from KML, KMZ or GeoJSON and go back out the same way.</p>
       </div>
       <div class="feat">
         <div class="fnum">C-06</div>
@@ -450,6 +475,86 @@
           receiving mission or location payloads.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- FIELD TOOLS -->
+<a id="field-tools"></a>
+<section class="blk flush-top">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 03</b> Field tools</div>
+    <h2>Field craft, built into the map.</h2>
+    <p class="sub">Line of sight, range rings, twilight times and a red screen
+      for after dark. Everything here works offline except the elevation
+      profile, which needs online lookups.</p>
+
+    <figure class="feature-video">
+      <video autoplay muted loop playsinline controls preload="metadata"
+             width="1280" height="720" poster="assets/video/feature-poster.jpg"
+             aria-label="TacMap field tools: line of sight, range rings, sun and moon times and night mode.">
+        <source src="assets/video/feature.webm" type="video/webm">
+        <source src="assets/video/feature.mp4" type="video/mp4">
+      </video>
+    </figure>
+
+    <div class="feats">
+      <div class="feat">
+        <div class="fnum">F-01</div>
+        <h3>Elevation profile and line of sight</h3>
+        <p>Open it from the Measure bar with two or more points, or from a
+          selected line. The chart shows lowest and highest ground, total climb
+          and descent, and height and distance wherever you touch. Between two
+          points, TacMap checks line of sight for observer and target heights
+          from 0 to 500 m, allowing for earth curvature and refraction: a
+          blocked sight line turns red, the worst point is marked and dead
+          ground is greyed out.</p>
+        <p class="note">Heights are Copernicus DEM data from Open-Meteo, about
+          30 m apart, so trees and buildings are not included. Profiles only
+          fetch while online lookups are on, and each one sends up to 200
+          points along the line.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-02</div>
+        <h3>Range rings</h3>
+        <p>Add up to 10 rings at your chosen spacing around any symbol or map
+          point. They sync, export and undo like other drawings, and rings on a
+          symbol follow it when it moves.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-03</div>
+        <h3>Sun and moon</h3>
+        <p>Nautical and civil twilight (BMNT/EENT, BMCT/EECT), sunrise,
+          sunset, moonrise, moonset and moon illumination for any point, today
+          or tomorrow. Calculated on the device, so it works offline and sends
+          nothing.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-04</div>
+        <h3>Night mode</h3>
+        <p>The moon button on the map turns TacMap red, menus and dialogs
+          included, and dims it to protect your night vision. Set how dim under
+          Settings → Display.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-05</div>
+        <h3>Long-press menu</h3>
+        <p>Hold a finger still on an empty spot for about a second to place a
+          symbol there, measure from it, add range rings, see sun and moon
+          times, or copy the coordinate. Dragging the map never opens it.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-06</div>
+        <h3>KML and KMZ export</h3>
+        <p>Layers become KML folders; symbols and drawings become styled
+          placemarks carrying their MGRS grid. KMZ with Symbols bundles each
+          symbol’s image, so Google Earth, ATAK and GIS tools show your actual
+          APP-6, task, marker and custom symbols.</p>
+      </div>
+    </div>
+    <p class="also">Also in 3.0: sort the symbol list by newest, name, distance
+      from the crosshair, affiliation or layer; an optional Keep screen on
+      setting for a mounted map; and a guided tour on first run that you can
+      replay from About &amp; Credits → Replay Tour.</p>
   </div>
 </section>
 
@@ -485,8 +590,7 @@
       <a class="btn btn-primary" href="/custom-symbols">Open the import guide →</a>
       <a class="btn btn-ghost" href="/de/custom-symbols" lang="de" hreflang="de">Anleitung auf Deutsch →</a>
     </div>
-    <p class="sub">Requires TacMap 2.0.2 build 68 or later with custom symbol support.
-      This build is being prepared for store release. The guide includes the pack download.</p>
+    <p class="sub">Requires TacMap 2.0.2 or later. The guide includes the pack download.</p>
   </div>
 </section>
 
@@ -494,102 +598,79 @@
 <a id="screens"></a>
 <section class="blk flush-top">
   <div class="wrap rv">
-    <div class="gridref"><b>REF 03</b> Screens</div>
+    <div class="gridref"><b>REF 04</b> Screens</div>
     <h2>Current store screens across both platforms.</h2>
-    <p class="sub">These iPhone and Android phone screens were checked against
-      the 2.0 release candidate. Older Android and iPad artwork is intentionally
-      excluded until recaptured; scroll sideways or swipe on a phone.</p>
+    <p class="sub">Captured from the real app on iPhone and Android, the
+      same eight screens we ship to both stores. Scroll sideways or swipe on a
+      phone.</p>
 
     <div class="rail" tabindex="0" role="region" aria-label="TacMap screenshots, horizontally scrollable">
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/02-unit-sync.webp" type="image/webp">
-          <img src="assets/store/02-unit-sync.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="One map, the whole unit. Mission payloads and TacMap Chat stay end-to-end encrypted; the relay sees routing, session and traffic metadata.">
+          <source srcset="assets/store/01-hero.webp" type="image/webp">
+          <img src="assets/store/01-hero.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Own the tactical picture. NATO APP-6 units, tasks and range rings over a live MGRS grid.">
         </picture>
-        <figcaption><b>iOS</b> · Unit Sync</figcaption>
+        <figcaption><b>iOS</b> · Tactical picture</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/android-01-field-tools.webp" type="image/webp">
-          <img src="assets/store/android-01-field-tools.jpg" width="660" height="1283" loading="lazy" decoding="async"
-               alt="Everything in reach. Current Android field-tools menu with search, symbology, drawings, recording, TacMap Chat and Unit Sync.">
+          <source srcset="assets/store/android-02-line-of-sight.webp" type="image/webp">
+          <img src="assets/store/android-02-line-of-sight.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="See the ground first. Elevation profile with a line of sight check and dead ground marked.">
         </picture>
-        <figcaption><b>Android</b> · Field tools</figcaption>
+        <figcaption><b>Android</b> · Line of sight</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/android-02-unit-sync.webp" type="image/webp">
-          <img src="assets/store/android-02-unit-sync.jpg" width="660" height="1283" loading="lazy" decoding="async"
-               alt="One map, the whole unit. Current Android Unit Sync setup with the 2.0 relay and encryption disclosure.">
+          <source srcset="assets/store/03-night-mode.webp" type="image/webp">
+          <img src="assets/store/03-night-mode.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Keep your night vision. Night mode turns every screen red and dim.">
         </picture>
-        <figcaption><b>Android</b> · Unit Sync</figcaption>
+        <figcaption><b>iOS</b> · Night mode</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/03-symbols.webp" type="image/webp">
-          <img src="assets/store/03-symbols.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Mark the ground. Place NATO APP-6 symbols, then trace routes and areas point by point.">
+          <source srcset="assets/store/android-04-unit-sync.webp" type="image/webp">
+          <img src="assets/store/android-04-unit-sync.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="One map, the whole unit. TacMap Chat in an end-to-end encrypted Unit Sync room.">
         </picture>
-        <figcaption><b>iOS</b> · Symbols and drawings</figcaption>
+        <figcaption><b>Android</b> · Unit Sync & Chat</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/04-recording.webp" type="image/webp">
-          <img src="assets/store/04-recording.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Record your route. A live REC breadcrumb with point count, exported as standard GPX.">
+          <source srcset="assets/store/05-sun-moon.webp" type="image/webp">
+          <img src="assets/store/05-sun-moon.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="First light to last light. BMNT, EENT, sunrise, moonrise and illumination, worked out offline.">
         </picture>
-        <figcaption><b>iOS</b> · Track recording</figcaption>
+        <figcaption><b>iOS</b> · Sun & moon</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/05-weather.webp" type="image/webp">
-          <img src="assets/store/05-weather.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Go, caution, no-go. When online lookups are enabled, map-centre wind and gusts drive the drone flight-safety call.">
+          <source srcset="assets/store/android-06-pdfmap.webp" type="image/webp">
+          <img src="assets/store/android-06-pdfmap.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="Bring your own map. An imported GeoPDF marked up with search and rescue markers.">
         </picture>
-        <figcaption><b>iOS</b> · Online weather</figcaption>
+        <figcaption><b>Android</b> · Offline maps</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/06-basemaps.webp" type="image/webp">
-          <img src="assets/store/06-basemaps.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Satellite or terrain. Esri imagery or topography and OpenTopoMap topography, switched in a tap when online basemaps are enabled.">
+          <source srcset="assets/store/07-symbol-builder.webp" type="image/webp">
+          <img src="assets/store/07-symbol-builder.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Build any unit. The NATO APP-6 symbol builder with a live preview.">
         </picture>
-        <figcaption><b>iOS</b> · Online basemaps</figcaption>
+        <figcaption><b>iOS</b> · Symbology</figcaption>
       </figure>
       <figure class="shot">
         <picture>
-          <source srcset="assets/store/07-import-export.webp" type="image/webp">
-          <img src="assets/store/07-import-export.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="In and out, anywhere. Import GeoPDF, KML and KMZ; export GeoJSON and GPX.">
+          <source srcset="assets/store/android-08-export.webp" type="image/webp">
+          <img src="assets/store/android-08-export.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="Your data, anywhere. Export KML, KMZ with symbol images, GeoJSON and GPX.">
         </picture>
-        <figcaption><b>iOS</b> · Import and export</figcaption>
-      </figure>
-      <figure class="shot">
-        <picture>
-          <img src="assets/store/08-measure.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Range, area and bearing measurement on iOS, with a plotted path and NATO-mils readout.">
-        </picture>
-        <figcaption><b>iOS</b> · Measure</figcaption>
-      </figure>
-      <figure class="shot">
-        <picture>
-          <source srcset="assets/store/09-search.webp" type="image/webp">
-          <img src="assets/store/09-search.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Jump to a full or partial MGRS reference locally, or search a place name when online lookups are enabled.">
-        </picture>
-        <figcaption><b>iOS</b> · Search</figcaption>
-      </figure>
-      <figure class="shot">
-        <picture>
-          <source srcset="assets/store/10-pdfmap.webp" type="image/webp">
-          <img src="assets/store/10-pdfmap.jpg" width="660" height="1434" loading="lazy" decoding="async"
-               alt="Bring your own map. Import a GeoPDF or scanned PDF map sheet, georeferenced on-device, with your mission picture on top.">
-        </picture>
-        <figcaption><b>iOS</b> · PDF map</figcaption>
+        <figcaption><b>Android</b> · Import & export</figcaption>
       </figure>
     </div>
-    <p class="rail-hint">9 verified iPhone screens · 2 verified Android screens</p>
+    <p class="rail-hint">8 store screens · iPhone and Android</p>
   </div>
 </section>
 
@@ -597,7 +678,7 @@
 <a id="who"></a>
 <section class="blk flush-top">
   <div class="wrap rv">
-    <div class="gridref"><b>REF 04</b> Built for</div>
+    <div class="gridref"><b>REF 05</b> Built for</div>
     <h2>Field tools that remain useful when signal drops.</h2>
     <div class="who">
       <div class="who-card">
@@ -632,7 +713,7 @@
   <div class="wrap rv">
     <div class="vgrid">
       <div>
-        <div class="gridref"><b>REF 05</b> Verify</div>
+        <div class="gridref"><b>REF 06</b> Verify</div>
         <h2>Don't take our word for it. Read it.</h2>
         <p class="sub">The whole security story is documented and open. The sync
           layer is end-to-end encrypted, while the relay handles encrypted
@@ -666,7 +747,7 @@
 <a id="faq"></a>
 <section class="blk">
   <div class="wrap rv">
-    <div class="gridref"><b>REF 06</b> FAQ</div>
+    <div class="gridref"><b>REF 07</b> FAQ</div>
     <h2>Straight answers.</h2>
     <div class="faq">
       <div class="qa"><div class="q">Do I need a server?</div>
@@ -688,6 +769,13 @@
         <div class="a">Presence and sync are end-to-end encrypted. Mission
           objects, calibration metadata and tracks are encrypted in app-private
           storage; imported map bytes remain private under device file protection.</div></div>
+      <div class="qa"><div class="q">Do the field tools work offline?</div>
+        <div class="a">Range rings, sun and moon times, night mode and KML/KMZ
+          export all work offline. The elevation profile and line of sight need
+          terrain heights from Open-Meteo’s Copernicus DEM, so they only fetch
+          while online lookups are on, which is off by default. Each profile
+          sends up to 200 points along the line to Open-Meteo; the
+          <a href="/privacy">privacy policy</a> has the details.</div></div>
       <div class="qa"><div class="q">Does “Routed” mean a Chat message was read?</div>
         <div class="a">No. TacMap Chat v1 is live-only and has no endpoint
           delivery or read receipt. “Routed” or “Sent to room” means only that the
@@ -696,10 +784,18 @@
         <div class="a">Native iOS and Android apps in one repository. Shared data
           contracts and fixtures cover cross-platform behaviour; native layouts
           can differ, and the screenshot gallery is not the parity test suite.</div></div>
-      <div class="qa"><div class="q">What does Export All Mission Objects include?</div>
+      <div class="qa"><div class="q">Which languages?</div>
+        <div class="a">English and German. Choose English, Deutsch or Device
+          language under Settings, Privacy &amp; OPSEC → Language. Translations
+          ship in the app and work offline; your own names, notes and messages
+          stay as you wrote them. This page is also
+          <a href="/de" lang="de" hreflang="de">auf Deutsch</a>.</div></div>
+      <div class="qa"><div class="q">What can I export?</div>
         <div class="a"><strong>Export All Mission Objects</strong> creates GeoJSON
-          for waypoints, symbols, drawings, and layers. A recorded route remains
-          a separate GPX export.</div></div>
+          for waypoints, symbols, drawings, and layers. <strong>Export KML</strong>
+          and <strong>KMZ with Symbols</strong> write symbols and drawings for
+          Google Earth, ATAK and GIS tools, with layers as folders. A recorded
+          route remains a separate GPX export.</div></div>
       <div class="qa"><div class="q">Is it really private?</div>
         <div class="a">No TacMap account, behavioural analytics, ads, or developer
           crash uploads. Optional tiles/lookups and Unit Sync are disclosed and
@@ -717,7 +813,8 @@
     <h2>Get your team on one map.</h2>
     <p>Download TacMap for offline field tools. When connected, share a join code
       for encrypted Unit Sync presence, mission objects, and TacMap Chat. No
-      TacMap account.</p>
+      TacMap account. Three days free, then a one-time unlock with no
+      subscription.</p>
     <div class="cta-row">
       <a class="store" href="https://apps.apple.com/au/app/tacmap/id6773175573"><img src="/assets/badges/app-store.svg" width="144" height="48" alt="Download on the App Store"></a>
       <a class="store google-play" href="https://play.google.com/store/apps/details?id=com.tacmap"><img src="/assets/badges/google-play.png" width="186" height="72" alt="Get it on Google Play"></a>

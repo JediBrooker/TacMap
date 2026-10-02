@@ -3,158 +3,191 @@ import UIKit
 import MapKit
 import PDFKit
 
-/// PDF-backed map source. After import the map renders this PDF as a
-/// UIImageView subview pinned to the PDF’s geographic bounds.
+/// PDF-backed map source. Placement is a PdfGeoreference (page space ->
+/// projected plane -> WGS84). It comes from the GeoPDF's own metadata (ISO /VP
+/// or LGIDict, via GeoPDFReader), or the user's fiduciaries fitted in UTM
+/// (applyCalibration), or for a plain PDF a provisional camera-centred guess
+/// that's only there so the user can calibrate. That last one has
+/// isUncalibrated set and the UI has to say so.
 ///
-/// Bounds come from one of three sources, in order:
-///  1. OGC GeoPDF (LGIDict) or Adobe Geospatial (/VP/Measure) via GeoPDFReader.
-///  2. Known-sheet table - hardcoded bounds for the demo Holsworthy sheet.
-///  3. Camera-centre fallback - 10km square around current camera.
-///
-/// Bounds can also be re-derived at runtime by applyCalibration which feeds
-/// a least-squares affine fit from user-placed fiduciaries.
+/// Drawn by PDFTileSource (warped web mercator tiles straight off the page
+/// through georef.toPage). bounds is just a lon/lat box for framing and the
+/// v1 fields of the saved session.
 final class PDFMapSource: MapSource {
     let id = UUID()
     let displayName: String
-    var kind: MapSourceKind
+    private(set) var kind: MapSourceKind
     private(set) var coverage: MKCoordinateRegion?
     private(set) var calibration: Calibration?
     let url: URL
-    private(set) var bounds: GeoPDFReader.Bounds?
     /// SHA-256 identity of the imported bytes. Import workers provide this
     /// off-main; restored legacy sessions may fill it while validating disk.
     let contentKey: String?
+    /// the ImportedMapLibrary entry this source shows, nil for legacy/test sources
+    let entryID: UUID?
 
-    /// PDF-page rect actually rasterised into cachedImage. Mirrors
-    /// bounds?.pdfCropRect when set, else the media box.
+    /// The real placement. Everything below is derived from it.
+    private(set) var georef: PdfGeoreference
+
+    /// lat/lon box + crop rect + best-fit lon/lat affine for the overlay/tiler
+    private(set) var bounds: GeoPDFReader.Bounds?
+
+    /// Bounding rect of the georef crop in raw page user space (box origin
+    /// included, /Rotate ignored). Calibration fits over it.
     private(set) var pdfRenderRect: CGRect = .zero
+
+    /// Random UUID the crash guard knows this map by. Lives sealed on the
+    /// library entry, never derived from the file or its name.
+    let renderGuardToken: String
+
+    /// Pre-rendered tiles for exactly this georef. A georef change drops it
+    /// and the reconcile reaps the file.
+    var bake: PDFBakeRecord?
+
+    /// OD-F4, memory only: at restore the stored file was missing or its bytes
+    /// didnt match contentKey. The renderer fails it as cannotOpen until a
+    /// re-check passes (Try Again, next launch), the selection is kept
+    var storedFileUnavailable = false
 
     /// Fiduciaries from the most recent calibration, if any.
     private(set) var fiduciaries: [Fiduciary]?
 
-    private var cachedImage: UIImage?
-    private let cachedImageLock = NSLock()
+    /// Saved points that aren't a calibration (a v1 set the UTM refit refused,
+    /// collinear etc). Raw page space. The next calibration starts from them so
+    /// nobody has to place them all again, same as Android pendingFiduciaries.
+    private(set) var pendingFiduciaries: [Fiduciary] = []
 
-    /// Affine (PDF user-space -> WGS84) used to place the page on the map with
-    /// true rotation + scale instead of stretching to lat/lon box. Manual
-    /// fiduciary calibration wins, otherwise GeoPDF auto-fit affine from
-    /// bounds. nil means overlay falls back to bbox stretch.
-    var placementTransform: AffineTransform2D? {
-        if case .fiduciaries(_, let t)? = calibration { return t }
-        return bounds?.placementAffine
-    }
+    /// Plain PDF on a made-up placement. Never a basemap you can trust.
+    var isUncalibrated: Bool { georef.origin == .provisional }
 
-    init(url: URL,
-         bounds: GeoPDFReader.Bounds?,
-         fromGeoPDF: Bool = false,
-         preflightMediaBox: CGRect? = nil,
-         contentKey: String? = nil) {
+    /// PDF user space -> WGS84 for the single-affine overlay and tiler.
+    var placementTransform: AffineTransform2D? { bounds?.placementAffine }
+
+    init(url: URL, georef: PdfGeoreference, contentKey: String? = nil,
+         entryID: UUID? = nil, displayName: String? = nil,
+         renderGuardToken: String? = nil, bake: PDFBakeRecord? = nil) {
         self.url = url
         self.contentKey = contentKey
-        self.displayName = url.deletingPathExtension().lastPathComponent
-        self.bounds = bounds
-        self.kind = fromGeoPDF ? .geoPDF : .calibratedPDF
+        self.entryID = entryID
+        // library files have opaque names, the real name only lives sealed in the entry
+        self.displayName = displayName ?? url.deletingPathExtension().lastPathComponent
+        self.georef = georef
+        self.kind = Self.kind(for: georef.origin)
+        self.renderGuardToken = renderGuardToken.flatMap { UUID(uuidString: $0)?.uuidString } ?? UUID().uuidString
+        self.bake = bake
+        publish(georef, displayBounds: nil)
+    }
+
+    /// A placement only known as a lat/lon box (or lon/lat affine): old
+    /// sessions that can't be rebuilt, and tests. Always provisional.
+    convenience init(url: URL,
+                     bounds: GeoPDFReader.Bounds,
+                     preflightMediaBox: CGRect? = nil,
+                     contentKey: String? = nil) {
+        var crop = (bounds.pdfCropRect ?? preflightMediaBox ?? Self.mediaBox(for: url)).standardized
+        if !(crop.width > 0 && crop.height > 0) { crop = CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let georef = Self.provisionalGeoref(for: bounds, crop: crop)
+            ?? PdfGeoreference.provisional(pageBox: crop, rotation: 0, centredOn: bounds.centre)
+            ?? Self.lastResortGeoref
+        self.init(url: url, georef: georef, contentKey: contentKey)
+        // keep the caller's box verbatim so a round trip doesn't wobble in the last bit
+        publish(georef, displayBounds: GeoPDFReader.Bounds(
+            southWest: bounds.southWest, northEast: bounds.northEast,
+            pdfCropRect: crop, placementAffine: georef.bestFitLatLonAffine()))
+    }
+
+    private static func provisionalGeoref(for b: GeoPDFReader.Bounds, crop: CGRect) -> PdfGeoreference? {
+        let c = crop.standardized
+        guard c.width > 0, c.height > 0 else { return nil }
+        let t = b.placementAffine ?? AffineTransform2D(
+            a: (b.northEast.longitude - b.southWest.longitude) / Double(c.width), b: 0,
+            c: b.southWest.longitude - (b.northEast.longitude - b.southWest.longitude) / Double(c.width) * Double(c.minX),
+            d: 0, e: (b.northEast.latitude - b.southWest.latitude) / Double(c.height),
+            f: b.southWest.latitude - (b.northEast.latitude - b.southWest.latitude) / Double(c.height) * Double(c.minY))
+        return PdfGeoreference.geographic(latLonAffine: t, crop: c, origin: .provisional)
+    }
+
+    /// a 1 pt page on null island, only reachable with garbage bounds
+    private static let lastResortGeoref = PdfGeoreference(
+        crs: .geographic, datum: .wgs84, affine: PlaneAffine(a: 1e-4, b: 0, c: 0, d: 0, e: 1e-4, f: 0),
+        crop: [PdfPagePoint(x: 0, y: 0), PdfPagePoint(x: 1, y: 0), PdfPagePoint(x: 1, y: 1), PdfPagePoint(x: 0, y: 1)],
+        origin: .provisional, datumAssumed: true)
+
+    private static func kind(for origin: PdfGeoreference.Origin) -> MapSourceKind {
+        switch origin {
+        case .adobeVP, .lgiDict: return .geoPDF
+        case .fiduciaries, .provisional: return .calibratedPDF
+        }
+    }
+
+    private func publish(_ g: PdfGeoreference, displayBounds: GeoPDFReader.Bounds?) {
+        // baked tiles belong to one exact georef
+        if g != georef { bake = nil }
+        georef = g
+        kind = Self.kind(for: g.origin)
+        pdfRenderRect = g.cropBoundingRect
+        bounds = displayBounds ?? GeoPDFReader.Bounds(georef: g)
         if let b = bounds {
             let span = MKCoordinateSpan(
                 latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,
                 longitudeDelta: abs(b.northEast.longitude - b.southWest.longitude) * 1.2
             )
-            self.coverage = MKCoordinateRegion(center: b.centre, span: span)
+            coverage = MKCoordinateRegion(center: b.centre, span: span)
         } else {
-            self.coverage = nil
+            coverage = nil
         }
-        self.calibration = nil
-        self.pdfRenderRect = bounds?.pdfCropRect ?? preflightMediaBox ?? Self.mediaBox(for: url)
     }
 
-    private static func mediaBox(for url: URL) -> CGRect {
-        guard let doc = PDFDocument(url: url), let page = doc.page(at: 0) else {
+    static func mediaBox(for url: URL) -> CGRect {
+        guard let doc = CGPDFDocument(url as CFURL), let page = doc.page(at: 1) else {
             return CGRect(x: 0, y: 0, width: 1, height: 1)
         }
-        return page.bounds(for: .mediaBox)
+        return GeoPDFReader.pageGeometry(page).cropBox
     }
 
-    /// The rasterised page if already rendered, nil if not yet. Does NOT
-    /// trigger a blocking rasterisation. Lets the overlay sync render off
-    /// main thread and attach the page when its ready.
-    var cachedRenderedImage: UIImage? {
-        cachedImageLock.lock()
-        defer { cachedImageLock.unlock() }
-        return cachedImage
-    }
-
-    /// Cached PDF rasterisation, cropped to LGIDict Neatline if known.
-    /// Heavy (decodes page to bitmap) - call off main thread on first use;
-    /// subsequent calls just return the cache.
-    func renderedImage() -> UIImage? {
-        cachedImageLock.lock()
-        if let cached = cachedImage {
-            cachedImageLock.unlock()
-            return cached
-        }
-        cachedImageLock.unlock()
-        guard let img = PDFRasteriser.render(url: url,
-                                              cropRect: bounds?.pdfCropRect)
-        else { return nil }
-        cachedImageLock.lock()
-        defer { cachedImageLock.unlock() }
-        if let cached = cachedImage { return cached }
-        cachedImage = img
-        return img
-    }
-
-    /// Replace geographic bounds using an affine fit from user fiduciaries.
-    /// Map UI is expected to swap this source for a fresh PDFMapSource so
-    /// new bounds take effect (overlay view caches bounds at init).
+    /// Fiduciary calibration. The user's points (WGS84, already datum
+    /// shifted) get refit in the UTM zone of the first one; transform is the
+    /// session's lon/lat affine, kept for the persisted record only.
+    /// Refuses junk (non-finite, singular, collinear) and leaves the old
+    /// placement alone.
     func applyCalibration(transform: AffineTransform2D,
                           fiduciaries: [Fiduciary]) {
         guard fiduciaries.count >= 3,
               fiduciaries.allSatisfy(isSafeAffineInput),
               transform.hasFiniteCoefficients,
               transform.inverted() != nil else { return }
-        // Apply the affine to the 4 corners of the rendered rect to derive
-        // axis-aligned geographic bounds.
         let r = pdfRenderRect
-        let rectValues = [Double(r.minX), Double(r.minY),
-                          Double(r.maxX), Double(r.maxY),
-                          Double(r.width), Double(r.height)]
-        guard rectValues.allSatisfy(\.isFinite),
-              r.width > 0, r.height > 0,
-              rectValues.allSatisfy({ abs($0) <= maximumSafePDFCoordinateMagnitude }) else {
-            return
-        }
-        let corners = [
-            CGPoint(x: r.minX, y: r.minY),
-            CGPoint(x: r.maxX, y: r.minY),
-            CGPoint(x: r.maxX, y: r.maxY),
-            CGPoint(x: r.minX, y: r.maxY)
-        ]
-        let geo = corners.map { transform.apply($0) }
-        guard geo.allSatisfy(isValidEarthCoordinate) else { return }
-        let lats = geo.map { $0.latitude }
-        let lons = geo.map { $0.longitude }
-        guard let minLat = lats.min(), let maxLat = lats.max(),
-              let minLon = lons.min(), let maxLon = lons.max(),
-              minLat < maxLat, minLon < maxLon else { return }
-
-        self.bounds = GeoPDFReader.Bounds(
-            southWest: CLLocationCoordinate2D(latitude: minLat, longitude: minLon),
-            northEast: CLLocationCoordinate2D(latitude: maxLat, longitude: maxLon),
-            pdfCropRect: r
-        )
-        self.kind = .calibratedPDF
-        self.calibration = .fiduciaries(fiduciaries, transform: transform)
+        let rectValues = [Double(r.minX), Double(r.minY), Double(r.maxX), Double(r.maxY)]
+        guard rectValues.allSatisfy(\.isFinite), r.width > 0, r.height > 0,
+              rectValues.allSatisfy({ abs($0) <= maximumSafePDFCoordinateMagnitude }),
+              let fitted = FiduciaryFitter.georeference(fromWGS84: fiduciaries, crop: r, page: georef.page),
+              let display = GeoPDFReader.Bounds(georef: fitted) else { return }
+        publish(fitted, displayBounds: display)
+        calibration = .fiduciaries(fiduciaries, transform: transform)
         self.fiduciaries = fiduciaries
-        if let b = bounds {
-            let span = MKCoordinateSpan(
-                latitudeDelta:  abs(b.northEast.latitude  - b.southWest.latitude)  * 1.2,
-                longitudeDelta: abs(b.northEast.longitude - b.southWest.longitude) * 1.2
-            )
-            self.coverage = MKCoordinateRegion(center: b.centre, span: span)
-        }
+        pendingFiduciaries = []
     }
 
-    static func placeholder(for url: URL) -> PDFMapSource {
-        PDFMapSource(url: url, bounds: nil)
+    /// Park points that couldn't become a calibration. No-op once calibrated,
+    /// junk (non-finite, off the earth) gets dropped.
+    func keepPendingFiduciaries(_ fids: [Fiduciary]) {
+        guard calibration == nil else { return }
+        pendingFiduciaries = Array(fids.filter(isSafeAffineInput).prefix(Self.maximumPendingFiduciaries))
+    }
+
+    /// way more than anyone places by hand, keeps a junk record small
+    static let maximumPendingFiduciaries = 256
+
+    /// Restore path: a fiduciary georef + its record straight from disk, no
+    /// refit (a later sheet-datum calibration can't be rebuilt from WGS84 points).
+    func adoptCalibration(georef fitted: PdfGeoreference, fiduciaries: [Fiduciary], transform: AffineTransform2D) {
+        guard fitted.origin == .fiduciaries, fitted.isStructurallyValid,
+              fiduciaries.count >= 3, fiduciaries.allSatisfy(isSafeAffineInput),
+              transform.hasFiniteCoefficients, transform.inverted() != nil,
+              let display = GeoPDFReader.Bounds(georef: fitted) else { return }
+        publish(fitted, displayBounds: display)
+        calibration = .fiduciaries(fiduciaries, transform: transform)
+        self.fiduciaries = fiduciaries
+        pendingFiduciaries = []
     }
 }

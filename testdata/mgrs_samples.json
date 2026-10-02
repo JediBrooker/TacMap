@@ -6,5 +6,5 @@
     { "lat": -33.8568, "lon": 151.2153,  "spaced": "56HLH 34900 52288", "compact": "56HLH3490052288" },
     { "lat": -33.99,   "lon": 150.95,    "spaced": "56HLH 10649 37058", "compact": "56HLH1064937058" }
   ],
-  "invalid": ["hello", "", "H", "1885", "not mgrs", "xyz"]
+  "invalid": ["hello", "", "H", "1885", "not mgrs", "xyz", "56HAH3490052288"]
 }

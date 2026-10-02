@@ -3,13 +3,19 @@ package com.tacmap.sync
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import android.location.Location
+import android.location.LocationManager
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tacmap.drawings.DrawingStore
+import com.tacmap.drawings.DrawingFeature
+import com.tacmap.drawings.DrawingGeometry
+import com.tacmap.drawings.DrawingPoint
 import com.tacmap.settings.OpsecSettings
 import com.tacmap.util.SafeStore
 import com.tacmap.waypoints.WaypointStore
+import com.tacmap.waypoints.Waypoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,12 +48,16 @@ import java.util.UUID
 class TacMapChatLiveInteropTest {
 
     @Test
-    fun roomAndDirectMessagesRoundTripWithIosProductionManager() = runBlocking {
+    // The production manager and UI-owned stores remain on Main; delay-based waits yield Main.
+    fun roomAndDirectMessagesRoundTripWithIosProductionManager() = runBlocking(Dispatchers.Main.immediate) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
         val relay = requiredArgument(arguments = arguments, names = RELAY_ARGUMENTS)
         val joinCode = requiredArgument(arguments = arguments, names = JOIN_CODE_ARGUMENTS)
         val runId = requiredArgument(arguments = arguments, names = RUN_ID_ARGUMENTS)
+        val fullSync = arguments.getString("syncFullInterop") == "true"
+        val lifecycle = arguments.getString("syncLifecyclePhase")
+        require(runId.all { it.isLetterOrDigit() || it == '-' })
 
         require(joinCode.startsWith("3:")) { "Live TacMap Chat interop requires a v3 join code" }
         require(runId.toByteArray(Charsets.UTF_8).size in 1..MAX_RUN_ID_UTF8_BYTES) {
@@ -55,7 +65,7 @@ class TacMapChatLiveInteropTest {
         }
 
         val targetContext = instrumentation.targetContext
-        val sandbox = InteropSandboxContext(targetContext)
+        val sandbox = InteropSandboxContext(targetContext, if (lifecycle == null) null else runId)
         val previousKeyProvider = SafeStore.keyProvider
         val previousMigrationPolicy = SafeStore.migrationPolicy
         val previousOpsecSettings = OpsecSettings.shared
@@ -78,9 +88,11 @@ class TacMapChatLiveInteropTest {
             val opsecSettings = OpsecSettings(sandbox).apply { setRelayUrl(relay) }
             assertEquals(relay.trim(), opsecSettings.relayUrl.value)
 
+            val waypoints = WaypointStore(sandbox)
+            val drawings = DrawingStore(sandbox)
             val syncManager = SyncManager(
-                waypointStore = WaypointStore(sandbox),
-                drawingStore = DrawingStore(sandbox),
+                waypointStore = waypoints,
+                drawingStore = drawings,
                 parentScope = parentScope,
                 context = sandbox,
             )
@@ -89,10 +101,25 @@ class TacMapChatLiveInteropTest {
                 syncManager.updatePresenceConfig(
                     syncManager.presenceConfig.copy(
                         callsign = ANDROID_CALLSIGN,
-                        shareLocation = false,
+                        shareLocation = fullSync,
                     )
                 )
             )
+            if (fullSync) syncManager.locationProvider = {
+                Location(LocationManager.GPS_PROVIDER).apply {
+                    latitude = -35.0; longitude = 149.0; accuracy = 5f
+                    speed = 0f; bearing = 0f
+                    time = System.currentTimeMillis() - 100
+                    elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos() - 100_000_000L
+                }
+            }
+            if (lifecycle == "resume") {
+                assertEquals(2, waypoints.committedWaypoints.value.size)
+                assertEquals(2, drawings.committedDocument.value.features.size)
+                assertEquals(setOf("LIFE_ANDROID_WP:$runId", "LIFE_IOS_WP:$runId"), waypoints.committedWaypoints.value.map { it.name }.toSet())
+                assertEquals(setOf("LIFE_ANDROID_DRAW:$runId", "LIFE_IOS_DRAW:$runId"), drawings.committedDocument.value.features.map { it.name }.toSet())
+                println("LIFECYCLE_ANDROID_PREJOIN_RECOVERED records=2 drawings=2 $runId")
+            }
             syncManager.join(joinCode)
 
             waitUntil(syncManager, "one authenticated iOS chat recipient") {
@@ -108,6 +135,81 @@ class TacMapChatLiveInteropTest {
                     recipients.size == 1
             }
             val iosTarget = syncManager.chatRecipients.value.values.single()
+            if (fullSync && lifecycle != "resume") objectsAndPresenceRoundTrip(syncManager, waypoints, drawings, iosTarget.actorId, runId)
+
+            if (lifecycle != null) {
+                suspend fun barrier(phase: String) {
+                    sentMessageId(syncManager.sendChat(TacMapChatTarget.EntireRoom, TacMapChatContentKind.TEXT,
+                        "LIFE_ANDROID_${phase}:$runId"), phase)
+                    waitUntil(syncManager, "iOS lifecycle $phase", timeoutMs = 150_000) {
+                        syncManager.chatMessages.value.any { !it.isOutgoing && it.senderActorId == iosTarget.actorId && it.body == "LIFE_IOS_${phase}:$runId" }
+                    }
+                }
+                if (lifecycle == "seed") {
+                    assertTrue(waypoints.add(Waypoint(name = "LIFE_ANDROID_WP:$runId", latitude = -35.0, longitude = 149.0)))
+                    assertTrue(drawings.addFeature(DrawingFeature(name = "LIFE_ANDROID_DRAW:$runId", geometry = DrawingGeometry.LINE,
+                        points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)))))
+                    waitUntil(syncManager, "iOS durable lifecycle seed") {
+                        waypoints.committedWaypoints.value.any { it.name == "LIFE_IOS_WP:$runId" } &&
+                            drawings.committedDocument.value.features.any { it.name == "LIFE_IOS_DRAW:$runId" }
+                    }
+                    barrier("SEEDED")
+                    assertEquals(2, waypoints.committedWaypoints.value.size)
+                    assertEquals(2, drawings.committedDocument.value.features.size)
+                    println("LIFECYCLE_ANDROID_KILL_READY records=2 drawings=2 $runId")
+                    delay(180_000)
+                    throw AssertionError("Host did not kill the Android test process")
+                } else {
+                    val own = waypoints.committedWaypoints.value.single { it.name == "LIFE_ANDROID_WP:$runId" }
+                    assertTrue(waypoints.update(own.copy(name = "${own.name}:resumed")))
+                    waitUntil(syncManager, "iOS post-kill edit") {
+                        waypoints.committedWaypoints.value.any { it.name == "LIFE_IOS_WP:$runId:resumed" }
+                    }
+                    barrier("RESUMED")
+                    val oldSession = syncManager.chatRecipients.value.getValue(iosTarget.actorId).sessionDomain
+                    println("LIFECYCLE_ANDROID_RELAY_RESTART_READY $runId")
+                    waitUntil(syncManager, "new iOS session after actual relay restart", timeoutMs = 150_000) {
+                        syncManager.status.value == SyncManager.Status.CONNECTED && syncManager.chatSessionReady.value &&
+                            syncManager.chatRecipients.value[iosTarget.actorId]?.sessionDomain?.let { it != oldSession } == true
+                    }
+                    barrier("RELAY_RESTARTED")
+                    println("LIFECYCLE_ANDROID_RELAY_RESTART_OK $runId")
+                    assertTrue(syncManager.enterBackgroundPresenceOnly(com.tacmap.settings.BackgroundUnitSyncInterval.ONE_MINUTE))
+                    assertTrue(syncManager.isBackgroundPresenceOnly)
+                    assertFalse(syncManager.chatSessionReady.value)
+                    assertTrue(syncManager.chatRecipients.value.isEmpty())
+                    println("LIFECYCLE_ANDROID_BACKGROUND_ENTERED missionDetached chatPaused $runId")
+                    delay(20_000)
+                    assertTrue(syncManager.isBackgroundPresenceOnly)
+                    assertFalse(syncManager.chatSessionReady.value)
+                    assertTrue(syncManager.chatMessages.value.none { it.body == "LIFE_IOS_BACKGROUND_CHAT:$runId" })
+                    assertTrue(waypoints.committedWaypoints.value.none { it.name == "LIFE_IOS_WP:$runId:resumed:background" })
+                    println("LIFECYCLE_ANDROID_BACKGROUND_CHALLENGES_DROPPED roomChat modelApply $runId")
+                    syncManager.prepareForForegroundUnlock()
+                    val restoredWaypoints = WaypointStore(sandbox)
+                    val restoredDrawings = DrawingStore(sandbox)
+                    assertTrue(restoredWaypoints.committedWaypoints.value.none { it.name == "LIFE_IOS_WP:$runId:resumed:background" })
+                    assertTrue(syncManager.attachForegroundStores(restoredWaypoints, restoredDrawings) {
+                        Location(LocationManager.GPS_PROVIDER).apply {
+                            latitude = -35.0; longitude = 149.0; accuracy = 5f
+                            speed = 0f; bearing = 0f
+                            time = System.currentTimeMillis() - 100; elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos() - 100_000_000L
+                        }
+                    })
+                    waitUntil(syncManager, "fresh foreground snapshot/chat") {
+                        syncManager.status.value == SyncManager.Status.CONNECTED && syncManager.chatSessionReady.value &&
+                            syncManager.chatRecipients.value.size == 1
+                    }
+                    waitUntil(syncManager, "foreground snapshot converges background model challenge") {
+                        restoredWaypoints.committedWaypoints.value.any { it.name == "LIFE_IOS_WP:$runId:resumed:background" }
+                    }
+                    assertTrue(syncManager.chatMessages.value.none { it.body == "LIFE_IOS_BACKGROUND_CHAT:$runId" })
+                    assertEquals(2, restoredWaypoints.committedWaypoints.value.size)
+                    assertEquals(2, restoredDrawings.committedDocument.value.features.size)
+                    barrier("FOREGROUND")
+                    println("LIFECYCLE_ANDROID_FOREGROUND_OK $runId")
+                }
+            }
 
             val androidRoomBody = "ANDROID_TO_IOS_ROOM::$runId"
             val androidDirectBody = "ANDROID_TO_IOS_DIRECT::$runId"
@@ -124,7 +226,7 @@ class TacMapChatLiveInteropTest {
             )
             val androidDirectId = sentMessageId(
                 syncManager.sendChat(
-                    target = iosTarget,
+                    target = syncManager.chatRecipients.value.getValue(iosTarget.actorId),
                     kind = TacMapChatContentKind.TEXT,
                     body = androidDirectBody,
                 ),
@@ -201,16 +303,70 @@ class TacMapChatLiveInteropTest {
             )
         } finally {
             try {
+                val replayBeforeDispose = manager?.replayStateForTests
                 manager?.dispose()
+                replayBeforeDispose?.awaitPersistence()
                 parentScope.cancel()
             } finally {
                 OpsecSettings.shared = previousOpsecSettings
                 SafeStore.keyProvider = previousKeyProvider
                 SafeStore.migrationPolicy = previousMigrationPolicy
                 fixedStoreKey.fill(0)
-                sandbox.close()
+                if (lifecycle != "seed") sandbox.close()
             }
         }
+    }
+
+    /** Chat barriers ensure both peers observed each state before either deletes it. */
+    private suspend fun objectsAndPresenceRoundTrip(
+        manager: SyncManager,
+        waypoints: WaypointStore,
+        drawings: DrawingStore,
+        peerActor: String,
+        runId: String,
+    ) {
+        val waypoint = Waypoint(name = "T2_ANDROID_WP:$runId", latitude = -35.0, longitude = 149.0)
+        val drawing = DrawingFeature(
+            name = "T2_ANDROID_DRAW:$runId", geometry = DrawingGeometry.LINE,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)),
+        )
+        assertTrue(waypoints.add(waypoint))
+        assertTrue(drawings.addFeature(drawing))
+        val peerWaypointName = "T2_IOS_WP:$runId"
+        val peerDrawingName = "T2_IOS_DRAW:$runId"
+        waitUntil(manager, "iOS objects and verified presence") {
+            waypoints.committedWaypoints.value.any { it.name == peerWaypointName } &&
+                drawings.committedDocument.value.features.any { it.name == peerDrawingName } &&
+                manager.peers.value[peerActor] != null
+        }
+        val peerWaypointId = waypoints.committedWaypoints.value.single { it.name == peerWaypointName }.id
+        val peerDrawingId = drawings.committedDocument.value.features.single { it.name == peerDrawingName }.id
+        suspend fun barrier(phase: String) {
+            val own = "T2_ANDROID_${phase}:$runId"
+            val peer = "T2_IOS_${phase}:$runId"
+            sentMessageId(manager.sendChat(TacMapChatTarget.EntireRoom, TacMapChatContentKind.TEXT, own), phase)
+            waitUntil(manager, "iOS $phase barrier") {
+                manager.chatMessages.value.any { !it.isOutgoing && it.body == peer && it.senderActorId == peerActor }
+            }
+        }
+        barrier("CREATED_SEEN")
+        assertTrue(waypoints.update(waypoint.copy(name = "${waypoint.name}:edited")))
+        assertTrue(drawings.updateFeature(drawing.copy(name = "${drawing.name}:edited")))
+        waitUntil(manager, "iOS edits") {
+            waypoints.committedWaypoints.value.any { it.id == peerWaypointId && it.name == "$peerWaypointName:edited" } &&
+                drawings.committedDocument.value.features.any { it.id == peerDrawingId && it.name == "$peerDrawingName:edited" }
+        }
+        barrier("EDITED_SEEN")
+        assertTrue(waypoints.remove(waypoints.committedWaypoints.value.single { it.id == waypoint.id }))
+        assertTrue(drawings.removeFeature(drawing.id))
+        waitUntil(manager, "iOS authenticated deletes") {
+            waypoints.committedWaypoints.value.none { it.id == peerWaypointId } &&
+                drawings.committedDocument.value.features.none { it.id == peerDrawingId }
+        }
+        barrier("DELETED_SEEN")
+        assertTrue(waypoints.committedWaypoints.value.isEmpty())
+        assertTrue(drawings.committedDocument.value.features.isEmpty())
+        println("FULL_SYNC_INTEROP_ANDROID_OK presence waypointCRUD drawingCRUD $runId")
     }
 
     private suspend fun waitUntil(
@@ -220,13 +376,18 @@ class TacMapChatLiveInteropTest {
         predicate: () -> Boolean,
     ) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var nextDiagnostic = 0L
         while (!predicate()) {
+            if (SystemClock.elapsedRealtime() >= nextDiagnostic) {
+                println("INTEROP_ANDROID_WAIT $description chat=" + manager.chatMessages.value.map { "${it.id}|${it.body}|out=${it.isOutgoing}|state=${it.deliveryState}|failure=${it.failureCode}" })
+                nextDiagnostic = SystemClock.elapsedRealtime() + 5_000
+            }
             if (SystemClock.elapsedRealtime() >= deadline) {
                 throw AssertionError(
                     "Timed out waiting for $description; " +
                         "status=${manager.status.value}, " +
                         "chatReady=${manager.chatSessionReady.value}, " +
-                        "recipients=${manager.chatRecipients.value.keys.sorted()}, " +
+                        "recipients=${manager.chatRecipients.value.keys.sorted()}, peers=${manager.peers.value.keys.sorted()}, " +
                         "lastError=${manager.lastError.value}"
                 )
             }
@@ -290,11 +451,11 @@ class TacMapChatLiveInteropTest {
     }
 
     /** Context boundary that gives production stores isolated files and preferences. */
-    private class InteropSandboxContext(base: Context) : ContextWrapper(base) {
-        private val sandboxId = UUID.randomUUID().toString()
+    private class InteropSandboxContext(base: Context, stableId: String? = null) : ContextWrapper(base) {
+        private val sandboxId = stableId ?: UUID.randomUUID().toString()
         private val root = File(base.cacheDir, "tacmap-chat-live-interop/$sandboxId")
         private val isolatedFilesDir = File(root, "files").apply {
-            check(mkdirs()) { "Could not create Android chat interop sandbox" }
+            check(isDirectory || mkdirs()) { "Could not create Android chat interop sandbox" }
         }
         private val preferencePrefix = "tacmap_chat_live_interop_${sandboxId}_"
         private val backingPreferenceNames = Collections.synchronizedSet(mutableSetOf<String>())

@@ -85,4 +85,12 @@
         <item quantity="one">"%d neuer Ebene"</item>
         <item quantity="other">"%d neuen Ebenen"</item>
     </plurals>
+    <plurals name="count_calibration_point">
+        <item quantity="one">"%d Passpunkt"</item>
+        <item quantity="other">"%d Passpunkte"</item>
+    </plurals>
+    <plurals name="count_imported_map">
+        <item quantity="one">"%d Karte"</item>
+        <item quantity="other">"%d Karten"</item>
+    </plurals>
 </resources>

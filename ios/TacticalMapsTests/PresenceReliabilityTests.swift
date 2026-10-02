@@ -4,13 +4,17 @@ import XCTest
 final class PresenceReliabilityTests: XCTestCase {
     private lazy var fixture: [String: Any] = loadFixture("presence_accuracy_v3.json")
 
-    func testReconnectBackoffIsExponentialBoundedAndHandshakeResettable() {
-        var policy = SyncReconnectBackoff()
-        XCTAssertEqual((0..<6).map { _ in policy.nextDelay(randomUnit: 0.5) },
-                       [1, 2, 4, 8, 16, 30])
-        XCTAssertEqual(policy.attemptCount, 6)
-        policy.reset()
-        XCTAssertEqual(policy.nextDelay(randomUnit: 0.5), 1)
+    // Used to pin the old +-20 % jitter that piled up at exactly 30 s (S2-14)
+    // and a reset at hello-ack. Contract section 8 replaced both.
+    func testReconnectBackoffIsFullJitterBoundedAndOnlyStableSessionsReset() {
+        var policy = SyncBackoffPolicy()
+        XCTAssertEqual((0..<7).map { _ in policy.failure(.transient, random: 1, nowMs: 0) },
+                       [1_000, 1_750, 3_250, 6_250, 12_250, 24_250, 30_000])
+        XCTAssertEqual(policy.attempt, 7)
+        policy.connected(atMs: 0)
+        XCTAssertEqual(policy.attempt, 7, "hello-ack alone is not a stable session")
+        policy.opAcknowledged()
+        XCTAssertEqual(policy.failure(.transient, random: 0.5, nowMs: 0), 625)
     }
 
     func testNetworkFlapRetainsThenExpiresVisiblyStalePeer() {

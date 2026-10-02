@@ -238,6 +238,7 @@ fun OpsecSettingsDialog(
                         onDismissRequest = { backgroundIntervalExpanded = false },
                     ) {
                         NightWindowFilter() // menus draw in their own window
+                        com.tacmap.ui.PopupBackDismiss { backgroundIntervalExpanded = false }
                         BackgroundUnitSyncInterval.entries.forEach { interval ->
                             DropdownMenuItem(
                                 text = { Text(interval.displayName) },

@@ -338,5 +338,37 @@
 			<string>%d neuen Ebenen</string>
 		</dict>
 	</dict>
+	<key>count.calibration_point</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Passpunkt</string>
+			<key>other</key>
+			<string>%d Passpunkte</string>
+		</dict>
+	</dict>
+	<key>count.imported_map</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d Karte</string>
+			<key>other</key>
+			<string>%d Karten</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

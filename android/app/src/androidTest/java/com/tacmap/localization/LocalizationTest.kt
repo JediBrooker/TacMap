@@ -277,6 +277,20 @@ class LocalizationTest {
         assertEquals("Kostenloser Test – noch 1 Tag", resources.getQuantityString(days, 1, 1))
         assertEquals("Kostenloser Test – noch 3 Tage", resources.getQuantityString(days, 3, 3))
     }
+
+    @Test fun calibrationAndLibraryPluralsUseTheGlossaryInGerman() {
+        // WP4 copy: "Passpunkt" is the glossary term, maps are "Karten"
+        val resources = resources("de")
+        val points = localizedPluralIds.getValue("calibration_point")
+        assertEquals("1 Passpunkt", resources.getQuantityString(points, 1, 1))
+        assertEquals("4 Passpunkte", resources.getQuantityString(points, 4, 4))
+        val maps = localizedPluralIds.getValue("imported_map")
+        assertEquals("1 Karte", resources.getQuantityString(maps, 1, 1))
+        assertEquals("2 Karten", resources.getQuantityString(maps, 2, 2))
+        val en = resources("en")
+        assertEquals("1 point", en.getQuantityString(points, 1, 1))
+        assertEquals("3 points", en.getQuantityString(points, 3, 3))
+    }
 }
 
 /** Release experiment, run explicitly on an isolated emulator. Native locale

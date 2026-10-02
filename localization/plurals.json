@@ -208,5 +208,25 @@
       "one": "%d neuer Ebene",
       "other": "%d neuen Ebenen"
     }
+  },
+  "calibration_point": {
+    "en": {
+      "one": "%d point",
+      "other": "%d points"
+    },
+    "de": {
+      "one": "%d Passpunkt",
+      "other": "%d Passpunkte"
+    }
+  },
+  "imported_map": {
+    "en": {
+      "one": "%d map",
+      "other": "%d maps"
+    },
+    "de": {
+      "one": "%d Karte",
+      "other": "%d Karten"
+    }
   }
 }

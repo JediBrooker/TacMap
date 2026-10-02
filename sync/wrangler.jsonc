@@ -5,8 +5,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-09-01",
   // Observability is OFF: request logs would capture the /room/<id> path, and
-  // the room id is the sole routing credential for an "E2E-blind" relay, so
-  // logging it would hand infrastructure operators a capability to the room.
+  // exposing co-membership and an offline join-code guess verifier. Room
+  // admission also requires a separate bearer token; the path alone is not it.
   // Self-hosters MUST keep this disabled (or scrub the path) for the same
   // reason. See sync/README.md.
   "observability": { "enabled": false },

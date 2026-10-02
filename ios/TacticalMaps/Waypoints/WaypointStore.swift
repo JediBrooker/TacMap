@@ -103,6 +103,13 @@ final class WaypointStore: ObservableObject {
     /// Set by ContentView from `@Environment(\.undoManager)` after the view appears.
     weak var undoManager: UndoManager?
 
+    /// Bumped per object each time a Unit Sync peer's write changes it (see
+    /// SyncRemoteModelApplier). Undoing a local edit checks it so the undo never
+    /// clobbers a newer peer version, their edit wins. Same as Android.
+    private var peerWriteMarks: [UUID: Int] = [:]
+
+    func notePeerWrite(_ id: UUID) { peerWriteMarks[id, default: 0] += 1 }
+
     typealias PersistenceWriter = (Data, URL, String) throws -> Void
 
     private static let defaultURL: URL = {
@@ -165,7 +172,9 @@ final class WaypointStore: ObservableObject {
         }
         waypoints = candidate
         if pendingLoadError?.id == "id.ui_could_not_save_waypoint_change_to_disk_1_9ef95837" { loadError = nil }
+        let peerMark = peerWriteMarks[waypoint.id, default: 0]
         undoManager?.registerUndo(withTarget: self) { store in
+            guard store.peerWriteMarks[waypoint.id, default: 0] == peerMark else { return }
             _ = try? store.commitEdit(old, actionName: actionName)
         }
         undoManager?.setActionName(actionName)
@@ -214,6 +223,45 @@ final class WaypointStore: ObservableObject {
             _ = try? store.deleteDurably(waypoint)
         }
         undoManager?.setActionName(L10n.text("Delete Waypoint"))
+        return true
+    }
+
+    /// Authenticated Unit Sync records of one inbound batch or snapshot in one
+    /// durable write and one publish (contract 17). Upserts replace in place or
+    /// append, deletes of missing ids are no-ops. No undo step: a synced change
+    /// is not the user's edit, and one undo for a whole snapshot would publish
+    /// room-wide deletes. Returns false when nothing actually changed.
+    @discardableResult
+    func commitRemoteBatch(upserts: [Waypoint], deletes: Set<UUID>) throws -> Bool {
+        guard !locked else { throw WaypointMutationError.locked }
+        guard !upserts.isEmpty || !deletes.isEmpty else { return false }
+        var pending: [UUID: Waypoint] = [:]
+        var appendOrder: [UUID] = []
+        for waypoint in upserts {
+            if pending.updateValue(waypoint, forKey: waypoint.id) == nil { appendOrder.append(waypoint.id) }
+        }
+        var candidate: [Waypoint] = []
+        candidate.reserveCapacity(waypoints.count + pending.count)
+        for waypoint in waypoints {
+            if deletes.contains(waypoint.id) { continue }
+            if let replacement = pending.removeValue(forKey: waypoint.id) {
+                candidate.append(replacement)
+            } else {
+                candidate.append(waypoint)
+            }
+        }
+        for id in appendOrder {
+            if let added = pending[id], !deletes.contains(id) { candidate.append(added) }
+        }
+        guard candidate != waypoints else { return false }
+        do {
+            try write(candidate)
+        } catch {
+            pendingLoadError = Messages.couldNotSaveWaypointChangeToDiskMessage("").withArgument(0, error.displayMessage)
+            throw WaypointMutationError.persistenceFailed(error)
+        }
+        waypoints = candidate
+        if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
         return true
     }
 

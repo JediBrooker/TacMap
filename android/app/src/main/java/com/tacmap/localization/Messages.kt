@@ -92,16 +92,204 @@ object Messages {
         L10n.message("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.")
     fun basemapRecoveryRequiredMessage(): LocalizedMessage =
         LocalizedMessage("id.basemap_recovery_required", "The saved basemap details could not be authenticated. A recovery copy and all imported maps were preserved. Tap Retry to reset the saved choice to the online map, or import/select a replacement map.", listOf())
-    fun calibrationUseCurrentLocation(mgrs: String): String =
-        L10n.message("id.calibration_use_current_location", "Use my current location (%1\$s)", mgrs)
+    fun calibrationActionDone(): String =
+        L10n.message("id.calibration_action_done", "Done")
+    fun calibrationActionEdit(): String =
+        L10n.message("id.calibration_action_edit", "Edit coordinate")
+    fun calibrationActionMove(): String =
+        L10n.message("id.calibration_action_move", "Move")
+    fun calibrationAddMore(): String =
+        L10n.message("id.calibration_add_more", "Add more points")
+    fun calibrationAddPoint(): String =
+        L10n.message("id.calibration_add_point", "Add point")
+    fun calibrationAmbiguous(first: String, second: String): String =
+        L10n.message("id.calibration_ambiguous", "Point %1\$s or %2\$s is wrong. Add another point to find out which.", first, second)
+    fun calibrationCellFeature(size: String, half: String): String =
+        L10n.message("id.calibration_cell_feature", "centre of the %1\$s square (±%2\$s)", size, half)
+    fun calibrationCellIntersection(size: String): String =
+        L10n.message("id.calibration_cell_intersection", "corner of the %1\$s square", size)
+    fun calibrationClose(): String =
+        L10n.message("id.calibration_close", "Leave calibration")
+    fun calibrationCompletedFrom(number: String): String =
+        L10n.message("id.calibration_completed_from", "Zone and square from point %1\$s", number)
+    fun calibrationCompletedFromMap(): String =
+        L10n.message("id.calibration_completed_from_map", "Zone and square from the map")
+    fun calibrationDatumChanged(datum: String): String =
+        L10n.message("id.calibration_datum_changed", "Datum changed to %1\$s. All points were re-read.", datum)
+    fun calibrationDatumHelp(): String =
+        L10n.message("id.calibration_datum_help", "Choose the horizontal datum shown in the sheet's margin or legend. The wrong datum can shift the map by 200 m or more.")
+    fun calibrationDatumNationalGridNote(): String =
+        L10n.message("id.calibration_datum_national_grid_note", "National grids such as the British National Grid can't be typed. Enter latitude/longitude instead.")
+    fun calibrationDatumTitle(): String =
+        L10n.message("id.calibration_datum_title", "Datum printed on the map")
+    fun calibrationDatumUnsure(): String =
+        L10n.message("id.calibration_datum_unsure", "Not sure (use WGS84)")
+    fun calibrationDegenerate(): String =
+        L10n.message("id.calibration_degenerate", "The points are almost in a line or too close together. Add one well away from the others.")
+    fun calibrationDisagree(distance: String): String =
+        L10n.message("id.calibration_disagree", "Points disagree by up to %1\$s. Check the points with the largest error.", distance)
+    fun calibrationDisagreeAddFifth(distance: String): String =
+        L10n.message("id.calibration_disagree_add_fifth", "Points disagree by up to %1\$s. Add a 5th point so TacMap can find the wrong one.", distance)
+    fun calibrationDone(points: String, rms: String): String =
+        L10n.message("id.calibration_done", "Map calibrated · %1\$s · RMS %2\$s", points, rms)
+    fun calibrationDoneExact(): String =
+        L10n.message("id.calibration_done_exact", "Map calibrated with 3 points (unchecked).")
+    fun calibrationDraftUnsaved(): String =
+        L10n.message("id.calibration_draft_unsaved", "Points not saved on this device yet. Unlock mission data to save them.")
+    fun calibrationEntryPlaceholder(): String =
+        L10n.message("id.calibration_entry_placeholder", "MGRS, UTM or lat/long")
+    fun calibrationEntryTitle(number: String): String =
+        L10n.message("id.calibration_entry_title", "Point %1\$s", number)
+    fun calibrationErrBand(band: String): String =
+        L10n.message("id.calibration_err_band", "The northing isn't in latitude band %1\$s. Check the band letter.", band)
+    fun calibrationErrNeedsFull(): String =
+        L10n.message("id.calibration_err_needs_full", "For the first point, enter the full reference with zone and square, e.g. 56H LH 349 522.")
+    fun calibrationErrOddDigits(): String =
+        L10n.message("id.calibration_err_odd_digits", "Enter the same number of easting and northing figures.")
+    fun calibrationErrOldLettering(datum: String): String =
+        L10n.message("id.calibration_err_old_lettering", "Sheets on %1\$s use the older MGRS lettering, which TacMap can't read yet. Enter UTM or latitude/longitude instead.", datum)
+    fun calibrationErrPolar(): String =
+        L10n.message("id.calibration_err_polar", "Polar (UPS) references aren't supported. Enter latitude/longitude.")
+    fun calibrationErrRange(): String =
+        L10n.message("id.calibration_err_range", "Latitude must be within ±90° and longitude within ±180°, with minutes and seconds under 60.")
+    fun calibrationErrSquare(square: String, zone: String): String =
+        L10n.message("id.calibration_err_square", "%1\$s isn't a valid 100 km square in zone %2\$s.", square, zone)
+    fun calibrationErrTooCoarse(): String =
+        L10n.message("id.calibration_err_too_coarse", "Too coarse. Use at least 4 figures at a grid intersection (e.g. LH 34 52), or 6 for a feature.")
+    fun calibrationErrUnrecognised(): String =
+        L10n.message("id.calibration_err_unrecognised", "Not a recognised MGRS, UTM or lat/long coordinate.")
+    fun calibrationExactFit(): String =
+        L10n.message("id.calibration_exact_fit", "3 points: exact fit, not checked. Add a 4th point to check accuracy.")
+    fun calibrationFinishAnyway(): String =
+        L10n.message("id.calibration_finish_anyway", "Finish anyway")
+    fun calibrationFinishConfirmExact(): String =
+        L10n.message("id.calibration_finish_confirm_exact", "With only 3 points a typing mistake can't be detected.")
+    fun calibrationFinishConfirmPoor(rms: String): String =
+        L10n.message("id.calibration_finish_confirm_poor", "The fit is poor (RMS %1\$s). Positions read from this map may be wrong.", rms)
+    fun calibrationFinishConfirmSpread(): String =
+        L10n.message("id.calibration_finish_confirm_spread", "The points cover only a small part of the sheet, so its edges may be off.")
+    fun calibrationFinishConfirmTitle(): String =
+        L10n.message("id.calibration_finish_confirm_title", "Finish with warnings?")
+    fun calibrationFitSummary(points: String, rms: String, grade: String): String =
+        L10n.message("id.calibration_fit_summary", "%1\$s · RMS %2\$s · %3\$s", points, rms, grade)
+    fun calibrationGpsTooCoarse(accuracy: String): String =
+        L10n.message("id.calibration_gps_too_coarse", "GPS accuracy is ±%1\$s. Wait for ±20 m or better.", accuracy)
+    fun calibrationGradeFair(): String =
+        L10n.message("id.calibration_grade_fair", "Fair")
+    fun calibrationGradeGood(): String =
+        L10n.message("id.calibration_grade_good", "Good")
+    fun calibrationGradePoor(): String =
+        L10n.message("id.calibration_grade_poor", "Poor")
+    fun calibrationGridToggle(): String =
+        L10n.message("id.calibration_grid_toggle", "Grid")
+    fun calibrationHeaderLabel(): String =
+        L10n.message("id.calibration_header_label", "Calibrating")
+    fun calibrationHideKeyboard(): String =
+        L10n.message("id.calibration_hide_keyboard", "Hide keyboard")
+    fun calibrationImplausible(): String =
+        L10n.message("id.calibration_implausible", "These points can't all be right: the map would be stretched or scaled impossibly. Check each point's zone and square letters.")
+    fun calibrationIntro(): String =
+        L10n.message("id.calibration_intro", "Place the crosshair on a known point, then tap Add point.")
+    fun calibrationInvalid(): String =
+        L10n.message("id.calibration_invalid", "These points put part of the sheet off the Earth. Check each coordinate, especially the grid zone.")
+    fun calibrationKindFeature(): String =
+        L10n.message("id.calibration_kind_feature", "Feature")
+    fun calibrationKindIntersection(): String =
+        L10n.message("id.calibration_kind_intersection", "Grid intersection")
+    fun calibrationLabelPlaceholder(): String =
+        L10n.message("id.calibration_label_placeholder", "Label (optional)")
+    fun calibrationLeaveContinue(): String =
+        L10n.message("id.calibration_leave_continue", "Continue calibrating")
+    fun calibrationLeaveDiscard(): String =
+        L10n.message("id.calibration_leave_discard", "Discard changes")
+    fun calibrationLeaveKeep(): String =
+        L10n.message("id.calibration_leave_keep", "Keep points for later")
+    fun calibrationLeaveMessage(): String =
+        L10n.message("id.calibration_leave_message", "You can keep your points on this device and finish later.")
+    fun calibrationLeaveTitle(): String =
+        L10n.message("id.calibration_leave_title", "Leave calibration?")
+    fun calibrationMaxPoints(max: String): String =
+        L10n.message("id.calibration_max_points", "You've placed the maximum of %1\$s points.", max)
+    fun calibrationMoveToCrosshair(): String =
+        L10n.message("id.calibration_move_to_crosshair", "Move to crosshair")
+    fun calibrationMoving(number: String): String =
+        L10n.message("id.calibration_moving", "Move point %1\$s: put the crosshair on the right spot, then tap Set here.", number)
+    fun calibrationNeedPoints(placed: String): String =
+        L10n.message("id.calibration_need_points", "%1\$s of 3 points placed. Spread them across the sheet.", placed)
+    fun calibrationNextCornerBottomLeft(): String =
+        L10n.message("id.calibration_next_corner_bottom_left", "Next: add a point near the bottom-left corner.")
+    fun calibrationNextCornerBottomRight(): String =
+        L10n.message("id.calibration_next_corner_bottom_right", "Next: add a point near the bottom-right corner.")
+    fun calibrationNextCornerTopLeft(): String =
+        L10n.message("id.calibration_next_corner_top_left", "Next: add a point near the top-left corner.")
+    fun calibrationNextCornerTopRight(): String =
+        L10n.message("id.calibration_next_corner_top_right", "Next: add a point near the top-right corner.")
+    fun calibrationNotGeoreferenced(): String =
+        L10n.message("id.calibration_not_georeferenced", "NOT GEOREFERENCED")
+    fun calibrationOffSheet(): String =
+        L10n.message("id.calibration_off_sheet", "The crosshair is off the map sheet.")
+    fun calibrationOutlier(number: String, distance: String): String =
+        L10n.message("id.calibration_outlier", "Point %1\$s doesn't match the others (%2\$s off). Check its figures, move it or delete it.", number, distance)
+    fun calibrationPaused(): String =
+        L10n.message("id.calibration_paused", "Calibration paused because the map changed. Your points are kept.")
+    fun calibrationPointDeleted(number: String): String =
+        L10n.message("id.calibration_point_deleted", "Point %1\$s deleted.", number)
+    fun calibrationPointsButton(): String =
+        L10n.message("id.calibration_points_button", "Points")
+    fun calibrationPointsTitle(): String =
+        L10n.message("id.calibration_points_title", "Calibration points")
+    fun calibrationPreviewTag(): String =
+        L10n.message("id.calibration_preview_tag", "PREVIEW")
+    fun calibrationReadsAs(text: String): String =
+        L10n.message("id.calibration_reads_as", "Reads as %1\$s", text)
+    fun calibrationResume(): String =
+        L10n.message("id.calibration_resume", "Resume")
+    fun calibrationResumeMessage(points: String, age: String): String =
+        L10n.message("id.calibration_resume_message", "An unfinished calibration of this map has %1\$s, last changed %2\$s.", points, age)
+    fun calibrationResumeTitle(): String =
+        L10n.message("id.calibration_resume_title", "Resume calibration?")
+    fun calibrationResumed(points: String): String =
+        L10n.message("id.calibration_resumed", "Calibration resumed (%1\$s).", points)
+    fun calibrationRowResidual(distance: String): String =
+        L10n.message("id.calibration_row_residual", "%1\$s off", distance)
+    fun calibrationSave(): String =
+        L10n.message("id.calibration_save", "Save point")
+    fun calibrationSaveAnyway(): String =
+        L10n.message("id.calibration_save_anyway", "Save anyway")
+    fun calibrationSaveFailed(): String =
+        L10n.message("id.calibration_save_failed", "The calibration couldn't be saved securely. Your points are kept. Check storage, then tap Retry.")
+    fun calibrationSetHere(): String =
+        L10n.message("id.calibration_set_here", "Set here")
+    fun calibrationSpreadLow(): String =
+        L10n.message("id.calibration_spread_low", "The points cover only a small part of the sheet.")
+    fun calibrationStartOver(): String =
+        L10n.message("id.calibration_start_over", "Start over")
     fun calibrationUseCurrentLocationNoFix(): String =
         L10n.message("id.calibration_use_current_location_no_fix", "Use my current location")
+    fun calibrationUseGps(accuracy: String): String =
+        L10n.message("id.calibration_use_gps", "Use my position (±%1\$s)", accuracy)
+    fun calibrationWarnFar(distance: String): String =
+        L10n.message("id.calibration_warn_far", "This is %1\$s from where the map currently puts the crosshair. Check the figures.", distance)
+    fun calibrationZoomHint(): String =
+        L10n.message("id.calibration_zoom_hint", "Zoom in to place the point precisely.")
+    fun calibrationZoomIn(): String =
+        L10n.message("id.calibration_zoom_in", "Zoom in")
+    fun calibrationZoomOut(): String =
+        L10n.message("id.calibration_zoom_out", "Zoom out")
     fun chatNewMessageNotice(sender: String): String =
         L10n.message("id.chat_new_message_notice", "New TacMap Chat message from %1\$s.", sender)
     fun chatNewReportNotice(sender: String): String =
         L10n.message("id.chat_new_report_notice", "New TacMap Chat report from %1\$s.", sender)
     fun chatRecipientHeading(): String =
         L10n.message("id.chat_recipient_heading", "RECIPIENT")
+    fun chatRecipientInBackground(): String =
+        L10n.message("id.chat_recipient_in_background", "That unit's TacMap is in the background and can't receive chat until it is opened again.")
+    fun chatRecipientInBackgroundMessage(): LocalizedMessage =
+        LocalizedMessage("id.chat_recipient_in_background", "That unit's TacMap is in the background and can't receive chat until it is opened again.", listOf())
+    fun chatReplayTableFull(): String =
+        L10n.message("id.chat_replay_table_full", "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.")
+    fun chatReplayTableFullMessage(): LocalizedMessage =
+        LocalizedMessage("id.chat_replay_table_full", "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.", listOf())
     fun acknowledge(): String =
         L10n.message("id.common_ok", "OK")
     fun drawingsDeleteBody(name: String, points: String): String =
@@ -168,28 +356,18 @@ object Messages {
         L10n.message("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", summary, count)
     fun importInvalidSummaryMessage(summary: String, count: String): LocalizedMessage =
         LocalizedMessage("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", listOf(summary, count))
+    fun importedMapHiddenNotice(): String =
+        L10n.message("id.imported_map_hidden_notice", "Imported map hidden")
+    fun importedMapShowToggle(): String =
+        L10n.message("id.imported_map_show_toggle", "Show Imported Map")
     fun decimalInputHint(): String =
         L10n.message("id.input_decimal_hint", "Use a decimal point or your language’s decimal separator. Do not use thousands separators.")
-    fun layersDeleteImportedConfirm(): String =
-        L10n.message("id.layers_delete_imported_confirm", "Delete Map")
-    fun layersDeleteImportedMessage(): String =
-        L10n.message("id.layers_delete_imported_message", "This deletes the app-private PDF or MBTiles copy and removes it from the map library. Mission objects are not affected. This cannot be undone.")
-    fun layersDeleteImportedTitle(): String =
-        L10n.message("id.layers_delete_imported_title", "Delete imported map from this device?")
     fun layersDeleteOfflineMap(): String =
         L10n.message("id.layers_delete_offline_map", "Delete Offline Map…")
     fun layersDeletePdfMap(): String =
         L10n.message("id.layers_delete_pdf_map", "Delete PDF Map…")
     fun layersDeleteSavedImportedMap(): String =
         L10n.message("id.layers_delete_saved_imported_map", "Delete Saved Imported Map…")
-    fun layersPdfFiduciaryCount(count: String): String =
-        L10n.message("id.layers_pdf_fiduciary_count", "Currently calibrated with %1\$s fiduciaries", count)
-    fun layersPdfGeoreferenced(): String =
-        L10n.message("id.layers_pdf_georeferenced", "Georeferenced (GeoPDF LGIDict)")
-    fun layersPdfManualBounds(): String =
-        L10n.message("id.layers_pdf_manual_bounds", "Manually placed bounds")
-    fun layersPdfNoGeoreferencing(): String =
-        L10n.message("id.layers_pdf_no_georeferencing", "No georeferencing — using map-centre fallback")
     fun layersRemoveSavedMapEntry(): String =
         L10n.message("id.layers_remove_saved_map_entry", "Remove Saved Map Entry")
     fun layersSavedMapUnavailable(): String =
@@ -198,6 +376,88 @@ object Messages {
         L10n.message("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.")
     fun liveLocationApproximateGuidanceMessage(): LocalizedMessage =
         LocalizedMessage("id.live_location_approximate_guidance", "Approximate location cannot provide TacMap's on-device GPS position. Allow Precise location, then try again.", listOf())
+    fun mapActionCalibrate(): String =
+        L10n.message("id.map_action_calibrate", "Calibrate / refine…")
+    fun mapActionChoosePage(): String =
+        L10n.message("id.map_action_choose_page", "Choose page…")
+    fun mapActionDelete(): String =
+        L10n.message("id.map_action_delete", "Delete…")
+    fun mapActionUseEmbedded(): String =
+        L10n.message("id.map_action_use_embedded", "Use the PDF's own georeferencing")
+    fun mapChangePageConfirm(): String =
+        L10n.message("id.map_change_page_confirm", "Changing the page removes this map's calibration.")
+    fun mapChoosePageMessage(pages: String): String =
+        L10n.message("id.map_choose_page_message", "This PDF has %1\$s pages. Choose the page with the map.", pages)
+    fun mapDeleteFailed(detail: String): String =
+        L10n.message("id.map_delete_failed", "The map couldn't be deleted: %1\$s", detail)
+    fun mapDeleteMessage(): String =
+        L10n.message("id.map_delete_message", "Removes the map file, its calibration and any offline tiles made from it from this device. Mission objects aren't affected. This can't be undone.")
+    fun mapDeleteTitle(name: String): String =
+        L10n.message("id.map_delete_title", "Delete “%1\$s”?", name)
+    fun mapImportCalibrateNow(): String =
+        L10n.message("id.map_import_calibrate_now", "Calibrate now")
+    fun mapImportCancelled(): String =
+        L10n.message("id.map_import_cancelled", "Import cancelled.")
+    fun mapImportChoosePageMessage(pages: String): String =
+        L10n.message("id.map_import_choose_page_message", "This PDF has %1\$s pages and none has usable georeferencing. Choose the page with the map.", pages)
+    fun mapImportChoosePageTitle(): String =
+        L10n.message("id.map_import_choose_page_title", "Choose the map page")
+    fun mapImportCopying(percent: String): String =
+        L10n.message("id.map_import_copying", "Importing map… %1\$s", percent)
+    fun mapImportDuplicate(name: String): String =
+        L10n.message("id.map_import_duplicate", "Already in your maps as “%1\$s”. Opened it.", name)
+    fun mapImportGeorefRejected(reason: String): String =
+        L10n.message("id.map_import_georef_rejected", "This PDF has georeferencing TacMap can't use (%1\$s). You can calibrate it with known points.", reason)
+    fun mapImportInterrupted(): String =
+        L10n.message("id.map_import_interrupted", "The last map import didn't finish and was removed.")
+    fun mapImportInvalidMbtiles(): String =
+        L10n.message("id.map_import_invalid_mbtiles", "This file isn't a readable MBTiles map.")
+    fun mapImportInvalidPdf(): String =
+        L10n.message("id.map_import_invalid_pdf", "This file isn't a readable PDF.")
+    fun mapImportLater(): String =
+        L10n.message("id.map_import_later", "Later")
+    fun mapImportLibraryFull(limit: String): String =
+        L10n.message("id.map_import_library_full", "You have %1\$s imported maps. Delete one to import another.", limit)
+    fun mapImportNoSpace(size: String): String =
+        L10n.message("id.map_import_no_space", "Not enough free storage to import this map (%1\$s needed).", size)
+    fun mapImportPageBadgeRejected(): String =
+        L10n.message("id.map_import_page_badge_rejected", "Unreadable map data")
+    fun mapImportPageLabel(page: String): String =
+        L10n.message("id.map_import_page_label", "Page %1\$s", page)
+    fun mapImportPageSize(): String =
+        L10n.message("id.map_import_page_size", "This PDF's page size is outside what TacMap can display.")
+    fun mapImportPageUsed(page: String, pages: String): String =
+        L10n.message("id.map_import_page_used", "Using page %1\$s of %2\$s, which has the map's georeferencing.", page, pages)
+    fun mapImportPassword(): String =
+        L10n.message("id.map_import_password", "This PDF is password-protected. Remove the password, then import it again.")
+    fun mapImportReadFailed(detail: String): String =
+        L10n.message("id.map_import_read_failed", "The map couldn't be imported: %1\$s", detail)
+    fun mapImportReading(page: String, pages: String): String =
+        L10n.message("id.map_import_reading", "Reading map… page %1\$s of %2\$s", page, pages)
+    fun mapImportSaving(): String =
+        L10n.message("id.map_import_saving", "Saving map…")
+    fun mapImportTooComplex(): String =
+        L10n.message("id.map_import_too_complex", "This PDF is too complex to read safely on this device.")
+    fun mapImportTooLarge(limit: String): String =
+        L10n.message("id.map_import_too_large", "This file is larger than the %1\$s import limit.", limit)
+    fun mapImportTooManyPages(limit: String): String =
+        L10n.message("id.map_import_too_many_pages", "This PDF has more than %1\$s pages. Import a single sheet instead.", limit)
+    fun mapImportUnlockFirst(): String =
+        L10n.message("id.map_import_unlock_first", "Unlock mission data before importing a map.")
+    fun mapLibraryCorruptMessage(): String =
+        L10n.message("id.map_library_corrupt_message", "The saved map library couldn't be read. A recovery copy was kept and no map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.")
+    fun mapLibraryCorruptMessageMessage(): LocalizedMessage =
+        LocalizedMessage("id.map_library_corrupt_message", "The saved map library couldn't be read. A recovery copy was kept and no map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.", listOf())
+    fun mapLibraryEmpty(): String =
+        L10n.message("id.map_library_empty", "No imported maps. Use Import to add a PDF, GeoPDF or MBTiles map.")
+    fun mapLibraryFooter(maps: String, size: String): String =
+        L10n.message("id.map_library_footer", "%1\$s · %2\$s on this device. Imported maps stay on this device until you delete them and aren't included in backups.", maps, size)
+    fun mapLibraryLocked(): String =
+        L10n.message("id.map_library_locked", "Unlock mission data to see and change imported maps.")
+    fun mapLibrarySection(): String =
+        L10n.message("id.map_library_section", "Imported maps")
+    fun mapMigrationUncalibrated(name: String): String =
+        L10n.message("id.map_migration_uncalibrated", "“%1\$s” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.", name)
     fun mapPointCopy(): String =
         L10n.message("id.map_point_copy", "Copy Coordinates")
     fun mapPointMeasure(): String =
@@ -210,6 +470,28 @@ object Messages {
         L10n.message("id.map_point_sun_moon", "Sun and Moon Here")
     fun mapPointSymbolAdded(name: String): String =
         L10n.message("id.map_point_symbol_added", "Added %1\$s", name)
+    fun mapRecoveredName(number: String): String =
+        L10n.message("id.map_recovered_name", "Recovered map %1\$s", number)
+    fun mapStateCalibrated(points: String, rms: String): String =
+        L10n.message("id.map_state_calibrated", "Calibrated · %1\$s · RMS %2\$s", points, rms)
+    fun mapStateCalibratedExact(points: String): String =
+        L10n.message("id.map_state_calibrated_exact", "Calibrated · %1\$s (unchecked)", points)
+    fun mapStateDerived(name: String): String =
+        L10n.message("id.map_state_derived", "Offline tiles from “%1\$s”", name)
+    fun mapStateDraft(points: String): String =
+        L10n.message("id.map_state_draft", "Calibration in progress · %1\$s", points)
+    fun mapStateGeopdf(): String =
+        L10n.message("id.map_state_geopdf", "GeoPDF")
+    fun mapStateNeedsCalibration(): String =
+        L10n.message("id.map_state_needs_calibration", "Not georeferenced – tap to calibrate")
+    fun mapStateOfflineTiles(): String =
+        L10n.message("id.map_state_offline_tiles", "Offline tiles")
+    fun mapStateRejected(): String =
+        L10n.message("id.map_state_rejected", "Georeferencing unreadable – tap to calibrate")
+    fun mapStateUnavailable(): String =
+        L10n.message("id.map_state_unavailable", "File missing or changed – delete it and import again")
+    fun mapUseEmbeddedConfirm(): String =
+        L10n.message("id.map_use_embedded_confirm", "Remove your calibration and use the georeferencing stored in the PDF?")
     fun nightModeBrightness(): String =
         L10n.message("id.night_mode_brightness", "Night mode brightness")
     fun nightModeHelp(): String =
@@ -224,10 +506,122 @@ object Messages {
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =
         LocalizedMessage("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", listOf())
-    fun pdfRotationUnsupported(value: String): String =
-        L10n.message("id.pdf_rotation_unsupported", "This PDF's first page is rotated %1\$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.", value)
-    fun pdfRotationUnsupportedMessage(value: String): LocalizedMessage =
-        LocalizedMessage("id.pdf_rotation_unsupported", "This PDF's first page is rotated %1\$s°. TacMap cannot safely georeference rotated pages yet. Flatten the page rotation in a PDF editor or print it to a new PDF, then import that copy.", listOf(value))
+    fun pdfBakeCaption(): String =
+        L10n.message("id.pdf_bake_caption", "Pre-renders this map so it opens and zooms instantly. The PDF is kept.")
+    fun pdfBakeChip(percent: String): String =
+        L10n.message("id.pdf_bake_chip", "Offline tiles %1\$s%%", percent)
+    fun pdfBakeConfirmMessage(name: String, duration: String): String =
+        L10n.message("id.pdf_bake_confirm_message", "“%1\$s” stays on this device and remains the active map. This takes about %2\$s.", name, duration)
+    fun pdfBakeConfirmMessageInactive(name: String, duration: String): String =
+        L10n.message("id.pdf_bake_confirm_message_inactive", "“%1\$s” stays on this device and the map on screen doesn't change. This takes about %2\$s.", name, duration)
+    fun pdfBakeConfirmTitle(): String =
+        L10n.message("id.pdf_bake_confirm_title", "Generate offline tiles?")
+    fun pdfBakeDisabledCaption(): String =
+        L10n.message("id.pdf_bake_disabled_caption", "Calibrate this map before generating offline tiles.")
+    fun pdfBakeDone(): String =
+        L10n.message("id.pdf_bake_done", "Offline tiles ready")
+    fun pdfBakeErrorNoSpace(size: String): String =
+        L10n.message("id.pdf_bake_error_no_space", "Not enough free space. About %1\$s is needed.", size)
+    fun pdfBakeErrorRenderFailed(): String =
+        L10n.message("id.pdf_bake_error_render_failed", "Part of this map couldn't be drawn, so no offline tiles were saved.")
+    fun pdfBakeErrorSourceChanged(): String =
+        L10n.message("id.pdf_bake_error_source_changed", "The map changed while tiles were being generated. Nothing was saved.")
+    fun pdfBakeErrorTitle(): String =
+        L10n.message("id.pdf_bake_error_title", "Offline tiles")
+    fun pdfBakeErrorTooLarge(): String =
+        L10n.message("id.pdf_bake_error_too_large", "This map is too large to pre-render on this device.")
+    fun pdfBakeErrorWriteFailed(): String =
+        L10n.message("id.pdf_bake_error_write_failed", "The offline tiles couldn't be saved. Nothing was changed.")
+    fun pdfBakeEstimating(): String =
+        L10n.message("id.pdf_bake_estimating", "Estimating size…")
+    fun pdfBakeGenerate(): String =
+        L10n.message("id.pdf_bake_generate", "Generate")
+    fun pdfBakeGenerateButton(): String =
+        L10n.message("id.pdf_bake_generate_button", "Generate Offline Tiles…")
+    fun pdfBakeInfo(minZoom: String, maxZoom: String, size: String): String =
+        L10n.message("id.pdf_bake_info", "Offline tiles: zoom %1\$s–%2\$s · %3\$s", minZoom, maxZoom, size)
+    fun pdfBakeInterruptedMessage(): String =
+        L10n.message("id.pdf_bake_interrupted_message", "TacMap closed before the offline tiles were finished. Nothing was saved.")
+    fun pdfBakeInterruptedTitle(): String =
+        L10n.message("id.pdf_bake_interrupted_title", "Offline tiles not finished")
+    fun pdfBakeMinutes(minutes: String): String =
+        L10n.message("id.pdf_bake_minutes", "%1\$s min", minutes)
+    fun pdfBakeOptionNoSpace(): String =
+        L10n.message("id.pdf_bake_option_no_space", " · not enough free space")
+    fun pdfBakeOptionRow(zoom: String, tiles: String, size: String): String =
+        L10n.message("id.pdf_bake_option_row", "Up to zoom %1\$s · %2\$s tiles · about %3\$s", zoom, tiles, size)
+    fun pdfBakeRemove(): String =
+        L10n.message("id.pdf_bake_remove", "Remove Offline Tiles")
+    fun pdfBakeRunning(done: String, total: String): String =
+        L10n.message("id.pdf_bake_running", "Generating offline tiles — %1\$s/%2\$s", done, total)
+    fun pdfGeorefAdobeLabel(): String =
+        L10n.message("id.pdf_georef_adobe_label", "Georeferenced (GeoPDF)")
+    fun pdfGeorefCalibrateManually(): String =
+        L10n.message("id.pdf_georef_calibrate_manually", "Calibrate Manually")
+    fun pdfGeorefReasonDegenerate(): String =
+        L10n.message("id.pdf_georef_reason_degenerate", "its map frame or control points are degenerate")
+    fun pdfGeorefReasonLptsOutOfRange(): String =
+        L10n.message("id.pdf_georef_reason_lpts_out_of_range", "its control points lie outside the map frame")
+    fun pdfGeorefReasonMalformed(): String =
+        L10n.message("id.pdf_georef_reason_malformed", "its georeferencing data is malformed")
+    fun pdfGeorefReasonNonFinite(): String =
+        L10n.message("id.pdf_georef_reason_non_finite", "it contains numbers that are out of range")
+    fun pdfGeorefReasonOffEarth(): String =
+        L10n.message("id.pdf_georef_reason_off_earth", "its coordinates are not on the Earth")
+    fun pdfGeorefReasonRmsGate(): String =
+        L10n.message("id.pdf_georef_reason_rms_gate", "its control points disagree with each other")
+    fun pdfGeorefReasonUnknownDatum(): String =
+        L10n.message("id.pdf_georef_reason_unknown_datum", "its datum isn't supported")
+    fun pdfGeorefReasonUnsupportedProjection(): String =
+        L10n.message("id.pdf_georef_reason_unsupported_projection", "its map projection isn't supported")
+    fun pdfGeorefRejectedMessage(reason: String): String =
+        L10n.message("id.pdf_georef_rejected_message", "This PDF declares a georeference, but TacMap can't use it: %1\$s. It has not been placed on the map. You can calibrate it by hand with known points instead.", reason)
+    fun pdfGeorefRejectedTitle(): String =
+        L10n.message("id.pdf_georef_rejected_title", "Georeference not usable")
+    fun pdfGuardCrashMessage(): String =
+        L10n.message("id.pdf_guard_crash_message", "The map wasn't opened automatically in case it causes the same problem. The online map is shown instead.")
+    fun pdfGuardCrashTitle(name: String): String =
+        L10n.message("id.pdf_guard_crash_title", "TacMap closed while drawing “%1\$s”", name)
+    fun pdfGuardDeleteMap(): String =
+        L10n.message("id.pdf_guard_delete_map", "Delete Map…")
+    fun pdfGuardImportInterruptedMessage(): String =
+        L10n.message("id.pdf_guard_import_interrupted_message", "The map wasn't imported. Try again, or print the PDF to a new file and import that copy.")
+    fun pdfGuardImportInterruptedTitle(): String =
+        L10n.message("id.pdf_guard_import_interrupted_title", "TacMap closed while preparing an imported map")
+    fun pdfGuardOpenAnyway(): String =
+        L10n.message("id.pdf_guard_open_anyway", "Open Anyway")
+    fun pdfMapCalibrateNow(): String =
+        L10n.message("id.pdf_map_calibrate_now", "Calibrate")
+    fun pdfMapUncalibratedLabel(): String =
+        L10n.message("id.pdf_map_uncalibrated_label", "Uncalibrated map")
+    fun pdfMapUncalibratedMessage(): String =
+        L10n.message("id.pdf_map_uncalibrated_message", "This PDF has no usable georeference, so where it sits on the map is only a guess. Calibrate it with known points before relying on any position.")
+    fun pdfMapUncalibratedTitle(): String =
+        L10n.message("id.pdf_map_uncalibrated_title", "Map not calibrated")
+    fun pdfRenderDrawingLabel(): String =
+        L10n.message("id.pdf_render_drawing_label", "Drawing map…")
+    fun pdfRenderFailedLabel(): String =
+        L10n.message("id.pdf_render_failed_label", "Map couldn't be drawn")
+    fun pdfRenderFailedTitle(name: String): String =
+        L10n.message("id.pdf_render_failed_title", "Couldn't draw “%1\$s”", name)
+    fun pdfRenderReasonBlank(): String =
+        L10n.message("id.pdf_render_reason_blank", "Nothing on this PDF page could be drawn.")
+    fun pdfRenderReasonCannotOpen(): String =
+        L10n.message("id.pdf_render_reason_cannot_open", "The PDF file is missing or can't be read.")
+    fun pdfRenderReasonOutOfMemory(): String =
+        L10n.message("id.pdf_render_reason_out_of_memory", "This PDF is too large to draw on this device.")
+    fun pdfRenderReasonPageGeometry(): String =
+        L10n.message("id.pdf_render_reason_page_geometry", "This PDF's page layout doesn't match its georeference.")
+    fun pdfRenderReasonPageMissing(): String =
+        L10n.message("id.pdf_render_reason_page_missing", "The georeferenced page is missing from this PDF.")
+    fun pdfRenderReasonPasswordProtected(): String =
+        L10n.message("id.pdf_render_reason_password_protected", "This PDF is password-protected. Remove the password and import it again.")
+    fun pdfRenderReasonRenderError(): String =
+        L10n.message("id.pdf_render_reason_render_error", "TacMap couldn't draw this PDF.")
+    fun pdfRenderTryAgain(): String =
+        L10n.message("id.pdf_render_try_again", "Try Again")
+    fun pdfRenderUseOnlineMap(): String =
+        L10n.message("id.pdf_render_use_online_map", "Use Online Map")
     fun privacySettingSaveFailed(): String =
         L10n.message("id.privacy_setting_save_failed", "Could not save this privacy setting. The previous setting remains active; check available storage and try again.")
     fun privacySettingSaveFailedMessage(): LocalizedMessage =
@@ -488,6 +882,14 @@ object Messages {
         L10n.message("id.symbols_symbol_pack_failed", "Symbol pack not imported")
     fun symbolsSymbolPackHelp(): String =
         L10n.message("id.symbols_symbol_pack_help", "Choose a TacMap symbol pack (.json). Imported symbols work offline and travel with shared markers.")
+    fun syncBackgroundPaused(time: String): String =
+        L10n.message("id.sync_background_paused", "Background location sharing paused at %1\$s because the connection was lost. Open TacMap to resume.", time)
+    fun syncBackgroundPausedMessage(time: String): LocalizedMessage =
+        LocalizedMessage("id.sync_background_paused", "Background location sharing paused at %1\$s because the connection was lost. Open TacMap to resume.", listOf(time))
+    fun syncBackgroundPausedTitle(): String =
+        L10n.message("id.sync_background_paused_title", "Background Unit Sync paused")
+    fun syncBackgroundPausedTitleMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_background_paused_title", "Background Unit Sync paused", listOf())
     fun syncCodeTooShort(value: String): String =
         L10n.message("id.sync_code_too_short", "Too short to be safe. Use at least %1\$s characters, or tap Generate.", value)
     fun syncCodeTooShortMessage(value: String): LocalizedMessage =
@@ -498,6 +900,10 @@ object Messages {
         LocalizedMessage("id.sync_configured_relay_unavailable", "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.", listOf())
     fun syncDialogTitle(): String =
         L10n.message("id.sync_dialog_title", "Unit Sync")
+    fun syncIdentityRejected(): String =
+        L10n.message("id.sync_identity_rejected", "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.")
+    fun syncIdentityRejectedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_identity_rejected", "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.", listOf())
     fun syncJoinLocationConsent(value: String): String =
         L10n.message("id.sync_join_location_consent", "To join, TacMap will enable Share my location and Background Unit Sync location. When Location access is allowed, your encrypted position will be sent while the app is open and approximately %1\$s while the screen is off.", value)
     fun syncJoinLocationConsentMessage(value: String): LocalizedMessage =
@@ -518,8 +924,56 @@ object Messages {
         L10n.message("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.")
     fun syncMetadataPrivacyMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_metadata_privacy", "Mission payload content is end-to-end encrypted. The relay still sees connection, routing, session, timing, size, and traffic metadata.", listOf())
+    fun syncObjectTooLarge(): String =
+        L10n.message("id.sync_object_too_large", "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.")
+    fun syncObjectTooLargeMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_object_too_large", "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.", listOf())
+    fun syncRecordsSkippedUnsupported(count: String): String =
+        L10n.message("id.sync_records_skipped_unsupported", "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1\$s). Update TacMap to see them.", count)
+    fun syncRecordsSkippedUnsupportedMessage(count: String): LocalizedMessage =
+        LocalizedMessage("id.sync_records_skipped_unsupported", "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1\$s). Update TacMap to see them.", listOf(count))
+    fun syncRecordsSkippedUnverified(count: String): String =
+        L10n.message("id.sync_records_skipped_unverified", "Some synced objects failed verification and were ignored (count: %1\$s). Your other data is unaffected. If this keeps happening, create a new join code.", count)
+    fun syncRecordsSkippedUnverifiedMessage(count: String): LocalizedMessage =
+        LocalizedMessage("id.sync_records_skipped_unverified", "Some synced objects failed verification and were ignored (count: %1\$s). Your other data is unaffected. If this keeps happening, create a new join code.", listOf(count))
+    fun syncRelayBusy(): String =
+        L10n.message("id.sync_relay_busy", "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.")
+    fun syncRelayBusyMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_relay_busy", "The Unit Sync room or relay is busy. Retrying automatically in a few minutes.", listOf())
+    fun syncRelayRateLimited(): String =
+        L10n.message("id.sync_relay_rate_limited", "The relay is limiting new connections from this network. Retrying automatically in about a minute.")
+    fun syncRelayRateLimitedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_relay_rate_limited", "The relay is limiting new connections from this network. Retrying automatically in about a minute.", listOf())
+    fun syncRelayRefusedRoom(): String =
+        L10n.message("id.sync_relay_refused_room", "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.")
+    fun syncRelayRefusedRoomMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_relay_refused_room", "The relay refused this room. Check that TacMap is up to date and the join code is correct, then tap Retry.", listOf())
+    fun syncRoomFullCannotJoin(): String =
+        L10n.message("id.sync_room_full_cannot_join", "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.")
+    fun syncRoomFullCannotJoinMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_room_full_cannot_join", "This Unit Sync room is full and can't add this device. Ask your unit to delete unused objects, or create a new join code. Tap Retry to try again.", listOf())
+    fun syncRoomResetChangesPaused(): String =
+        L10n.message("id.sync_room_reset_changes_paused", "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.")
+    fun syncRoomResetChangesPausedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_room_reset_changes_paused", "This Unit Sync room was reset by the relay and can no longer accept changes from this device. Your map stays saved here, and positions and chat still work. Create a new join code and share it with your unit.", listOf())
+    fun syncRoomResetSuspected(): String =
+        L10n.message("id.sync_room_reset_suspected", "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.")
+    fun syncRoomResetSuspectedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_room_reset_suspected", "The relay sent an older copy of this room than this device has already seen. The room may have been reset after a long idle period, or the relay may be misbehaving. If this keeps happening, create a new join code.", listOf())
     fun syncScreenOffSharingNote(): String =
         L10n.message("id.sync_screen_off_sharing_note", "Screen-off sharing is controlled separately in Settings, Privacy & OPSEC.")
+    fun syncSessionConflict(): String =
+        L10n.message("id.sync_session_conflict", "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.")
+    fun syncSessionConflictMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_session_conflict", "Another session with this device's Unit Sync identity keeps replacing this one. Close TacMap on any other copy of this device, then tap Retry.", listOf())
+    fun syncSessionCounterBehind(): String =
+        L10n.message("id.sync_session_counter_behind", "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.")
+    fun syncSessionCounterBehindMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_session_counter_behind", "The relay keeps rejecting this device's session counter after a storage reset, so sync stopped. Create a new join code for your unit.", listOf())
+    fun syncSnapshotMalformedStopped(): String =
+        L10n.message("id.sync_snapshot_malformed_stopped", "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.")
+    fun syncSnapshotMalformedStoppedMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_snapshot_malformed_stopped", "The relay keeps sending a malformed room snapshot, so sync stopped. No unverified data was used. Check the relay, then tap Retry.", listOf())
     fun tipsDone(): String =
         L10n.message("id.tips_done", "Get Started")
     fun tipsNext(): String =
@@ -730,10 +1184,6 @@ object Messages {
         L10n.message("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.")
     fun recordingVerifyFailedMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_could_not_verify_the_saved_track_before_recordin_74d65e13", "Could not verify the saved track before recording.", listOf())
-    fun displayCouldnTParseMgrsTryAFullGridReference(): String =
-        L10n.message("id.ui_couldn_t_parse_mgrs_try_a_full_grid_reference_edb73b8e", "Couldn't parse MGRS. Try a full grid reference.")
-    fun displayCouldnTParseMgrsTryAFullGridReferenceMessage(): LocalizedMessage =
-        LocalizedMessage("id.ui_couldn_t_parse_mgrs_try_a_full_grid_reference_edb73b8e", "Couldn't parse MGRS. Try a full grid reference.", listOf())
     fun displayCurrentPinIsIncorrect(): String =
         L10n.message("id.ui_current_pin_is_incorrect_3526dcc8", "Current PIN is incorrect.")
     fun displayCurrentPinIsIncorrectMessage(): LocalizedMessage =
@@ -1232,10 +1682,6 @@ object Messages {
         L10n.message("id.ui_the_pdf_map_could_not_be_saved_for_relaunch_the__a195ed9e", "The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.")
     fun displayThePdfMapCouldNotBeSavedForRelauncha195ed9eMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_the_pdf_map_could_not_be_saved_for_relaunch_the__a195ed9e", "The PDF map could not be saved for relaunch. The previous map remains active. Check device storage and retry.", listOf())
-    fun displayThePdfMapWasUnloadedButItsPrivateSession(): String =
-        L10n.message("id.ui_the_pdf_map_was_unloaded_but_its_private_session_f417400f", "The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup.")
-    fun displayThePdfMapWasUnloadedButItsPrivateSessionMessage(): LocalizedMessage =
-        LocalizedMessage("id.ui_the_pdf_map_was_unloaded_but_its_private_session_f417400f", "The PDF map was unloaded, but its private session metadata could not be removed. Retry cleanup.", listOf())
     fun billingThePurchaseWindowCouldNotOpenReturnToTacmap(): String =
         L10n.message("id.ui_the_purchase_window_could_not_open_return_to_tac_790f34d5", "The purchase window could not open. Return to TacMap and try Unlock again.")
     fun billingThePurchaseWindowCouldNotOpenReturnToTacmapMessage(): LocalizedMessage =
@@ -1506,4 +1952,8 @@ object Messages {
     fun newDrawingCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("new_drawing", count)
     fun newLayerCount(count: Int): String = L10n.quantity("new_layer", count)
     fun newLayerCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("new_layer", count)
+    fun calibrationPointCount(count: Int): String = L10n.quantity("calibration_point", count)
+    fun calibrationPointCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("calibration_point", count)
+    fun importedMapCount(count: Int): String = L10n.quantity("imported_map", count)
+    fun importedMapCountMessage(count: Int): LocalizedMessage = LocalizedMessage.quantity("imported_map", count)
 }

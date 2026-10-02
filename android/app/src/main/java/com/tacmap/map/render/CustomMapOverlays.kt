@@ -48,13 +48,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import com.tacmap.calibration.Calibration
-import com.tacmap.calibration.Fiduciary
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.Wgs84Bounds
 import com.tacmap.calibration.Wgs84Coordinate
-import com.tacmap.calibration.PdfPageRenderer
+import com.tacmap.mgrs.GridScreenFrame
+import com.tacmap.mgrs.MgrsGridBuildSpec
+import com.tacmap.mgrs.MgrsGridLabels
 import com.tacmap.mgrs.MgrsGridRenderer
+import mil.nga.mgrs.grid.GridType
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.ensureActive
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -255,107 +258,125 @@ private fun arrowHead(pts: List<Offset>, size: Float): Path? {
 }
 
 /**
- * MGRS grid (lines + labels) on the SDK-free renderer, drawn from
- * MgrsGridRenderer projected through MapCamera. Replaces the TileOverlay grid,
- * so the lines stay correct at every zoom (the tile-provider grid went awry
- * zoomed out). Labels are deduped to one per line, same as the shared fix.
+ * MGRS grid (lines + labels) on the SDK-free renderer. Geometry comes from a
+ * cached MgrsGridBuildSpec built on Dispatchers.Default, so pans / pinches /
+ * compass spins just reproject the cached lines. It only rebuilds when the camera
+ * leaves the spec's envelope, and the old lines stay up while the new ones build.
+ * Labels get laid out per frame against the visible viewport (MgrsGridLabels).
  */
 @Composable
 fun MgrsGridCanvas(camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
     if (camera.viewportWidth <= 0.0 || camera.viewportHeight <= 0.0) return
-    val proj = remember(camera, density) { MapProjection(camera, density) }
+    val pxPerDp = density.toDouble()
+    val lod = MgrsGridRenderer.lod(camera.zoom, camera.centerLat)
 
-    // Geometry covers the square around the viewport's half-diagonal, so it is
-    // valid at every heading. Live compass samples only reproject these cached
-    // lines; they do not synchronously rebuild the MGRS tessellation.
-    val gridBounds = remember(
-        camera.centerLat,
-        camera.centerLon,
-        camera.zoom,
-        camera.viewportWidth,
-        camera.viewportHeight,
-    ) { orientationInvariantGridBounds(camera) }
-    val coverageWidthPx = (
-        hypot(camera.viewportWidth, camera.viewportHeight) * density
-    ).roundToInt().coerceAtLeast(1)
-    val built = remember(gridBounds, coverageWidthPx) {
-        MgrsGridRenderer.build(
-            minLat = gridBounds.southwest.latitude,
-            minLng = gridBounds.southwest.longitude,
-            maxLat = gridBounds.northeast.latitude,
-            maxLng = gridBounds.northeast.longitude,
-            mapWidthPx = coverageWidthPx,
-        )
+    // holder not state: swapping the spec shouldn't itself trigger a recompose,
+    // the new key on produceState below does the work
+    val specHolder = remember { arrayOfNulls<MgrsGridBuildSpec>(1) }
+    val spec = specHolder[0]?.takeUnless { it.isStaleFor(camera, pxPerDp, lod) }
+        ?: MgrsGridBuildSpec.forCamera(camera, pxPerDp, lod).also { specHolder[0] = it }
+    val geometry by produceState<MgrsGridRenderer.GridGeometry?>(initialValue = null, spec) {
+        val built = try {
+            withContext(Dispatchers.Default) { spec.build(checkCancelled = { ensureActive() }) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: RuntimeException) {
+            // keep whatever grid we had rather than take the map down with it
+            android.util.Log.w("MgrsGridCanvas", "grid build failed", e)
+            null
+        }
+        if (built != null) value = built
     }
+    val paints = remember { MgrsLabelPaints() }
 
     Canvas(modifier.fillMaxSize()) {
-        val (segments, labels) = built
+        val g = geometry ?: return@Canvas
+        val frame = GridScreenFrame(camera)
         val ink = Color(MgrsGridRenderer.INK_COLOR)
-        segments.forEach { seg ->
-            val a = proj.toScreen(seg.start.latitude, seg.start.longitude)
-            val b = proj.toScreen(seg.end.latitude, seg.end.longitude)
-            drawLine(ink, a, b, strokeWidth = MgrsGridRenderer.lineWidthPx(seg.type, density),
-                cap = StrokeCap.Round)
-        }
-
-        // Declutter to one label per grid line (bucket by perpendicular screen
-        // axis, keep nearest the top/left margin) - matches the MgrsGridLabelsOverlay fix.
-        val bucketPx = 55f
-        val kept = HashMap<String, Pair<MgrsGridRenderer.LabelMark, Offset>>()
-        labels.forEach { mark ->
-            val p = proj.toScreen(mark.lat, mark.lng)
-            val b = Math.round((if (mark.isVertical) p.x else p.y) / bucketPx)
-            val key = "${if (mark.isVertical) "v" else "h"}|$b|${mark.text}"
-            val ex = kept[key]
-            val margin = if (mark.isVertical) p.y else p.x
-            if (ex == null || margin < (if (mark.isVertical) ex.second.y else ex.second.x)) {
-                kept[key] = mark to p
+        // one path per level so the 85% ink doesn't double up at joins. fine first, so the
+        // heavier lines end up on top where they cross (same order as iOS)
+        for (level in lod.drawn.asReversed()) {
+            val path = Path()
+            var any = false
+            for (piece in g.pieces) {
+                if (piece.level != level ||
+                    !frame.mayBeVisible(piece.minX, piece.minY, piece.maxX, piece.maxY)
+                ) continue
+                val mx = piece.mercX
+                val my = piece.mercY
+                path.moveTo((frame.sx(mx[0], my[0]) * density).toFloat(), (frame.sy(mx[0], my[0]) * density).toFloat())
+                for (i in 1 until mx.size) {
+                    path.lineTo((frame.sx(mx[i], my[i]) * density).toFloat(), (frame.sy(mx[i], my[i]) * density).toFloat())
+                }
+                any = true
+            }
+            if (any) {
+                drawPath(
+                    path, ink,
+                    style = Stroke(
+                        width = MgrsGridRenderer.lineWidthPx(level, density),
+                        cap = StrokeCap.Round, join = StrokeJoin.Round,
+                    ),
+                )
             }
         }
-        val main = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textAlign = android.graphics.Paint.Align.CENTER
-            color = MgrsGridRenderer.LABEL_TEXT_COLOR
-        }
-        val halo = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textAlign = android.graphics.Paint.Align.CENTER
-            color = 0xE6FFFFFF.toInt()
+
+        val labels = MgrsGridLabels.place(g, camera, lod.drawn, lod.labelled) { text, level ->
+            paints.measureDp(text, level, density)
         }
         val nc = drawContext.canvas.nativeCanvas
-        kept.values.forEach { (mark, p) ->
-            val ts = MgrsGridRenderer.labelTextSp(mark.type) * density
+        labels.forEach { label ->
+            val ts = MgrsGridRenderer.labelTextSp(label.level) * density
+            val main = paints.main
+            val halo = paints.halo
             main.textSize = ts; halo.textSize = ts
             val fm = main.fontMetrics
-            val textY = p.y - (fm.ascent + fm.descent) / 2f
+            val px = (label.x * density).toFloat()
+            val py = (label.y * density).toFloat()
+            val textY = py - (fm.ascent + fm.descent) / 2f
             val off = ts * 0.07f
-            if (mark.isVertical) { nc.save(); nc.rotate(-90f, p.x, p.y) }
-            nc.drawText(mark.text, p.x - off, textY - off, halo)
-            nc.drawText(mark.text, p.x + off, textY + off, halo)
-            nc.drawText(mark.text, p.x, textY, main)
-            if (mark.isVertical) nc.restore()
+            if (label.rotated) { nc.save(); nc.rotate(-90f, px, py) }
+            nc.drawText(label.text, px - off, textY - off, halo)
+            nc.drawText(label.text, px + off, textY + off, halo)
+            nc.drawText(label.text, px, textY, main)
+            if (label.rotated) nc.restore()
         }
     }
 }
 
-/** Heading-independent MGRS geometry coverage for the current viewport. */
+/** Label paints, same bold dark text + white halo as before. */
+private class MgrsLabelPaints {
+    val main = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = android.graphics.Paint.Align.CENTER
+        color = MgrsGridRenderer.LABEL_TEXT_COLOR
+    }
+    val halo = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        textAlign = android.graphics.Paint.Align.CENTER
+        color = 0xE6FFFFFF.toInt()
+    }
+
+    /** unrotated text box in dp, halo offset included */
+    fun measureDp(text: String, level: GridType, density: Float): DoubleArray {
+        val ts = MgrsGridRenderer.labelTextSp(level) * density
+        main.textSize = ts
+        val fm = main.fontMetrics
+        val pad = ts * 0.14f
+        return doubleArrayOf(
+            ((main.measureText(text) + pad) / density).toDouble(),
+            ((fm.descent - fm.ascent + pad) / density).toDouble(),
+        )
+    }
+}
+
+/** Heading-independent MGRS geometry coverage for the current viewport (the build spec's square). */
 internal fun orientationInvariantGridBounds(camera: MapCamera): Wgs84Bounds {
-    val radius = hypot(camera.viewportWidth, camera.viewportHeight) / 2.0
-    val centreX = camera.viewportWidth / 2.0
-    val centreY = camera.viewportHeight / 2.0
-    val northUp = camera.copy(headingDegrees = 0.0)
-    val coordinates = listOf(
-        northUp.coordinate(centreX - radius, centreY - radius),
-        northUp.coordinate(centreX + radius, centreY - radius),
-        northUp.coordinate(centreX + radius, centreY + radius),
-        northUp.coordinate(centreX - radius, centreY + radius),
+    val b = MgrsGridBuildSpec.coverageBounds(
+        camera.centerLat, camera.centerLon, camera.zoom,
+        MgrsGridBuildSpec.coverageHalfSideDp(camera.viewportWidth, camera.viewportHeight),
     )
-    val latitudes = coordinates.map { it.first }
-    val longitudes = coordinates.map { it.second }
-    return Wgs84Bounds(
-        Wgs84Coordinate(latitudes.min(), longitudes.min()),
-        Wgs84Coordinate(latitudes.max(), longitudes.max()),
-    )
+    return Wgs84Bounds(Wgs84Coordinate(b[0], b[1]), Wgs84Coordinate(b[2], b[3]))
 }
 
 /**
@@ -383,57 +404,6 @@ fun UserLocationCanvas(
         drawCircle(Color(0x333B7BE0), 16f * density, c)   // soft glow
         drawCircle(Color.White, 11f * density, c)         // white halo
         drawCircle(Color(0xFF1E88E5), 7.5f * density, c)  // blue core
-    }
-}
-
-/**
- * Numbered orange pins for the PDF-calibration fiduciaries on the SDK-free
- * renderer. Each fiducial's geographic position (the grid the user typed for a
- * PDF point) projects to screen and the pin's tail tip sits on that point, so
- * you can see where you've placed each correspondence while calibrating.
- * Tactical orange to pop against satellite and PDF basemaps. Replaces the old
- * native CalibrationFiduciaryMarker.
- */
-@Composable
-fun CalibrationFiduciariesLayer(
-    fiduciaries: List<Fiduciary>,
-    camera: MapCamera, density: Float, modifier: Modifier = Modifier
-) {
-    if (fiduciaries.isEmpty()) return
-    val proj = remember(camera, density) { MapProjection(camera, density) }
-    Canvas(modifier.fillMaxSize()) {
-        val nc = drawContext.canvas.nativeCanvas
-        val disc = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFA63D.toInt() }
-        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFFFFFFF.toInt()
-            style = Paint.Style.STROKE
-            strokeWidth = 2f * density
-        }
-        val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFF1A1A1A.toInt()
-            textAlign = Paint.Align.CENTER
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textSize = 13f * density
-        }
-        val r = 13f * density
-        val tail = 9f * density
-        fiduciaries.forEachIndexed { i, fid ->
-            val p = proj.toScreen(fid.latitude, fid.longitude)
-            val cx = p.x
-            // disc centre sits above the point so the tail tip lands on it
-            val cy = p.y - tail - r
-            val path = android.graphics.Path().apply {
-                moveTo(cx - 5f * density, cy + r - 1f)
-                lineTo(cx + 5f * density, cy + r - 1f)
-                lineTo(cx, p.y)
-                close()
-            }
-            nc.drawPath(path, disc)
-            nc.drawCircle(cx, cy, r, disc)
-            nc.drawCircle(cx, cy, r, ring)
-            val fm = label.fontMetrics
-            nc.drawText("${i + 1}", cx, cy - (fm.ascent + fm.descent) / 2f, label)
-        }
     }
 }
 
@@ -860,94 +830,11 @@ fun PresenceLayer(peers: Map<String, PresencePeer>, camera: MapCamera, density: 
     }
 }
 
-/** Imported PDF/GeoPDF ground overlay on the SDK-free renderer: renders the page
- *  bitmap once and warps it to its projected geo corners with a poly matrix, so
- *  it rides pan/zoom/rotate and lines up with the MGRS grid (same projection +
- *  affine that fixed the SDK path). Non-georeferenced PDFs use the axis-aligned
- *  bounds. */
-@Composable
-fun PdfGroundLayer(source: PdfMapSource, camera: MapCamera, density: Float, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val proj = remember(camera, density) { MapProjection(camera, density) }
-    val bitmapState = remember(source.uri) { mutableStateOf<Bitmap?>(null) }
-    var bmp by bitmapState
-    val active = remember(source.uri) { java.util.concurrent.atomic.AtomicBoolean(true) }
-    DisposableEffect(source.uri) {
-        active.set(true)
-        onDispose {
-            active.set(false)
-            bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
-            bitmapState.value = null
-        }
-    }
-    LaunchedEffect(source.uri) {
-        var rendered: Bitmap? = null
-        try {
-            rendered = withContext(Dispatchers.IO) {
-                PdfPageRenderer.renderFirstPage(context, source.uri).bitmap.also {
-                    // Preserve ownership if prompt cancellation wins the race
-                    // while dispatching the completed render back to Main.
-                    rendered = it
-                }
-            }
-            if (rendered != null && active.get()) {
-                bitmapState.value?.takeUnless(Bitmap::isRecycled)?.recycle()
-                bitmapState.value = rendered
-                rendered = null
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // The surrounding map remains usable if a corrupt PDF cannot render.
-        } finally {
-            rendered?.takeUnless(Bitmap::isRecycled)?.recycle()
-        }
-    }
-    val image = bmp ?: return
-    val transform = (source.calibration as? Calibration.Fiduciaries)?.transform
-        ?: (source.calibration as? Calibration.Parsed)?.transform
-    val pageInfo = source.pageInfo
-
-    Canvas(
-        modifier
-            .fillMaxSize()
-            .semantics { contentDescription = L10n.text("PDF map rendered: %1\$s", source.displayName) }
-    ) {
-        // Corners in lat/lon: georeferenced -> the affine page corners (bitmap top
-        // = page-top = PDF maxY), else the coverage bounds box.
-        val corners: List<Pair<Double, Double>> = if (transform != null && pageInfo != null) {
-            val pw = pageInfo.pageWidth.toDouble(); val ph = pageInfo.pageHeight.toDouble()
-            listOf(
-                transform.apply(0.0, ph).let { it.latitude to it.longitude },   // top-left
-                transform.apply(pw, ph).let { it.latitude to it.longitude },    // top-right
-                transform.apply(pw, 0.0).let { it.latitude to it.longitude },   // bottom-right
-                transform.apply(0.0, 0.0).let { it.latitude to it.longitude }   // bottom-left
-            )
-        } else {
-            val b = source.coverage ?: return@Canvas
-            listOf(
-                b.northeast.latitude to b.southwest.longitude,  // TL
-                b.northeast.latitude to b.northeast.longitude,  // TR
-                b.southwest.latitude to b.northeast.longitude,  // BR
-                b.southwest.latitude to b.southwest.longitude   // BL
-            )
-        }
-        val dst = FloatArray(8)
-        corners.forEachIndexed { i, (lat, lon) ->
-            val s = proj.toScreen(lat, lon); dst[i * 2] = s.x; dst[i * 2 + 1] = s.y
-        }
-        val w = image.width.toFloat(); val h = image.height.toFloat()
-        val src = floatArrayOf(0f, 0f, w, 0f, w, h, 0f, h)
-        val m = Matrix().apply { setPolyToPoly(src, 0, dst, 0, 4) }
-        drawContext.canvas.nativeCanvas.drawBitmap(image, m, Paint(Paint.FILTER_BITMAP_FLAG))
-    }
-}
-
 /**
  * Terrain-heatmap ground overlay on the SDK-free renderer. Draws the coloured
  * DEM bitmap from [TerrainHeatmapService] stretched across its sampled [bounds],
- * projected through the camera - same Matrix.setPolyToPoly trick as
- * [PdfGroundLayer]. Bitmap origin is the NW corner (row 0 = north, col 0 = west).
+ * projected through the camera with a Matrix.setPolyToPoly. Bitmap origin is
+ * the NW corner (row 0 = north, col 0 = west).
  * Replaces the old GroundOverlay.
  */
 @Composable

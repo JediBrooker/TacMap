@@ -3,117 +3,915 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Offline-Karten für unterwegs — TacMap</title>
-<meta name="description" content="Offline-Karten für unterwegs">
+<title>TacMap — Offline-Karten, verschlüsselt im Team</title>
+<meta name="description" content="TacMap ist eine Offline-Karte für iOS und Android mit importierten Karten, MGRS-Werkzeugen und optionaler Ende-zu-Ende-verschlüsselter Synchronisierung im Team. Kein Konto, keine Werbung, keine Analyse.">
 <link rel="canonical" href="https://tacmap.app/de">
 <meta name="theme-color" content="#0E1519">
 <link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
-<meta property="og:title" content="TacMap — Offline-Karten für unterwegs">
-<meta property="og:description" content="Offline-Karten für unterwegs">
-<meta property="og:type" content="article">
+<meta property="og:title" content="TacMap — Offline-Karten, verschlüsselt im Team">
+<meta property="og:description" content="Offline-Karten für iOS und Android, mit optionaler Ende-zu-Ende-verschlüsselter Synchronisierung im Team, sobald eine Verbindung besteht. Kein Konto, keine Werbung, keine Analyse.">
+<meta property="og:type" content="website">
 <meta property="og:url" content="https://tacmap.app/de">
+<meta property="og:image" content="https://tacmap.app/assets/brand/app-icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" hreflang="en" href="https://tacmap.app/">
+<link rel="alternate" hreflang="de" href="https://tacmap.app/de">
+<link rel="alternate" hreflang="x-default" href="https://tacmap.app/">
 <style>
   :root{
     --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
-    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
-    --line:#243440; --line-2:#1B272E;
-    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
-    --signal:#FF5A24; --maxw:820px;
+    --void:#0E1519;        /* deep cool gunmetal ground */
+    --void-2:#0B1013;      /* darker for bands */
+    --panel:#141E24;       /* raised panel */
+    --line:#243440;        /* contour / grid hairlines */
+    --line-2:#1B272E;      /* fainter grid */
+    --ink:#E7EDEC;         /* cool near-white */
+    --ink-dim:#8DA2AA;     /* muted slate text */
+    --ink-faint:#5E727B;   /* captions */
+    --signal:#FF5A24;      /* SAR / aviation signal orange */
+    --signal-soft:#FF7A4d;
+    --friendly:#4FB0C6;    /* muted map-blue, used sparingly */
+    --maxw:1180px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
-  body{background:var(--void);color:var(--ink);
-    font-family:var(--font-sans);line-height:1.7;
-    -webkit-font-smoothing:antialiased}
-  a{color:var(--signal);text-decoration:none}
-  a:hover{text-decoration:underline}
-  main a{overflow-wrap:anywhere}
+  body{
+    background:var(--void);
+    color:var(--ink);
+    font-family:var(--font-sans);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* ambient chart grid over the whole page */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(var(--line-2) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line-2) 1px,transparent 1px);
+    background-size:64px 64px;
+    -webkit-mask-image:radial-gradient(ellipse 120% 90% at 50% 0%,#000 30%,transparent 78%);
+            mask-image:radial-gradient(ellipse 120% 90% at 50% 0%,#000 30%,transparent 78%);
+    opacity:.5;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px;position:relative;z-index:1}
+  .flush-top{padding-top:0}
+  .eyebrow.centered{justify-content:center;display:flex}
 
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:var(--font-mono)}
+  /* the nav is sticky, so jump targets land under it without this */
+  [id]{scroll-margin-top:80px}
+
+  /* ---- shared type ---- */
+  .eyebrow{
+    font-family:var(--font-mono);font-size:12px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--signal);
+    display:inline-flex;align-items:center;gap:10px;
+  }
+  .eyebrow::before{content:"";width:22px;height:1px;background:var(--signal)}
+  /* break-word only kicks in when a single word is wider than the line,
+     mostly for the long german compounds on /de at phone width */
+  h1,h2,h3{font-family:var(--font-sans);line-height:1.02;letter-spacing:-.01em;overflow-wrap:break-word}
+
+  /* ---- top nav ---- */
   header.nav{position:sticky;top:0;z-index:20;
     background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
-    border-bottom:1px solid var(--line-2)}
+    border-bottom:1px solid var(--line-2);}
   .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
     display:flex;align-items:center;justify-content:space-between;gap:20px}
-  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-sans);
-    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
-  .brand:hover{text-decoration:none}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-sans);font-weight:800;
+    font-size:19px;letter-spacing:.02em}
+  /* the ios app icon, same file the favicon points at so its already cached.
+     source png is a bare square because ios masks the corners itself, so we
+     do it here. 22.4% is apple's ratio, near enough at this size. */
   .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
-  .nav-in .back{font-family:var(--font-mono);font-size:13px;color:var(--ink-dim)}
-  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+  .nav-links{display:flex;gap:26px;align-items:center}
+  .nav-links a{font-size:14px;color:var(--ink-dim)}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-cta{font-family:var(--font-mono);font-size:13px;letter-spacing:.04em;
+    border:1px solid var(--signal);color:var(--signal);
+    padding:8px 16px;border-radius:2px;transition:.18s}
+  .nav-cta:hover{background:var(--signal);color:var(--void)}
+  .nav-toggle{display:none;align-items:center;justify-content:center;gap:9px;
+    min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:2px;
+    background:var(--panel);color:var(--ink);font:inherit;font-size:14px;cursor:pointer}
+  .nav-toggle svg{width:20px;height:20px}
+  .nav-toggle:focus-visible,.nav-links a:focus-visible{outline:2px solid var(--signal);outline-offset:4px}
+  @media(max-width:900px){
+    .nav-in{flex-wrap:wrap;gap:12px;padding:12px 20px}
+    .nav-links{width:100%;flex-direction:column;align-items:stretch;gap:4px}
+    .nav-links a{display:flex;align-items:center;min-height:44px;padding:10px 12px}
+    .nav-links .nav-cta{margin-top:4px;justify-content:center}
+    .nav-ready .nav-toggle{display:inline-flex}
+    .nav-ready .nav-links{display:none;position:absolute;top:100%;left:0;right:0;
+      padding:12px 20px 20px;background:var(--void-2);border-bottom:1px solid var(--line);
+      max-height:calc(100dvh - 69px);overflow-y:auto}
+    .nav-ready .nav-links.is-open{display:flex}
+  }
 
-  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
-  h1,h2,h3,h4{font-family:var(--font-sans);line-height:1.15;letter-spacing:-.01em;
-    color:var(--ink);scroll-margin-top:80px}
-  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
-  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
-    padding-top:24px;border-top:1px solid var(--line-2)}
-  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
-  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
-  p{margin:14px 0;color:var(--ink-dim)}
-  strong{color:var(--ink);font-weight:600}
-  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
-  li{margin:7px 0}
-  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
-  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
-    color:var(--ink-dim)}
+  /* ---- hero ---- */
+  /* clip-x only: the device bloom is wider than the column and would otherwise
+     add a pixel of sideways scroll on narrow screens. y stays visible so the
+     handset keeps its drop shadow. */
+  .hero{position:relative;padding:86px 0 64px;overflow-x:clip;overflow-y:visible}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center}
+  .hero h1{font-size:clamp(40px,6.4vw,74px);font-weight:800;margin:22px 0 20px}
+  .hero h1 em{font-style:normal;color:var(--signal)}
+  .hero p.lead{font-size:19px;color:var(--ink-dim);max-width:33ch}
+  .cta-row{display:flex;gap:14px;margin-top:34px;flex-wrap:wrap}
+  .btn{font-family:var(--font-mono);font-size:14px;letter-spacing:.03em;
+    padding:14px 24px;border-radius:2px;transition:.18s;display:inline-flex;
+    align-items:center;gap:10px;border:1px solid transparent}
+  .btn-primary{background:var(--signal);color:var(--void);font-weight:500}
+  .btn-primary:hover{background:var(--signal-soft);transform:translateY(-1px)}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--ink-dim)}
+  .hero-meta{margin-top:30px;font-family:var(--font-mono);font-size:12.5px;
+    color:var(--ink-faint);letter-spacing:.04em}
+  .hero-meta b{color:var(--ink-dim);font-weight:500}
 
-  code{font-family:var(--font-mono);font-size:.9em;color:var(--ink);
-    background:var(--panel);border:1px solid var(--line-2);
-    border-radius:3px;padding:1px 5px}
-  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
-    padding:16px 18px;overflow-x:auto;margin:18px 0}
-  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+  /* hero device shot */
+  .device{position:relative;display:flex;flex-direction:column;align-items:center;gap:18px}
+  /* signal-orange bloom behind the handset, keeps it off the flat background */
+  .device::before{content:"";position:absolute;top:6%;left:50%;translate:-50% 0;
+    width:118%;aspect-ratio:1;border-radius:50%;pointer-events:none;
+    background:radial-gradient(closest-side,rgba(255,90,36,.13),transparent 72%)}
+  .device picture{position:relative;display:block;width:100%;max-width:302px}
+  .device img{display:block;width:100%;height:auto;
+    /* the bezel corners are square in the file, round them here. x/y percentages
+       keep the corner circular instead of stretching with the aspect ratio.
+       values come out of scripts/extract_site_hero.py */
+    border-radius:9.513% / 4.4728%;
+    box-shadow:0 40px 90px -34px #000, 0 0 0 1px rgba(231,237,236,.07)}
+  .device .caption{position:relative;font-family:var(--font-mono);font-size:11px;
+    letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);text-align:center}
+  @media(max-width:900px){
+    .hero-grid{grid-template-columns:1fr;gap:40px}
+    .hero{padding:56px 0 40px}
+    .device picture{max-width:272px}
+  }
 
-  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
-  table{width:100%;border-collapse:collapse;font-size:14.5px}
-  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+  /* ---- trust strip ---- */
+  .strip{border-top:1px solid var(--line-2);border-bottom:1px solid var(--line-2);
+    background:var(--void-2)}
+  .strip-in{max-width:var(--maxw);margin:0 auto;padding:16px 28px;
+    display:flex;flex-wrap:wrap;gap:10px 30px;justify-content:center;
+    font-family:var(--font-mono);font-size:12.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-dim)}
+  .strip-in span{display:inline-flex;align-items:center;gap:12px}
+  .strip-in span::before{content:"";width:5px;height:5px;background:var(--signal);
+    transform:rotate(45deg);flex:none}
+
+  /* ---- section scaffolding ---- */
+  section.blk{padding:78px 0;position:relative}
+  .gridref{font-family:var(--font-mono);font-size:12px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-faint);
+    display:flex;align-items:center;gap:12px;margin-bottom:16px}
+  .gridref b{color:var(--signal);font-weight:500}
+  .gridref::after{content:"";flex:1;height:1px;background:var(--line-2);max-width:220px}
+  .blk h2{font-size:clamp(28px,3.8vw,44px);font-weight:700;max-width:20ch}
+  .blk .sub{color:var(--ink-dim);margin-top:14px;max-width:56ch;font-size:17px}
+
+  #custom-symbols .feats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  @media(max-width:900px){#custom-symbols .feats{grid-template-columns:1fr}}
+
+  /* ---- compare ---- */
+  /* overflow-x auto not hidden, on a narrow phone the last column used to get
+     clipped silently. now it tightens up first and scrolls inside the box if
+     it still doesnt fit */
+  .cmp{margin-top:40px;border:1px solid var(--line);border-radius:5px;overflow-x:auto}
+  .cmp table{width:100%;border-collapse:collapse;font-size:15px}
+  .cmp th,.cmp td{text-align:left;padding:15px 18px;border-bottom:1px solid var(--line-2);
     vertical-align:top}
-  thead th{font-family:var(--font-sans);font-weight:700;background:var(--void-2);
-    color:var(--ink);white-space:nowrap}
-  td{color:var(--ink-dim)}
-  tbody tr:last-child td{border-bottom:none}
+  .cmp thead th{font-family:var(--font-sans);font-weight:700;font-size:16px;background:var(--void-2)}
+  .cmp thead th:first-child{color:var(--ink-faint);font-family:var(--font-mono);
+    font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:500}
+  .cmp thead th.us{color:var(--signal)}
+  .cmp td:first-child{color:var(--ink-dim);font-family:var(--font-mono);font-size:13px}
+  .cmp td.us{color:var(--ink);font-weight:500}
+  .cmp tr:last-child td{border-bottom:none}
+  @media(max-width:600px){.cmp th,.cmp td{padding:12px 8px;hyphens:auto}}
+  .cmp-note{margin-top:16px;font-size:14px;color:var(--ink-faint);max-width:62ch}
 
-  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
-  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
-    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
-    font-family:var(--font-mono);font-size:12px;color:var(--ink-faint);
-    letter-spacing:.06em}
-  .foot-in a{color:var(--ink-dim)}
+  /* ---- feature list ---- */
+  .feats{margin-top:44px;display:grid;grid-template-columns:1fr 1fr;gap:2px;
+    background:var(--line-2);border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+  .feat{background:var(--void);padding:34px 30px}
+  .feat .fnum{font-family:var(--font-mono);font-size:12px;color:var(--signal);letter-spacing:.1em}
+  .feat h3{font-size:22px;font-weight:600;margin:14px 0 10px}
+  .feat p{color:var(--ink-dim);font-size:15.5px}
+  /* small print on a card, eg where the data comes from and what gets sent */
+  .feat p.note{margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2);font-size:14px}
+  @media(max-width:760px){.feats{grid-template-columns:1fr}}
+  .also{margin-top:22px;color:var(--ink-dim);font-size:15px;max-width:74ch}
+
+  /* feature video, a short muted loop cut from real app captures
+     (scripts/build_preview_video.py) */
+  .feature-video{margin-top:40px;border:1px solid var(--line);border-radius:6px;
+    overflow:hidden;background:var(--void-2)}
+  .feature-video video{display:block;width:100%;height:auto;max-height:78vh;object-fit:contain}
+
+  /* ---- screens rail ---- */
+  .rail{margin-top:40px;display:flex;gap:18px;overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x proximity;padding:2px 2px 18px;
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+    overscroll-behavior-x:contain}
+  .rail:focus-visible{outline:1px solid var(--signal);outline-offset:6px;border-radius:2px}
+  .rail::-webkit-scrollbar{height:8px}
+  .rail::-webkit-scrollbar-track{background:transparent}
+  .rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+  .rail::-webkit-scrollbar-thumb:hover{background:var(--ink-faint)}
+  .shot{flex:0 0 auto;width:264px;scroll-snap-align:center}
+  .shot img{display:block;width:100%;height:auto;border-radius:6px;
+    border:1px solid var(--line);background:var(--void-2)}
+  .shot figcaption{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-faint);padding-top:8px;text-align:center}
+  .shot figcaption b{color:var(--signal);font-weight:500}
+  .rail-hint{margin-top:6px;font-family:var(--font-mono);font-size:11.5px;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  @media(max-width:600px){.shot{width:228px}}
+
+  /* ---- who ---- */
+  .who{margin-top:40px;display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .who-card{border:1px solid var(--line);border-radius:5px;padding:24px 20px;
+    background:var(--panel);transition:.2s}
+  .who-card:hover{border-color:var(--signal);transform:translateY(-3px)}
+  .who-card .tag{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;
+    color:var(--signal);text-transform:uppercase}
+  .who-card h3{font-size:18px;font-weight:600;margin:12px 0 8px}
+  .who-card p{font-size:14px;color:var(--ink-dim)}
+  @media(max-width:900px){.who{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.who{grid-template-columns:1fr}}
+
+  /* ---- verify band ---- */
+  .verify{background:var(--void-2);border-top:1px solid var(--line-2);
+    border-bottom:1px solid var(--line-2)}
+  .verify .vgrid{display:grid;grid-template-columns:1fr .9fr;gap:48px;align-items:center}
+  .verify h2{max-width:16ch}
+  .vlinks{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);
+    border-radius:6px;overflow:hidden}
+  .vlink{display:flex;align-items:center;justify-content:space-between;
+    padding:20px 22px;background:var(--void);transition:.18s;gap:16px}
+  .vlink:hover{background:var(--panel)}
+  .vlink .vt{font-family:var(--font-sans);font-weight:600;font-size:17px}
+  .vlink .vd{font-size:13px;color:var(--ink-dim);margin-top:3px}
+  .vlink .arrow{color:var(--signal);font-family:var(--font-mono);flex:none}
+  /* long german words pushed the arrow off a 320px screen */
+  .vlink>span:first-child{min-width:0}
+  .vlink span:lang(de){hyphens:auto}
+  @media(max-width:900px){.verify .vgrid{grid-template-columns:1fr;gap:32px}}
+
+  /* ---- faq ---- */
+  .faq{margin-top:40px;border-top:1px solid var(--line-2)}
+  .qa{border-bottom:1px solid var(--line-2);padding:24px 0;display:grid;
+    grid-template-columns:.9fr 1.4fr;gap:30px}
+  .qa .q{font-family:var(--font-sans);font-weight:600;font-size:19px;color:var(--ink)}
+  .qa .a{color:var(--ink-dim);font-size:15.5px}
+  .qa .a a{color:var(--signal);border-bottom:1px solid transparent}
+  .qa .a a:hover{border-color:var(--signal)}
+  @media(max-width:700px){.qa{grid-template-columns:1fr;gap:8px}}
+
+  /* ---- download band ---- */
+  .dl{padding:92px 0;text-align:center;position:relative}
+  .dl h2{font-size:clamp(32px,5vw,56px);font-weight:800;margin:18px auto 0;max-width:16ch}
+  .dl p{color:var(--ink-dim);margin:18px auto 0;max-width:46ch;font-size:17px}
+  .dl .cta-row{justify-content:center}
+  .dl .cta-row{align-items:center}
+  .store{display:inline-flex;align-items:center;justify-content:center;
+    min-height:72px;border-radius:6px}
+  .store img{display:block;width:auto;height:48px}
+  .store.google-play img{height:72px}
+  .store:focus-visible{outline:2px solid var(--signal);outline-offset:4px}
+
+  /* ---- footer ---- */
+  footer{border-top:1px solid var(--line-2);padding:40px 0;background:var(--void-2)}
+  .foot-in{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+  .foot-in .mono{font-size:12px;color:var(--ink-faint);letter-spacing:.06em}
+  .foot-links{display:flex;flex-wrap:wrap;gap:10px 22px}
+  .foot-links a{font-size:13px;color:var(--ink-dim)}
+  .foot-links a:hover{color:var(--ink)}
+
+  /* corner registration ticks */
+  .reg{position:fixed;z-index:5;width:16px;height:16px;pointer-events:none;
+    border-color:var(--line);opacity:.7}
+  .reg.tl{top:64px;left:14px;border-left:1px solid;border-top:1px solid}
+  .reg.tr{top:64px;right:14px;border-right:1px solid;border-top:1px solid}
+  @media(max-width:900px){.reg{display:none}}
+
+  /* reveal */
+  .rv{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
+  .rv.in{opacity:1;transform:none}
+  @media(prefers-reduced-motion:reduce){
+    .rv{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+    .sweep{display:none}
+  }
 </style>
+<!-- .rv starts at opacity 0 and only the observer turns it on, so with js off
+     everything below the hero is invisible. plenty of this audience runs
+     noscript. -->
+<noscript><style>.rv{opacity:1;transform:none;transition:none}</style></noscript>
 </head>
 <body>
+<span class="reg tl"></span><span class="reg tr"></span>
+
 <header class="nav">
   <div class="nav-in">
-    <a class="brand" href="/">
+    <a class="brand" href="#top">
       <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
       TACMAP
     </a>
-    <a class="back" href="/de">← Zur Website</a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="section-navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      Menü
+    </button>
+    <nav class="nav-links" id="section-navigation" aria-label="Hauptnavigation">
+      <a href="#compare">vs. TAK</a>
+      <a href="#capabilities">Funktionen</a>
+      <a href="#field-tools">Feldwerkzeuge</a>
+      <a href="#custom-symbols">Eigene Symbole</a>
+      <a href="#verify">Sicherheit</a>
+      <a href="#faq">FAQ</a>
+      <a class="nav-cta" href="#get">TACMAP LADEN</a>
+    </nav>
   </div>
 </header>
-<main>
-<h1 id="tacmap-offline-karten-fr-unterwegs">TacMap — Offline-Karten für unterwegs</h1>
-<p><a href="/">English</a> · <a href="/de/support">Hilfe und Kontakt</a> · <a href="/de/privacy">Datenschutz</a></p>
-<p>TacMap verbindet Offline-Karten, GPS, MGRS, Wegpunkte und Zeichnungen auf iOS und Android. Importiere PDF-/GeoPDF- und MBTiles-Karten, organisiere Einsatzobjekte in Ebenen und exportiere offene Dateiformate. Einmalige Freischaltung nach einem dreitägigen Testzeitraum, kein Abo.</p>
-<h2 id="deutsch-oder-englisch">Deutsch oder Englisch</h2>
-<p>Wähle deine Sprache unter <strong>Einstellungen, Datenschutz und OPSEC → Sprache</strong>. Die Übersetzungen sind in der App enthalten und funktionieren offline. Eigene Inhalte und Kartenbeschriftungen externer Anbieter bleiben unverändert.</p>
-<h2 id="eigene-symbole-und-ebenen">Eigene Symbole und Ebenen</h2>
-<p>Erstelle eine eigene Ebene, importiere ein Symbolpaket und suche offline nach Grafiken deiner Organisation. Die <a href="/de/custom-symbols">Anleitung für iOS und Android</a> enthält ein fertiges Paket mit <strong>894 deutschen BOS-Symbolen</strong> sowie Hilfe zum Import und Teilen. Benötigt wird TacMap 2.0.2 Build 68 oder neuer mit Unterstützung für eigene Symbole; dieser Build wird für die Store-Veröffentlichung vorbereitet.</p>
-<h2 id="optional-gemeinsam-arbeiten">Optional gemeinsam arbeiten</h2>
-<p>Einheitensynchronisierung und TacMap Chat teilen Inhalte Ende-zu-Ende-verschlüsselt. Der Relay sieht dennoch Verbindungs-, Routing- und weitere Metadaten. Eine Weiterleitungsbestätigung ist keine Zustell- oder Lesebestätigung. Online-Karten, Ortssuche, Wetter und Geländehöhen sind optional und können Informationen an ihre Anbieter übermitteln.</p>
-<h2 id="grenzen-kennen">Grenzen kennen</h2>
-<p>Eine entsperrte oder kompromittierte Gegenstelle kann Inhalte lesen. Inhaber eines Raumcodes können Raum-Inhalte entschlüsseln; Direktnachrichten sind an das ausgewählte aktive Sitzungspaar gebunden. Exportierte Dateien sind außerhalb des privaten App-Speichers nicht durch dessen Verschlüsselung geschützt. Importierte Kartendateien unterliegen dem Dateischutz des Geräts, nicht dem Einsatzdatenschlüssel. Kompass, GPS und Wetterhinweise können ungenau oder veraltet sein; prüfe sie anhand anderer Quellen.</p>
-<p>Das <a href="/threat-model">ausführliche technische Bedrohungsmodell ist auf Englisch verfügbar</a>. Die <a href="/de/privacy">deutsche Datenschutzerklärung</a> beschreibt Daten, Anbieter, Berechtigungen und Aufbewahrung.</p>
-<h2 id="kontakt-und-quellcode">Kontakt und Quellcode</h2>
-<p><a href="/de/support">Hilfe für iOS und Android</a> · <a href="https://github.com/JediBrooker/TacMap">Quellcode auf GitHub</a> · <a href="mailto:christianbrooker@gmail.com">christianbrooker@gmail.com</a></p>
 
-</main>
+<a id="top"></a>
+<div class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="rv in">
+        <span class="eyebrow">Offline zuerst · Verschlüsselt · iOS + Android</span>
+        <h1>Deine Feldkarte.<br>Offline bereit.<br><em>Synchron bei Verbindung.</em></h1>
+        <p class="lead">TacMap hält Navigation und Einsatzwerkzeuge bereit, wenn
+          das Netz wegbricht. Sobald ein Netz verfügbar ist, teilt die optionale,
+          Ende-zu-Ende-verschlüsselte Einheitensynchronisierung das Lagebild und
+          TacMap Chat in Echtzeit. Kein Konto, keine Werbung, keine Analyse.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#get">TacMap laden →</a>
+          <a class="btn btn-ghost" href="#verify">Bedrohungsmodell lesen</a>
+        </div>
+        <div class="hero-meta">
+          <b>Relay-Grenze:</b> Einsatzinhalte werden auf dem Gerät versiegelt.
+          Der Relay verarbeitet trotzdem das Zugangstoken; unverschlüsselte
+          Routing-, Umschlag-, Akteur-/Sitzungs-/Schlüssel-, Bestätigungs- und
+          Steuerungsfelder; Chat-Bereich und den genauen ausgewählten Empfänger;
+          die gemeinsame Raummitgliedschaft; sowie IP-, Zeit-, Häufigkeits- und
+          Größenmetadaten. Er kann Datenverkehr außerdem verzögern, wiederholen,
+          unterdrücken oder selektiv weiterleiten, in den Grenzen, die das
+          Bedrohungsmodell beschreibt.
+        </div>
+      </div>
+
+      <div class="device rv in">
+        <picture>
+          <source srcset="/assets/screens/hero-device.webp" type="image/webp">
+          <img src="/assets/screens/hero-device.jpg" width="720" height="1531"
+               fetchpriority="high" decoding="async"
+               alt="TacMap auf einem iPhone: NATO-APP-6-Symbolik über einer Satelliten-Hintergrundkarte, Live-MGRS-Anzeige mit 56HKH 50215 67845, Einheitensynchronisierung aktiv.">
+        </picture>
+        <span class="caption">Live-MGRS · APP-6-Symbolik · Einheiten-Sync</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="strip">
+  <div class="strip-in">
+    <span>Keine Analyse</span>
+    <span>Keine Werbung</span>
+    <span>Kein Konto</span>
+    <span>E2E-verschlüsselt</span>
+    <span>Open Source</span>
+    <span>Selbst hostbar</span>
+  </div>
+</div>
+
+<!-- COMPARE -->
+<a id="compare"></a>
+<section class="blk">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 01</b> Vergleich</div>
+    <h2>Du kennst ATAK. Und du weißt, wie aufwendig es ist.</h2>
+    <p class="sub">TAK ist leistungsfähig und kostenlos, erwartet aber einen
+      Server, Einarbeitung und eine Entscheidung für eine Plattform. TacMap ist
+      die gemeinsame Karte, die du einem ganzen Team in zwei Minuten in die Hand
+      gibst.</p>
+
+    <div class="cmp">
+      <table>
+        <thead>
+          <tr><th></th><th class="us">TacMap</th><th>Typisches TAK-Setup</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Plattformen</td><td class="us">iOS und Android, eine App</td><td>ATAK / iTAK / WinTAK, unterschiedlicher Funktionsstand</td></tr>
+          <tr><td>Mehrere Nutzer</td><td class="us">Beitrittscode teilen</td><td>Oft ein TAK Server, den jemand betreiben und absichern muss</td></tr>
+          <tr><td>Konto</td><td class="us">Keins</td><td>Je nach Installation</td></tr>
+          <tr><td>Präsenz-Verschlüsselung</td><td class="us">E2E-Inhalte; der Relay sieht Verkehrs- und Sitzungsmetadaten</td><td>Je nach Server / Konfiguration</td></tr>
+          <tr><td>Bis zur ersten gemeinsamen Karte</td><td class="us">Minuten</td><td>Einrichtung und echte Einarbeitung</td></tr>
+          <tr><td>Offline-Karten</td><td class="us">Standard</td><td>Unterstützt, mehr Einrichtung</td></tr>
+          <tr><td>Prüfbar</td><td class="us">Open Source + veröffentlichtes Bedrohungsmodell</td><td>Open Core</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp-note">TAK ist die leistungsfähigere Plattform, und das darf man
+      auch so sagen. TacMap setzt auf eine kurze Zeit bis zur ersten gemeinsamen
+      Karte, denselben Funktionsumfang auf iOS und Android und ein
+      Sicherheitskonzept, das auch Nicht-Fachleute nachprüfen können. Die Galerie
+      unten enthält nur Screenshots, die mit dem Kandidaten für 2.0 abgeglichen
+      wurden; die plattformübergreifende Parität sichert die Testsuite, nicht die
+      Werbegrafik.</p>
+  </div>
+</section>
+
+<!-- CAPABILITIES -->
+<a id="capabilities"></a>
+<section class="blk flush-top">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 02</b> Funktionen</div>
+    <h2>Gebaut für Einsätze ohne Netz.</h2>
+    <div class="feats">
+      <div class="feat">
+        <div class="fnum">C-01</div>
+        <h3>Offline als Standard</h3>
+        <p>MGRS-Gitter, militärische Symbolik, Messen und importierte Karten.
+          TacMap fragt keine einzige Kartenkachel ab, bis du ausdrücklich eine
+          Online-Karte einschaltest.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-02</div>
+        <h3>Zuverlässige verschlüsselte Präsenz</h3>
+        <p>Seht in Echtzeit, wie ihr euch bewegt. Unplausible GPS-Sprünge werden
+          verworfen, und bei kurzen Verbindungsabbrüchen bleibt eine deutlich als
+          veraltet gekennzeichnete letzte Position stehen. Die Freigabe bei
+          ausgeschaltetem Bildschirm schaltest du auf beiden Plattformen separat
+          ein.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-03</div>
+        <h3>TacMap Chat</h3>
+        <p>Sende verschlüsselte Nachrichten oder Meldungen an den ganzen Raum oder
+          an eine ausgewählte aktive Einheit. Der Relay leitet Chiffretext weiter,
+          sieht aber den Chat-Bereich, den ausgewählten Empfänger und
+          Verkehrsmetadaten; „Weitergeleitet“ ist keine Lesebestätigung.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-04</div>
+        <h3>Norden oben oder Blickrichtung oben</h3>
+        <p>Drehe die Karte per Touch oder lass den Kompass des Telefons sie nach
+          deiner Blickrichtung ausrichten. Nordpfeil und Strich-Anzeige bleiben
+          eindeutig, einschließlich der gewählten Nordrichtung: geografisch,
+          magnetisch oder Gitternord.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-05</div>
+        <h3>Eigene Karten mitbringen</h3>
+        <p>Importiere PDF-, GeoPDF- und MBTiles-Karten. TacMap liest eingebettete
+          Georeferenzierung in der Projektion und dem Datum des Kartenblatts, damit
+          das MGRS-Gitter auf dem gedruckten Gitter liegt, und kalibriert
+          gewöhnliche Kartenblätter sonst direkt auf dem Gerät anhand von vier
+          Gitterkoordinaten. Kartenblätter bleiben beim Zoomen scharf und lassen
+          sich als Offline-Kacheln speichern. Einsatzobjekte kommen aus KML, KMZ
+          oder GeoJSON herein und auf demselben Weg wieder hinaus.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">C-06</div>
+        <h3>Keine Werbung, keine Analyse</h3>
+        <p>Absturzberichte bleiben auf dem Gerät, bis du sie exportierst.
+          Online-Karten und Online-Abfragen schaltest du selbst ein; die
+          App-Stores können deine Freischaltung abgleichen, erhalten dabei aber
+          keine Einsatz- oder Standortdaten.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FIELD TOOLS -->
+<a id="field-tools"></a>
+<section class="blk flush-top">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 03</b> Feldwerkzeuge</div>
+    <h2>Handwerkszeug fürs Gelände, direkt in der Karte.</h2>
+    <p class="sub">Sichtlinie, Entfernungsringe, Dämmerungszeiten und ein roter
+      Bildschirm für die Nacht. Alles hier funktioniert offline, außer dem
+      Höhenprofil: Dafür braucht es Online-Abfragen.</p>
+
+    <figure class="feature-video">
+      <video autoplay muted loop playsinline controls preload="metadata"
+             width="1280" height="720" poster="/assets/video/feature-poster.jpg"
+             aria-label="TacMap-Feldwerkzeuge: Sichtlinie, Entfernungsringe, Sonne und Mond und Nachtmodus.">
+        <source src="/assets/video/feature.webm" type="video/webm">
+        <source src="/assets/video/feature.mp4" type="video/mp4">
+      </video>
+    </figure>
+
+    <div class="feats">
+      <div class="feat">
+        <div class="fnum">F-01</div>
+        <h3>Höhenprofil und Sichtlinie</h3>
+        <p>Öffne es in der Messleiste mit zwei oder mehr Punkten oder über eine
+          ausgewählte Linie. Das Diagramm zeigt tiefsten und höchsten Punkt,
+          Gesamtanstieg und Gesamtabstieg sowie Höhe und Entfernung überall dort,
+          wo du es berührst. Zwischen zwei Punkten prüft TacMap die Sichtlinie für
+          Beobachter- und Zielhöhen von 0 bis 500 m und berücksichtigt dabei
+          Erdkrümmung und Refraktion: Eine verdeckte Sichtlinie wird rot, die
+          ungünstigste Stelle wird markiert und Gelände, das der Beobachter nicht
+          einsehen kann, grau dargestellt.</p>
+        <p class="note">Die Höhen stammen aus dem Copernicus-Höhenmodell über
+          Open-Meteo, etwa alle 30 m, daher sind Bäume und Gebäude nicht
+          berücksichtigt. Profile werden nur bei eingeschalteten Online-Abfragen
+          abgerufen, und jedes sendet bis zu 200 Punkte entlang der Linie.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-02</div>
+        <h3>Entfernungsringe</h3>
+        <p>Lege bis zu 10 Ringe im gewählten Abstand um jedes Symbol oder jeden
+          Kartenpunkt. Sie werden wie andere Zeichnungen synchronisiert,
+          exportiert und rückgängig gemacht, und Ringe um ein Symbol wandern mit,
+          wenn du es verschiebst.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-03</div>
+        <h3>Sonne und Mond</h3>
+        <p>Nautische und bürgerliche Dämmerung (BMNT/EENT, BMCT/EECT),
+          Sonnenauf- und -untergang, Mondauf- und -untergang sowie beleuchteter
+          Mondanteil für jeden Punkt, heute oder morgen. Auf dem Gerät berechnet,
+          also offline verfügbar, und es wird nichts gesendet.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-04</div>
+        <h3>Nachtmodus</h3>
+        <p>Die Mondtaste auf der Karte färbt TacMap rot, Menüs und Dialoge
+          eingeschlossen, und dunkelt es ab, um deine Nachtsicht zu schützen. Wie
+          dunkel, stellst du unter Einstellungen → Anzeige ein.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-05</div>
+        <h3>Karte gedrückt halten</h3>
+        <p>Halte einen Finger etwa eine Sekunde lang still auf eine freie Stelle,
+          um dort ein Symbol zu platzieren, von dort zu messen, Entfernungsringe
+          hinzuzufügen, Sonne und Mond anzuzeigen oder die Koordinate zu kopieren.
+          Beim Verschieben der Karte öffnet sich das Menü nie.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">F-06</div>
+        <h3>KML- und KMZ-Export</h3>
+        <p>Ebenen werden zu KML-Ordnern, Symbole und Zeichnungen zu gestalteten
+          Ortsmarken mit ihrem MGRS-Gitter. „KMZ mit Symbolen“ packt die Grafik
+          jedes Symbols mit ein, damit Google Earth, ATAK und GIS-Programme deine
+          echten APP-6-, Auftrags-, Marker- und eigenen Symbole zeigen.</p>
+      </div>
+    </div>
+    <p class="also">Außerdem in 3.0: die Symbolliste nach Neueste zuerst, Name,
+      Entfernung zum Fadenkreuz, Zugehörigkeit oder Ebene sortieren; die
+      optionale Einstellung „Bildschirm eingeschaltet lassen“ für eine Karte in
+      der Halterung; und eine geführte Tour beim ersten Start, die du unter „Über
+      TacMap und Mitwirkende“ → „Tour erneut abspielen“ wiederholen kannst.</p>
+  </div>
+</section>
+
+<!-- CUSTOM SYMBOLS -->
+<section class="blk flush-top" id="custom-symbols" aria-labelledby="custom-symbols-title">
+  <div class="wrap rv">
+    <div class="gridref"><b>ANLEITUNG</b> Eigene Symbole</div>
+    <h2 id="custom-symbols-title">Deine Symbole.<br>Deine Ebene.</h2>
+    <p class="sub">Bring die Grafiken deiner Organisation auf die Karte.
+      Importiere ein Paket, durchsuche es offline und platziere Symbole auf
+      deinen eigenen Ebenen.</p>
+    <div class="feats">
+      <div class="feat">
+        <div class="fnum">01 · VORBEREITEN</div>
+        <h3>Ebene erstellen</h3>
+        <p>Öffne Ebenen und Beschriftungen, lege eine benannte Ebene an und wähle
+          sie als aktive Ebene. Probiere das fertige Paket mit 894 deutschen
+          BOS-Symbolen.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">02 · IMPORTIEREN</div>
+        <h3>Paket auswählen</h3>
+        <p>Auf Android: Importieren / Exportieren → Symbolpaket importieren.
+          Auf iPhone oder iPad: Symbolpaket importieren im Symboleditor einer
+          Markierung. Wähle die heruntergeladene .json-Datei.</p>
+      </div>
+      <div class="feat">
+        <div class="fnum">03 · PLATZIEREN</div>
+        <h3>Suchen und auswählen</h3>
+        <p>Wähle Eigene Symbole und suche nach Paket, Kategorie oder Name.
+          Wähle eine Vorschau, benenne deine Markierung und platziere sie auf
+          deiner Ebene.</p>
+      </div>
+    </div>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="/de/custom-symbols">Zur Import-Anleitung →</a>
+      <a class="btn btn-ghost" href="/custom-symbols" lang="en" hreflang="en">Guide in English →</a>
+    </div>
+    <p class="sub">Benötigt TacMap 2.0.2 oder neuer. Die Anleitung enthält den Download des Pakets.</p>
+  </div>
+</section>
+
+<!-- SCREENS -->
+<a id="screens"></a>
+<section class="blk flush-top">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 04</b> Screenshots</div>
+    <h2>Aktuelle Store-Screenshots beider Plattformen.</h2>
+    <p class="sub">Direkt aus der echten App auf iPhone und Android
+      aufgenommen, dieselben acht Screenshots wie in beiden Stores. Die Texte auf
+      den Bildern sind englisch; scrolle seitwärts oder wische auf dem Telefon.</p>
+
+    <div class="rail" tabindex="0" role="region" aria-label="TacMap-Screenshots, horizontal scrollbar">
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/01-hero.webp" type="image/webp">
+          <img src="/assets/store/01-hero.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Lagebild mit NATO-APP-6-Einheiten, Aufträgen und Entfernungsringen über dem MGRS-Gitter.">
+        </picture>
+        <figcaption><b>iOS</b> · Lagebild</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/android-02-line-of-sight.webp" type="image/webp">
+          <img src="/assets/store/android-02-line-of-sight.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="Höhenprofil mit Sichtlinienprüfung und markiertem toten Raum.">
+        </picture>
+        <figcaption><b>Android</b> · Sichtlinie</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/03-night-mode.webp" type="image/webp">
+          <img src="/assets/store/03-night-mode.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Der Nachtmodus färbt jeden Bildschirm rot und dunkelt ihn ab.">
+        </picture>
+        <figcaption><b>iOS</b> · Nachtmodus</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/android-04-unit-sync.webp" type="image/webp">
+          <img src="/assets/store/android-04-unit-sync.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="TacMap Chat in einem Ende-zu-Ende-verschlüsselten Unit-Sync-Raum.">
+        </picture>
+        <figcaption><b>Android</b> · Unit Sync & Chat</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/05-sun-moon.webp" type="image/webp">
+          <img src="/assets/store/05-sun-moon.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="BMNT, EENT, Sonnen- und Mondaufgang sowie beleuchteter Mondanteil, offline berechnet.">
+        </picture>
+        <figcaption><b>iOS</b> · Sonne und Mond</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/android-06-pdfmap.webp" type="image/webp">
+          <img src="/assets/store/android-06-pdfmap.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="Ein importiertes GeoPDF mit Such- und Rettungsmarkierungen.">
+        </picture>
+        <figcaption><b>Android</b> · Offline-Karten</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/07-symbol-builder.webp" type="image/webp">
+          <img src="/assets/store/07-symbol-builder.jpg" width="660" height="1434" loading="lazy" decoding="async"
+               alt="Der NATO-APP-6-Symbolbaukasten mit Live-Vorschau.">
+        </picture>
+        <figcaption><b>iOS</b> · Symbole</figcaption>
+      </figure>
+      <figure class="shot">
+        <picture>
+          <source srcset="/assets/store/android-08-export.webp" type="image/webp">
+          <img src="/assets/store/android-08-export.jpg" width="660" height="1173" loading="lazy" decoding="async"
+               alt="Export als KML, KMZ mit Symbolbildern, GeoJSON und GPX.">
+        </picture>
+        <figcaption><b>Android</b> · Import & Export</figcaption>
+      </figure>
+    </div>
+    <p class="rail-hint">8 Store-Screenshots · iPhone und Android</p>
+  </div>
+</section>
+
+<!-- WHO -->
+<a id="who"></a>
+<section class="blk flush-top">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 05</b> Für wen</div>
+    <h2>Feldwerkzeuge, die auch ohne Netz nützlich bleiben.</h2>
+    <div class="who">
+      <div class="who-card">
+        <span class="tag">Gelände</span>
+        <h3>Milsim &amp; Airsoft</h3>
+        <p>Bereite die Karte vor und nutze die Feldwerkzeuge offline; die
+          Einheitensynchronisierung verbindet sich über ihren Relay neu, sobald
+          ein Netzweg verfügbar ist.</p>
+      </div>
+      <div class="who-card">
+        <span class="tag">Einsatz</span>
+        <h3>Suche &amp; Rettung</h3>
+        <p>Navigation und eine vorbereitete Karte bleiben verfügbar, wenn die
+          Netzabdeckung wegfällt.</p>
+      </div>
+      <div class="who-card">
+        <span class="tag">Bereit</span>
+        <h3>Vorsorge</h3>
+        <p>Deine Karte, dein Team, kein Konto; optionale Netzwege bleiben
+          sichtbar und aus, bis du sie wählst.</p>
+      </div>
+      <div class="who-card">
+        <span class="tag">Profi</span>
+        <h3>Kleine Einheiten</h3>
+        <p>Gemeinsames Lagebild, ohne einen Server aufzusetzen.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VERIFY -->
+<a id="verify"></a>
+<section class="blk verify">
+  <div class="wrap rv">
+    <div class="vgrid">
+      <div>
+        <div class="gridref"><b>REF 06</b> Prüfen</div>
+        <h2>Verlass dich nicht auf unser Wort. Lies nach.</h2>
+        <p class="sub">Das gesamte Sicherheitskonzept ist dokumentiert und offen.
+          Die Synchronisierung ist Ende-zu-Ende-verschlüsselt, während der Relay
+          verschlüsselte Nutzdaten sowie ein unverschlüsseltes Zugangstoken,
+          Umschlag-, Akteur-/Sitzungs- und Steuerungsdaten und Verkehrsmetadaten
+          verarbeitet. Die Kryptografie kommt mit einer Testsuite. Wenn du Code
+          lesen kannst, kannst du jede Aussage auf dieser Seite prüfen.</p>
+      </div>
+      <div class="vlinks">
+        <a class="vlink" href="/threat-model" hreflang="en">
+          <span><span class="vt">Bedrohungsmodell (Englisch)</span><span class="vd">Was jede Partei sehen kann und was nicht, in verständlicher Sprache.</span></span>
+          <span class="arrow">→</span>
+        </a>
+        <a class="vlink" href="https://github.com/JediBrooker/TacMap">
+          <span><span class="vt">Quellcode auf GitHub</span><span class="vd">Die komplette App, offen zur Prüfung.</span></span>
+          <span class="arrow">→</span>
+        </a>
+        <a class="vlink" href="/threat-model#relay" hreflang="en">
+          <span><span class="vt">So funktioniert die Sync-Verschlüsselung</span><span class="vd">Schlüsselableitung, Versiegelung und was der Relay verarbeitet (Englisch).</span></span>
+          <span class="arrow">→</span>
+        </a>
+        <a class="vlink" href="/de/privacy">
+          <span><span class="vt">Datenschutzerklärung</span><span class="vd">Speicherung auf dem Gerät, optionale Anbieter, Relay-Metadaten und Berechtigungen.</span></span>
+          <span class="arrow">→</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<a id="faq"></a>
+<section class="blk">
+  <div class="wrap rv">
+    <div class="gridref"><b>REF 07</b> FAQ</div>
+    <h2>Klare Antworten.</h2>
+    <div class="faq">
+      <div class="qa"><div class="q">Brauche ich einen Server?</div>
+        <div class="a">Du musst keinen verwalten. Die Einheitensynchronisierung
+          nutzt bei Verbindung einen verschlüsselten Relay; du kannst den
+          gehosteten Relay verwenden oder ihn selbst hosten.</div></div>
+      <div class="qa"><div class="q">Was sieht der Sync-Relay?</div>
+        <div class="a">Verschlüsselte Einsatzdaten; beim Verbinden das
+          Zugangstoken; sowie unverschlüsselte Routing-, Objekt-/Versions-/Typ-,
+          Akteur-/Sitzungs-/Schlüssel-, Anfrage-/Bestätigungs- und
+          Steuerungsfelder. Beim Chat sieht er, ob an den Raum oder an eine
+          ausgewählte Einheit gesendet wird, und den genauen Empfänger. Außerdem
+          sieht er die gemeinsame Raummitgliedschaft sowie IP-, Zeit-,
+          Häufigkeits- und Größenmetadaten. Der Relay erhält weder Klartext noch
+          den Raumschlüssel, aber ein schwacher, von Menschen gewählter
+          Beitrittscode lässt sich anhand der sichtbaren Raumkennung offline
+          erraten, und der Relay kann Datenverkehr verzögern, wiederholen,
+          unterdrücken oder selektiv weiterleiten. Der Mitgliedsstatus wird vom
+          Relay gemeldet und nicht unabhängig nachgewiesen. Details stehen im
+          <a href="#verify">Bedrohungsmodell</a>.</div></div>
+      <div class="qa"><div class="q">Sind meine Daten verschlüsselt?</div>
+        <div class="a">Präsenz und Synchronisierung sind Ende-zu-Ende-verschlüsselt.
+          Einsatzobjekte, Kalibrierungsdaten und aufgezeichnete Wege werden im
+          privaten App-Speicher verschlüsselt; importierte Kartendateien bleiben
+          privat unter dem Dateischutz des Geräts.</div></div>
+      <div class="qa"><div class="q">Funktionieren die Feldwerkzeuge offline?</div>
+        <div class="a">Entfernungsringe, Sonnen- und Mondzeiten, Nachtmodus und
+          KML-/KMZ-Export funktionieren offline. Höhenprofil und Sichtlinie
+          brauchen Geländehöhen aus dem Copernicus-Höhenmodell über Open-Meteo und
+          rufen sie nur ab, wenn Online-Abfragen eingeschaltet sind; standardmäßig
+          sind sie aus. Jedes Profil sendet bis zu 200 Punkte entlang der Linie an
+          Open-Meteo; Details stehen in der
+          <a href="/de/privacy">Datenschutzerklärung</a>.</div></div>
+      <div class="qa"><div class="q">Bedeutet „Weitergeleitet“, dass eine Chat-Nachricht gelesen wurde?</div>
+        <div class="a">Nein. TacMap Chat v1 funktioniert nur live und hat weder
+          Zustell- noch Lesebestätigung. „Weitergeleitet“ oder „An Raum gesendet“
+          heißt nur, dass der Relay den Chiffretext für seinen aktuellen
+          Live-Routing-Bereich angenommen hat.</div></div>
+      <div class="qa"><div class="q">Welche Plattformen?</div>
+        <div class="a">Native Apps für iOS und Android in einem Repository.
+          Gemeinsame Datenverträge und Test-Fixtures decken das
+          plattformübergreifende Verhalten ab; die nativen Layouts können sich
+          unterscheiden, und die Screenshot-Galerie ist nicht die
+          Paritäts-Testsuite.</div></div>
+      <div class="qa"><div class="q">Welche Sprachen?</div>
+        <div class="a">Deutsch und Englisch. Wähle Deutsch, English oder
+          Gerätesprache unter Einstellungen, Datenschutz und OPSEC → Sprache. Die
+          Übersetzungen sind in der App enthalten und funktionieren offline;
+          deine eigenen Namen, Notizen und Nachrichten bleiben, wie du sie
+          geschrieben hast. Diese Seite gibt es auch
+          <a href="/" lang="en" hreflang="en">in English</a>.</div></div>
+      <div class="qa"><div class="q">Was kann ich exportieren?</div>
+        <div class="a"><strong>Alle Einsatzobjekte exportieren</strong> erstellt
+          GeoJSON mit Wegpunkten, Symbolen, Zeichnungen und Ebenen.
+          <strong>KML exportieren</strong> und <strong>KMZ mit Symbolen</strong>
+          schreiben Symbole und Zeichnungen für Google Earth, ATAK und
+          GIS-Programme, mit Ebenen als Ordnern. Ein aufgezeichneter Weg bleibt
+          ein separater GPX-Export.</div></div>
+      <div class="qa"><div class="q">Ist das wirklich privat?</div>
+        <div class="a">Kein TacMap-Konto, keine Verhaltensanalyse, keine Werbung
+          und keine Absturzberichte an den Entwickler. Optionale Kacheln und
+          Abfragen sowie die Einheitensynchronisierung sind offengelegt und nur
+          nach deiner Freigabe aktiv; die App-Stores können die einmalige
+          Freischaltung abgleichen. Die <a href="/de/privacy">Datenschutzerklärung</a>
+          beschreibt jeden dieser Wege.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- DOWNLOAD -->
+<a id="get"></a>
+<section class="dl">
+  <div class="wrap rv">
+    <span class="eyebrow centered">Kostenlos testen</span>
+    <h2>Bring dein Team auf eine Karte.</h2>
+    <p>Lade TacMap für Feldwerkzeuge ohne Netz. Bei Verbindung teilst du einen
+      Beitrittscode für verschlüsselte Präsenz, Einsatzobjekte und TacMap Chat
+      über die Einheitensynchronisierung. Kein TacMap-Konto. Drei Tage kostenlos,
+      danach einmalig freischalten, ohne Abo.</p>
+    <div class="cta-row">
+      <a class="store" href="https://apps.apple.com/au/app/tacmap/id6773175573"><img src="/assets/badges/app-store.svg" width="144" height="48" alt="Laden im App Store"></a>
+      <a class="store google-play" href="https://play.google.com/store/apps/details?id=com.tacmap"><img src="/assets/badges/google-play.png" width="186" height="72" alt="Jetzt bei Google Play"></a>
+      <a class="btn btn-ghost" href="https://github.com/JediBrooker/TacMap">Quellcode ansehen</a>
+    </div>
+  </div>
+</section>
+
 <footer>
-  <div class="foot-in">
-    <span>TACMAP</span>
-    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/de/OVERVIEW.md">Quelltext auf GitHub</a></span>
+  <div class="wrap foot-in">
+    <span class="mono">TACMAP · 34T DP 4521 8763 · OFFLINE ZUERST</span>
+    <div class="foot-links">
+      <a href="#compare">vs. TAK</a>
+      <a href="#verify">Sicherheit</a>
+      <a href="/de/privacy">Datenschutz</a>
+      <a href="/de/support">Hilfe</a>
+      <a href="/de/custom-symbols">Eigene Symbole</a>
+      <a href="/" lang="en" hreflang="en">English</a>
+      <a href="mailto:christianbrooker@gmail.com">Kontakt</a>
+      <a href="https://github.com/JediBrooker/TacMap">GitHub</a>
+      <a href="#faq">FAQ</a>
+    </div>
   </div>
 </footer>
+
+<script>
+  // Keep section links available without JavaScript; enhance to a mobile menu.
+  const header = document.querySelector('header.nav');
+  const menuButton = header.querySelector('.nav-toggle');
+  const menuLinks = header.querySelector('.nav-links');
+  const mobileNav = window.matchMedia('(max-width:900px)');
+  function setMenuOpen(open) {
+    menuButton.setAttribute('aria-expanded', String(open));
+    menuLinks.classList.toggle('is-open', open);
+  }
+  menuButton.addEventListener('click', () => {
+    setMenuOpen(menuButton.getAttribute('aria-expanded') !== 'true');
+  });
+  menuLinks.addEventListener('click', (event) => {
+    if (mobileNav.matches && event.target.closest('a')) {
+      setMenuOpen(false);
+      menuButton.focus({preventScroll:true});
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && menuButton.getAttribute('aria-expanded') === 'true') {
+      setMenuOpen(false);
+      menuButton.focus();
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!header.contains(event.target)) setMenuOpen(false);
+  });
+  header.addEventListener('focusout', (event) => {
+    if (!header.contains(event.relatedTarget)) setMenuOpen(false);
+  });
+  mobileNav.addEventListener('change', () => setMenuOpen(false));
+  header.classList.add('nav-ready');
+
+  // scroll reveal
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+  },{threshold:.12});
+  document.querySelectorAll(".rv").forEach(function(el){ io.observe(el); });
+</script>
 </body>
 </html>

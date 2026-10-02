@@ -26,6 +26,30 @@ final class OpsecSettingsPersistenceTests: XCTestCase {
         XCTAssertFalse(settings.backgroundUnitSyncLocation)
     }
 
+    func testScreenshotOverridesAreTransientAndCompileTimeScoped() {
+        defaults.set(false, forKey: "opsec.onlineLookups")
+        defaults.set(false, forKey: "opsec.onlineBasemaps")
+        defaults.set(false, forKey: "display.nightMode")
+        let overridden = OpsecSettings(defaults: defaults, environment: [
+            "TACMAP_UITEST_ONLINE": "1", "TACMAP_UITEST_NIGHT_MODE": "1"
+        ])
+#if DEBUG
+        XCTAssertTrue(overridden.onlineLookups)
+        XCTAssertTrue(overridden.onlineBasemaps)
+        XCTAssertTrue(overridden.nightMode)
+#else
+        XCTAssertFalse(overridden.onlineLookups)
+        XCTAssertFalse(overridden.onlineBasemaps)
+        XCTAssertFalse(overridden.nightMode)
+#endif
+        let restarted = OpsecSettings(defaults: defaults, environment: [:])
+        XCTAssertFalse(restarted.onlineLookups)
+        XCTAssertFalse(restarted.onlineBasemaps)
+        XCTAssertFalse(restarted.nightMode)
+        XCTAssertEqual(defaults.object(forKey: "opsec.onlineLookups") as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: "opsec.onlineBasemaps") as? Bool, false)
+    }
+
     func testPersistedOnlineChoicesTakePrecedence() {
         defaults.set(true, forKey: "opsec.onlineLookups")
         defaults.set(true, forKey: "opsec.onlineBasemaps")

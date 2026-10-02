@@ -1,0 +1,43 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R] /D << /Name (Default) /Order [5 0 R] /ON [] /OFF [5 0 R] >> >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [100 100 700 500] /CropBox [120 115 680 490] /Rotate 90 /Resources << /Properties << /oc1 5 0 R >> >> /Contents 4 0 R /VP [<< /Type /Viewport /Name (Map Layers) /BBox [110 130 670 480] /Measure << /Type /Measure /Subtype /GEO /Bounds [0 0 0 1 1 1 1 0] /GPTS [37.787600194701 -122.462472179679 37.743134263333 -122.459860085197 37.744424774282 -122.424862080788 37.788891303629 -122.427453239161] /LPTS [0 0 1 0 1 1 0 1] /GCS << /Type /PROJCS /WKT (PROJCS["WGS 84 / UTM zone 10N",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-123],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1]]) >> >> >>] >>
+endobj
+4 0 obj
+<< /Length 362 >>
+stream
+q 1 1 1 rg 100 100 600 400 re f Q
+q 0 0 0 RG 0.6 w 110 130 560 350 re S Q
+q 1 0 0 rg 393 303 4 4 re f Q
+q 1 0 0 rg 143 153 4 4 re f Q
+q 1 0 0 rg 643 153 4 4 re f Q
+q 1 0 0 rg 643 453 4 4 re f Q
+q 1 0 0 rg 143 453 4 4 re f Q
+q 1 0 0 rg 298 418 4 4 re f Q
+q 1 0 0 rg 518 198 4 4 re f Q
+q 1 0 0 rg 113 303 4 4 re f Q
+/OC /oc1 BDC q 0 0 1 rg 464 324 12 12 re f Q EMC
+endstream
+endobj
+5 0 obj
+<< /Type /OCG /Name (TacMap hidden test layer) >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000158 00000 n 
+0000000215 00000 n 
+0000001111 00000 n 
+0000001524 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1589
+%%EOF

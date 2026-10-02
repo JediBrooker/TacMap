@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Shrink release-approved store slides down for the website gallery.
+"""Shrink the store slides down for the website gallery.
 
-The store set is 1320x2868 png, ~14MB for the ten of them, which is not
-something you put on a landing page. The rail renders each card about 264css
+The store sets are 1320x2868 (iPhone) and 1080x1920 (Android phone) png,
+way too heavy for a landing page. The rail renders each card about 264css
 wide so 660 is still 2.5x on a retina panel.
 
-Slides keep their marketing banner, that's the point of using them here. The
-allowlist deliberately excludes stale artwork so rerunning this script cannot
-silently republish a pre-release UI.
+The rail shows each of the 8 slides once, alternating platforms so both apps
+are in there without doubling the rail: odd slides from the iPhone set, even
+ones from the Android phone set. Slides keep their marketing banner, that's
+the point of using them here.
 
     python3 scripts/build_site_gallery.py
 """
@@ -16,14 +17,21 @@ import os
 import glob
 from PIL import Image
 
-SRC_DIR = "docs/store/ios/iphone-6.9"
+IOS_DIR = "docs/store/ios/iphone-6.9"
+ANDROID_DIR = "docs/store/android/phone"
 OUT_DIR = "site/public/assets/store"
 MAX_W = 660
 
-ANDROID_APPROVED = {
-    "docs/store/android/phone/01-hero.png": "android-01-field-tools",
-    "docs/store/android/phone/02-unit-sync.png": "android-02-unit-sync",
-}
+SLIDES = [
+    ("01-hero", "ios"),
+    ("02-line-of-sight", "android"),
+    ("03-night-mode", "ios"),
+    ("04-unit-sync", "android"),
+    ("05-sun-moon", "ios"),
+    ("06-pdfmap", "android"),
+    ("07-symbol-builder", "ios"),
+    ("08-export", "android"),
+]
 
 
 def write_variants(src, stem):
@@ -40,21 +48,17 @@ def write_variants(src, stem):
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
-    ios_srcs = [
-        src for src in sorted(glob.glob(os.path.join(SRC_DIR, "*.png")))
-        if os.path.basename(src) != "01-hero.png"
-    ]
-    sources = [(src, os.path.splitext(os.path.basename(src))[0]) for src in ios_srcs]
-    sources.extend(ANDROID_APPROVED.items())
-    if not sources:
-        raise SystemExit(f"no slides in {SRC_DIR}")
+    # clear out the old set so stale artwork can't hang around and get linked
+    for old in glob.glob(os.path.join(OUT_DIR, "*.jpg")) + glob.glob(os.path.join(OUT_DIR, "*.webp")):
+        os.remove(old)
 
     total = 0
-    for src, stem in sources:
+    for name, platform in SLIDES:
+        src = os.path.join(IOS_DIR if platform == "ios" else ANDROID_DIR, name + ".png")
+        stem = name if platform == "ios" else f"android-{name}"
         size, jpg_bytes, webp_bytes = write_variants(src, stem)
-        kb = (jpg_bytes + webp_bytes) / 1024
         total += webp_bytes
-        print(f"  {stem:<24} {size[0]}x{size[1]}  jpg+webp {kb:.0f} KB")
+        print(f"  {stem:<28} {size[0]}x{size[1]}  jpg+webp {(jpg_bytes + webp_bytes) / 1024:.0f} KB")
 
     print(f"\nwebp payload if every card loads: {total / 1024:.0f} KB")
 

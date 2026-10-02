@@ -69,6 +69,22 @@ class NightModeSourceTest {
     }
 
     @Test
+    fun menuPopupsCloseOnSystemBack() {
+        // targetSdk 36 routes BACK through OnBackInvokedDispatcher, which compose 1.6 popups
+        // never register with, so every menu has to do it itself
+        val nightMode = File(sourceRoot, "com/tacmap/ui/NightMode.kt").readText()
+        val wrapper = nightMode.substringAfter("fun DropdownMenu(").substringBefore("\n}\n")
+        assertTrue(wrapper.contains("PopupBackDismiss(onDismissRequest)"))
+        assertTrue(nightMode.contains("registerOnBackInvokedCallback"))
+
+        val offenders = sources.filter { (_, text) ->
+            val menus = Regex("""(?<![\w.])ExposedDropdownMenu\(""").findAll(text).count()
+            menus > 0 && Regex("""PopupBackDismiss \{""").findAll(text).count() < menus
+        }.map { it.first }
+        assertEquals(emptyList<String>(), offenders)
+    }
+
+    @Test
     fun matrixKeepsOnlyScaledLuminanceInRed() {
         val m = NightModeFilter.matrix(0.5f)
         assertEquals(20, m.size)

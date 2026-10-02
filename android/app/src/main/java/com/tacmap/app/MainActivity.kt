@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
 import android.provider.Settings
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -41,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
@@ -63,7 +65,7 @@ import com.tacmap.models.TrackRecordingSettingsTarget
 import com.tacmap.util.DataKey
 import com.tacmap.util.retryExpiredSensitiveClipboard
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), OwnShareSheetHost {
 
     private lateinit var trial: TrialManager
     private lateinit var billing: BillingManager
@@ -104,6 +106,9 @@ class MainActivity : ComponentActivity() {
     // (e.g. days later) without a cold restart
     private val resumeTick = mutableLongStateOf(System.currentTimeMillis())
     private var restoreAfterRedeem = false
+    /** DEBUG: launched with verification hooks (docs/DEBUG_HOOKS.md) */
+    private var debugHooksActive = false
+    private val shareSheetLock = ShareSheetLockDeferral()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,6 +117,7 @@ class MainActivity : ComponentActivity() {
             restorePendingDocumentImport(savedInstanceState)
         )
         pendingDocumentImport.value = pendingImportCoordinator.current()
+        releaseOrphanedImportGrants(pendingImportCoordinator.current())
         credentialLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
             runCatching { DataKey.key() }
@@ -180,8 +186,12 @@ class MainActivity : ComponentActivity() {
         // OPSEC: keep the map (w/ live position) out of recents thumbnail,
         // screenshots, screen recordings. Follows user's setting reactively.
         val opsec = (application as TacticalApp).opsec
+        // debug builds only: on-device verification hooks (docs/DEBUG_HOOKS.md). BuildConfig.DEBUG
+        // is a compile time false in release so R8 drops all of this
+        if (com.tacmap.BuildConfig.DEBUG && savedInstanceState == null) applyDebugLaunchHooks(intent)
         lifecycleScope.launch {
-            opsec.blockScreenCapture.collect { block ->
+            opsec.blockScreenCapture.collect { requested ->
+                val block = requested && !(com.tacmap.BuildConfig.DEBUG && DebugLaunchHooks.allowScreenshots)
                 if (block) {
                     window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                 } else {
@@ -317,8 +327,57 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = true
+    }
+
+    /**
+     * DEBUG ONLY. Import a PDF as if it was picked, preset the camera and grid, and lift
+     * FLAG_SECURE for this process so the verification scripts can screenshot.
+     */
+    private fun applyDebugLaunchHooks(launch: Intent?) {
+        if (!com.tacmap.BuildConfig.DEBUG) return
+        val request = DebugLaunchHooks.parse { name -> launch?.getStringExtra(name) } ?: return
+        DebugLaunchHooks.apply(request)
+        debugHooksActive = true
+        // nothing on top of the map in a hook run: no tour, no initial location prompt
+        com.tacmap.map.FirstRunTips.markSeen(this)
+        if (request.grid) {
+            getSharedPreferences(com.tacmap.map.LAYER_PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(com.tacmap.map.MGRS_GRID_VISIBLE_KEY, true).commit()
+        }
+        request.importPdfPath?.let { path ->
+            receiveDocumentImportResult(DocumentImportKind.PDF, Uri.fromFile(java.io.File(path)))
+        }
+    }
+
     override fun onPause() {
         super.onPause()
+        if (shareSheetLock.onPause()) lockForBackground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = false
+        (application as TacticalApp).pdfRenderGuard.disarmBackground()
+        if (shareSheetLock.onStop()) {
+            lockForBackground()
+            // compose pauses recomposition at ON_STOP, so flipping missionKeyReady cant tear
+            // MapScreen + its stores down from here like it does from onPause. Nuke the
+            // composition by hand, ComposeView rebuilds it on the next measure once visible
+            (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? ComposeView)
+                ?.disposeComposition()
+        }
+    }
+
+    override fun willShowOwnShareSheet() = shareSheetLock.shareSheetRequested()
+
+    override fun ownShareSheetLaunchFailed() = shareSheetLock.shareSheetLaunchFailed()
+
+    private fun lockForBackground() {
         // Reduce an eligible v3 client to egress-only presence before the
         // mission key and its screen-owned stores are torn down.
         (application as TacticalApp).unitSyncRuntime.onActivityPausing()
@@ -347,6 +406,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        shareSheetLock.onResume()
         // Stop background egress now; Unit Sync reconnects only after the
         // mission key is available and MapScreen attaches fresh stores.
         (application as TacticalApp).unitSyncRuntime.onActivityForegrounded()
@@ -421,31 +481,26 @@ class MainActivity : ComponentActivity() {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             true
         }.getOrDefault(false)
+        // memory + savedInstanceState only (D5-18): the key's locked right now anyway,
+        // and a plaintext pref would leave the picked file's name on disk
         val pending = pendingImportCoordinator.publish(kind, uri.toString(), grantTaken)
-        if (persistPendingDocumentImport(pending)) {
-            pendingDocumentImport.value = pending
-        } else {
-            pendingImportCoordinator = PendingDocumentImportCoordinator()
-            pendingDocumentImport.value = null
-            releaseDocumentImportGrant(pending)
-        }
+        pendingDocumentImport.value = pending
     }
 
     private fun completeDocumentImport(token: String) {
-        val pending = pendingImportCoordinator.current()?.takeIf { it.token == token } ?: return
-        // Durable clear first. If it fails, abandon the claim and retain the
-        // grant so a recreated Activity can safely retry instead of duplicating
-        // a PDF/MBTiles import whose completion marker was lost.
-        if (!persistPendingDocumentImport(null)) {
-            pendingImportCoordinator.abandon(token)
-            return
-        }
-        val completed = pendingImportCoordinator.complete(token) ?: run {
-            persistPendingDocumentImport(pending)
-            return
-        }
+        val completed = pendingImportCoordinator.complete(token) ?: return
         pendingDocumentImport.value = null
         releaseDocumentImportGrant(completed)
+    }
+
+    /** a pick the app never finished keeps its persisted grant forever otherwise */
+    private fun releaseOrphanedImportGrants(pending: PendingDocumentImport?) {
+        val held = runCatching { contentResolver.persistedUriPermissions.map { it.uri.toString() } }.getOrDefault(emptyList())
+        PendingDocumentImportRestore.orphanedGrants(held, pending).forEach { uri ->
+            runCatching {
+                contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
     }
 
     private fun releaseDocumentImportGrant(pending: PendingDocumentImport) {
@@ -464,41 +519,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun restorePendingDocumentImport(savedInstanceState: Bundle?): PendingDocumentImport? {
-        fun fromValues(token: String?, kind: String?, uri: String?, grant: Boolean): PendingDocumentImport? {
-            if (token.isNullOrBlank() || uri.isNullOrBlank()) return null
-            val parsedKind = DocumentImportKind.fromSavedValue(kind) ?: return null
-            return PendingDocumentImport(token, parsedKind, uri, grant)
-        }
-
-        fromValues(
+        val fromBundle = PendingDocumentImportRestore.fromValues(
             savedInstanceState?.getString(PENDING_IMPORT_TOKEN),
             savedInstanceState?.getString(PENDING_IMPORT_KIND),
             savedInstanceState?.getString(PENDING_IMPORT_URI),
             savedInstanceState?.getBoolean(PENDING_IMPORT_GRANT, false) ?: false,
-        )?.let { return it }
-
-        val prefs = getSharedPreferences(PENDING_IMPORT_PREFS, Context.MODE_PRIVATE)
-        return fromValues(
-            prefs.getString(PENDING_IMPORT_TOKEN, null),
-            prefs.getString(PENDING_IMPORT_KIND, null),
-            prefs.getString(PENDING_IMPORT_URI, null),
-            prefs.getBoolean(PENDING_IMPORT_GRANT, false),
         )
-    }
-
-    private fun persistPendingDocumentImport(pending: PendingDocumentImport?): Boolean {
-        val edit = getSharedPreferences(PENDING_IMPORT_PREFS, Context.MODE_PRIVATE).edit().clear()
-        if (pending != null) {
-            edit.putString(PENDING_IMPORT_TOKEN, pending.token)
-                .putString(PENDING_IMPORT_KIND, pending.kind.savedValue)
-                .putString(PENDING_IMPORT_URI, pending.uri)
-                .putBoolean(PENDING_IMPORT_GRANT, pending.persistableGrantTaken)
+        // older builds kept the pick in plaintext prefs: adopt it once, wipe the file
+        val prefs = getSharedPreferences(PendingDocumentImportRestore.LEGACY_PREFS, Context.MODE_PRIVATE)
+        val legacy = object : LegacyPendingImportPrefs {
+            override fun getString(key: String): String? = prefs.getString(key, null)
+            override fun getBoolean(key: String): Boolean = prefs.getBoolean(key, false)
+            override fun clearAll(): Boolean = prefs.edit().clear().commit()
         }
-        val saved = edit.commit()
-        if (!saved) {
-            missionKeyError.value = Messages.missionKeyCouldNotPreserveThePendingDocumentImportAcrossProcessMessage()
-        }
-        return saved
+        return PendingDocumentImportRestore.restore(fromBundle, legacy.takeIf { prefs.all.isNotEmpty() })
     }
 
     private fun requestAuthBoundChange(target: Boolean) {
@@ -592,6 +626,8 @@ class MainActivity : ComponentActivity() {
 
     private fun requestInitialLiveMapLocationIfReady() {
         if (locked.value || !missionKeyReady.value) return
+        // debug hook runs want an unobstructed map for screenshots (docs/DEBUG_HOOKS.md)
+        if (com.tacmap.BuildConfig.DEBUG && debugHooksActive) return
         if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
         if (!LiveMapLocationPermissionPolicy.shouldRequestOnInitialMapPresentation(
                 liveMapLocationState.value
@@ -696,10 +732,10 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val LIVE_MAP_LOCATION_PREFS = "live_map_location_ui_v1"
         const val LIVE_MAP_LOCATION_REQUESTED = "permission_requested"
-        const val PENDING_IMPORT_PREFS = "pending_document_import_v1"
-        const val PENDING_IMPORT_TOKEN = "pending_import_token"
-        const val PENDING_IMPORT_KIND = "pending_import_kind"
-        const val PENDING_IMPORT_URI = "pending_import_uri"
-        const val PENDING_IMPORT_GRANT = "pending_import_grant"
+        // savedInstanceState keys, same names the old prefs file used
+        const val PENDING_IMPORT_TOKEN = PendingDocumentImportRestore.KEY_TOKEN
+        const val PENDING_IMPORT_KIND = PendingDocumentImportRestore.KEY_KIND
+        const val PENDING_IMPORT_URI = PendingDocumentImportRestore.KEY_URI
+        const val PENDING_IMPORT_GRANT = PendingDocumentImportRestore.KEY_GRANT
     }
 }

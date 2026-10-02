@@ -85,4 +85,12 @@
         <item quantity="one">"%d new layer"</item>
         <item quantity="other">"%d new layers"</item>
     </plurals>
+    <plurals name="count_calibration_point">
+        <item quantity="one">"%d point"</item>
+        <item quantity="other">"%d points"</item>
+    </plurals>
+    <plurals name="count_imported_map">
+        <item quantity="one">"%d map"</item>
+        <item quantity="other">"%d maps"</item>
+    </plurals>
 </resources>

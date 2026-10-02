@@ -281,8 +281,8 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 36
-        versionCode = injectedVersionCode ?: 69
-        versionName = "2.1.0"
+        versionCode = injectedVersionCode ?: 73
+        versionName = "3.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables { useSupportLibrary = true }
@@ -320,6 +320,14 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+    // shared cross-platform fixtures ride along in the instrumented test apk only, so
+    // the PDFBox + PdfRenderer tests can open the real testdata/geopdf sheets on device
+    sourceSets {
+        getByName("androidTest").assets.srcDir("../../testdata")
+        // pdf_georef.json helpers both suites assert with
+        getByName("test").java.srcDir("src/sharedTest/java")
+        getByName("androidTest").java.srcDir("src/sharedTest/java")
     }
 }
 

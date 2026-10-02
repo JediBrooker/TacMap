@@ -7,7 +7,9 @@ import org.java_websocket.enums.Role
 import org.java_websocket.exceptions.InvalidDataException
 import org.java_websocket.exceptions.LimitExceededException
 import org.java_websocket.framing.Framedata
+import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.handshake.Handshakedata
+import org.java_websocket.server.WebSocketServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -16,6 +18,7 @@ import org.junit.Test
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -149,9 +152,13 @@ class SyncWebSocketTransportTest {
         assertFalse(SyncWebSocketTransport.FOLLOWS_REDIRECTS)
         assertTrue(SyncWebSocketTransport.VERIFIES_TLS_HOSTNAME)
         assertEquals(16L * 1024L * 1024L, SyncWebSocketTransport.MAX_OUTBOUND_QUEUE_BYTES)
-        assertEquals(512, SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW)
+        // raised from 512 so the transport never trips before the room receive
+        // budget does (4,000 room + 400 self-response frames, plans/04 section 12)
+        assertEquals(8_192, SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW)
+        assertTrue(SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW >
+            SyncReceiveBudget.ROOM_MAX_FRAMES + SyncReceiveBudget.SELF_MAX_FRAMES)
         assertEquals(
-            SyncLiveReceiveBudget.MAX_INITIAL_BYTES.toLong(),
+            SyncReceiveBudget.INITIAL_MAX_BYTES,
             SyncWebSocketTransport.MAX_WIRE_BYTES_PER_WINDOW,
         )
     }
@@ -185,6 +192,53 @@ class SyncWebSocketTransportTest {
         val gate = SyncInboundCallbackGate(timeoutMs = 1L)
 
         assertFalse(gate.awaitConsumption { _ -> Unit })
+    }
+
+    @Test
+    fun eachRelayFrameReachesTheListenerWithoutWaitingForASuccessor() {
+        // Chat looked like it lagged a message behind. Prove the real transport hands each
+        // frame over on its own, with nothing queued behind it to push it out
+        val serverReady = CountDownLatch(1)
+        val peerOpen = CountDownLatch(1)
+        var peer: WebSocket? = null
+        val server = object : WebSocketServer(InetSocketAddress("127.0.0.1", 0)) {
+            override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
+                peer = conn
+                peerOpen.countDown()
+            }
+            override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) = Unit
+            override fun onMessage(conn: WebSocket, message: String) = Unit
+            override fun onError(conn: WebSocket?, ex: Exception) = Unit
+            override fun onStart() = serverReady.countDown()
+        }
+        server.isReuseAddr = true
+        server.start()
+        val transport = SyncWebSocketTransport()
+        try {
+            assertTrue(serverReady.await(5, TimeUnit.SECONDS))
+            val received = LinkedBlockingQueue<String>()
+            transport.newWebSocket("ws://127.0.0.1:${server.port}/", emptyMap(), object : SyncWebSocketListener {
+                override fun onOpen(webSocket: SyncWebSocket) = Unit
+                override fun onTextMessage(webSocket: SyncWebSocket, text: String, consumed: () -> Unit) {
+                    received += text
+                    consumed()
+                }
+                override fun onBinaryMessage(webSocket: SyncWebSocket, bytes: ByteArray, consumed: () -> Unit) =
+                    consumed()
+                override fun onClosed(webSocket: SyncWebSocket, code: Int, reason: String) = Unit
+                override fun onFailure(webSocket: SyncWebSocket, failure: Throwable) = Unit
+            })
+            assertTrue(peerOpen.await(5, TimeUnit.SECONDS))
+
+            repeat(3) { n ->
+                val frame = """{"t":"chat","n":$n,"ct":"${"x".repeat(700)}"}"""
+                requireNotNull(peer).send(frame)
+                assertEquals(frame, received.poll(2, TimeUnit.SECONDS))
+            }
+        } finally {
+            transport.shutdown()
+            server.stop(500)
+        }
     }
 
     private fun frame(opcode: Int, final: Boolean, payload: ByteArray): ByteBuffer {

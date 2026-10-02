@@ -125,6 +125,7 @@ class UnitSyncRuntime(
         invalidateAndStopService(revokeSession = false)
         candidate.runtimeStateChanged = null
         candidate.backgroundTransportEnded = null
+        candidate.backgroundPresencePaused = null
         candidate.dispose()
     }
 
@@ -158,10 +159,18 @@ class UnitSyncRuntime(
             current.canArmBackgroundLocationService()
         val eligible = optedInV3Location && authorizedServiceGeneration != null &&
             hasPreciseLocation() && gpsEnabled()
-        if (eligible && current.enterBackgroundPresenceOnly(opsec.backgroundUnitSyncInterval.value)) {
+        // S2-01: every joined room (v2 or v3, location on or off) survives a
+        // pause like it does on iOS. Only the socket and the stores go.
+        val action = SyncLifecyclePolicy.onActivityPausing(
+            roomJoined = current.room.value != null,
+            backgroundPresenceEligible = eligible,
+        )
+        if (action == SyncLifecyclePolicy.PauseAction.ENTER_BACKGROUND_PRESENCE &&
+            current.enterBackgroundPresenceOnly(opsec.backgroundUnitSyncInterval.value)
+        ) {
             return
         }
-        if (optedInV3Location && current.suspendUntilForegroundStores()) {
+        if (action != SyncLifecyclePolicy.PauseAction.DISPOSE && current.suspendUntilForegroundStores()) {
             invalidateAndStopService(revokeSession = false)
             return
         }
@@ -171,6 +180,7 @@ class UnitSyncRuntime(
         invalidateAndStopService(revokeSession = false)
         current.runtimeStateChanged = null
         current.backgroundTransportEnded = null
+        current.backgroundPresencePaused = null
         current.dispose()
     }
 
@@ -179,6 +189,8 @@ class UnitSyncRuntime(
     @Synchronized
     fun onActivityForegrounded() {
         activityForeground = true
+        // the in-app notice takes over from the paused notification
+        BackgroundUnitSyncLocationService.cancelPausedNotification(appContext)
         manager?.prepareForForegroundUnlock()
         refreshServiceEligibility()
     }
@@ -248,6 +260,19 @@ class UnitSyncRuntime(
         created.locationProvider = locationProvider
         created.runtimeStateChanged = { refreshServiceEligibility() }
         created.backgroundTransportEnded = { onBackgroundTransportEnded(created) }
+        created.backgroundPresencePaused = { pausedAt -> onBackgroundPresencePaused(created, pausedAt) }
+        created.backgroundPresenceOptIn = {
+            opsec.backgroundUnitSyncLocation.value && created.canArmBackgroundLocationService()
+        }
+    }
+
+    /** Connection lost while screen-off: swap the ongoing notice for a paused one (21.5). */
+    @Synchronized
+    private fun onBackgroundPresencePaused(candidate: SyncManager, pausedAtWallMs: Long) {
+        if (manager !== candidate || activityForeground || authorizedServiceGeneration == null) return
+        val time = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+            .format(java.util.Date(pausedAtWallMs))
+        BackgroundUnitSyncLocationService.postPausedNotification(appContext, time)
     }
 
     @Synchronized

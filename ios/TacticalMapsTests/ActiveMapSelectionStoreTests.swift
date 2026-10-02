@@ -285,23 +285,6 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         }
     }
 
-    func testRetainedMapCannotBeDeletedWhileItIsActive() throws {
-        let directory = try ActiveMapSelectionStore.importedMapsDirectoryProvider()
-        let file = directory.appendingPathComponent("active-delete-guard.mbtiles")
-        try makeMinimalMBTiles(at: file)
-        XCTAssertTrue(ActiveMapSelectionStore.save(try XCTUnwrap(OfflineTileMapSource(url: file))))
-
-        XCTAssertThrowsError(try ActiveMapSelectionStore.removeRetainedMap(deleteBackingFile: true))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
-
-        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
-        XCTAssertNoThrow(try ActiveMapSelectionStore.removeRetainedMap(deleteBackingFile: true))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
-        guard case .noRetainedMap = ActiveMapSelectionStore.restoreRetained() else {
-            return XCTFail("delete should clear the retained entry only after active separation")
-        }
-    }
-
     func testLegacyOnlineSelectionMigratesExistingPDFLibraryEntry() throws {
         let source = try makePersistablePDFSource()
         XCTAssertTrue(PDFSessionStore.save(source))
@@ -394,318 +377,6 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         XCTAssertNil(PDFSessionStore.load())
     }
 
-    func testCoordinatorPublishesOnlyAfterSelectorAndRetry() {
-        var durable = "old"
-        var shouldFail = true
-        var publications: [String] = []
-        let coordinator = ActiveMapSelectionCommitCoordinator<String>(
-            persistSelection: { source, _ in
-                guard !shouldFail else { return false }
-                durable = source
-                return true
-            },
-            publish: { source in
-                XCTAssertEqual(durable, source, "publication must observe the durable selector")
-                publications.append(source)
-            }
-        )
-
-        XCTAssertEqual(coordinator.select("new"), .failed(.selector))
-        XCTAssertEqual(durable, "old")
-        XCTAssertTrue(publications.isEmpty)
-
-        shouldFail = false
-        XCTAssertEqual(coordinator.select("new"), .succeeded)
-        XCTAssertEqual(publications, ["new"])
-    }
-
-    func testPDFCoordinatorBoundsCrashWindowAndRollsExactSessionBack() throws {
-        let oldPDF = try makePersistablePDFSource()
-        let newPDF = try makePersistablePDFSource()
-        XCTAssertTrue(PDFSessionStore.save(oldPDF))
-        let oldSnapshot = PDFSessionStore.snapshotActiveSession()
-        var events: [String] = []
-        var failSelector = true
-        let coordinator = ActiveMapSelectionCommitCoordinator<PDFMapSource>(
-            persistSelection: { _, _ in
-                events.append("selector")
-                return !failSelector
-            },
-            publish: { _ in events.append("publish") }
-        )
-
-        let first = coordinator.activatePDF(
-            newPDF,
-            persistSession: {
-                events.append("session")
-                return PDFSessionStore.save(newPDF)
-            },
-            rollbackSession: {
-                events.append("rollback")
-                return PDFSessionStore.restoreActiveSession(oldSnapshot)
-            }
-        )
-
-        XCTAssertEqual(first, .failed(.selector))
-        XCTAssertEqual(events, ["session", "selector", "rollback"])
-        XCTAssertEqual(PDFSessionStore.load()?.url, oldPDF.url)
-        XCTAssertFalse(events.contains("publish"),
-                       "the session/selector crash window must not reach UI publication")
-
-        events.removeAll()
-        failSelector = false
-        let retrySnapshot = PDFSessionStore.snapshotActiveSession()
-        XCTAssertEqual(
-            coordinator.activatePDF(
-                newPDF,
-                persistSession: { events.append("session"); return PDFSessionStore.save(newPDF) },
-                rollbackSession: {
-                    events.append("rollback")
-                    return PDFSessionStore.restoreActiveSession(retrySnapshot)
-                }
-            ),
-            .succeeded
-        )
-        XCTAssertEqual(events, ["session", "selector", "publish"])
-        XCTAssertEqual(PDFSessionStore.load()?.url, newPDF.url)
-    }
-
-    func testMapViewModelDiskFullSelectorGatesUIAndRetry() {
-        var failWrite = true
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let dependencies = MapSelectionDependencies(
-            persistSelection: { _, _ in !failWrite },
-            restoreActive: { .noSelection },
-            restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in },
-            snapshotPDFSession: { snapshot },
-            persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true }
-        )
-        let original = OnlineRasterBasemapSource(.osmTopo)
-        let viewModel = MapViewModel(
-            mapSelectionDependencies: dependencies,
-            initialMapSource: original
-        )
-
-        XCTAssertFalse(viewModel.selectOnlineBasemap(.osmStreet))
-        XCTAssertTrue(viewModel.mapSource === original)
-        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue,
-                        "the production UI binding must receive an actionable Retry issue")
-        XCTAssertTrue(viewModel.mapSelectionPersistenceIssue?.message.contains("Retry") == true)
-
-        failWrite = false
-        XCTAssertTrue(viewModel.retryMapSelectionPersistence())
-        XCTAssertEqual((viewModel.mapSource as? OnlineRasterBasemapSource)?.style, .osmStreet)
-        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
-    }
-
-    func testMapViewModelLockedPDFSessionRollsBackAndRetries() throws {
-        let pdf = try makePersistablePDFSource()
-        let original = OnlineRasterBasemapSource(.osmTopo)
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        var sessionLocked = true
-        var rollbackCalls = 0
-        var selectorWrites = 0
-        let dependencies = MapSelectionDependencies(
-            persistSelection: { _, _ in selectorWrites += 1; return true },
-            restoreActive: { .noSelection },
-            restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in },
-            snapshotPDFSession: { snapshot },
-            persistPDFSession: { _ in !sessionLocked },
-            restorePDFSession: { _ in rollbackCalls += 1; return true }
-        )
-        let viewModel = MapViewModel(
-            mapSelectionDependencies: dependencies,
-            initialMapSource: original
-        )
-
-        XCTAssertFalse(viewModel.selectMapSource(pdf))
-        XCTAssertTrue(viewModel.mapSource === original)
-        XCTAssertEqual(selectorWrites, 0)
-        XCTAssertEqual(rollbackCalls, 1)
-        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue)
-
-        sessionLocked = false
-        XCTAssertTrue(viewModel.retryMapSelectionPersistence())
-        XCTAssertTrue(viewModel.mapSource === pdf)
-        XCTAssertEqual(selectorWrites, 1)
-        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
-    }
-
-    func testMapViewModelColdRestorePublishesOnlyAuthenticatedDescriptor() {
-        let restored = OnlineRasterBasemapSource(.osmStreet)
-        var restoreAvailable = false
-        var writes = 0
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let dependencies = MapSelectionDependencies(
-            persistSelection: { _, _ in writes += 1; return true },
-            restoreActive: { restoreAvailable ? .restored(restored) : .unavailable },
-            restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in },
-            snapshotPDFSession: { snapshot },
-            persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true }
-        )
-        let original = OnlineRasterBasemapSource(.osmTopo)
-        let viewModel = MapViewModel(
-            mapSelectionDependencies: dependencies,
-            initialMapSource: original
-        )
-
-        XCTAssertNil(viewModel.restoreActiveMapSelection())
-        XCTAssertTrue(viewModel.mapSource === original)
-        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue)
-
-        restoreAvailable = true
-        XCTAssertTrue(viewModel.retryMapSelectionPersistence())
-        XCTAssertTrue(viewModel.mapSource === restored)
-        XCTAssertEqual(writes, 0, "an authenticated cold descriptor is already durable")
-        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
-    }
-
-    func testMapViewModelRejectsUnmanagedMBTilesWithoutPublishing() throws {
-        let unmanagedDirectory = root.appendingPathComponent("Unmanaged", isDirectory: true)
-        try FileManager.default.createDirectory(at: unmanagedDirectory, withIntermediateDirectories: true)
-        let file = unmanagedDirectory.appendingPathComponent("outside.mbtiles")
-        try makeMinimalMBTiles(at: file)
-        let unmanaged = try XCTUnwrap(OfflineTileMapSource(url: file))
-        let original = OnlineRasterBasemapSource(.osmTopo)
-        let viewModel = MapViewModel(initialMapSource: original)
-
-        XCTAssertFalse(viewModel.selectMapSource(unmanaged))
-        XCTAssertTrue(viewModel.mapSource === original)
-        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue)
-        guard case .noSelection = ActiveMapSelectionStore.restore() else {
-            return XCTFail("sandbox rejection must preserve the known-good selector")
-        }
-    }
-
-    func testRetainedRestoreAndColdRestoreUseDurableProductionPath() throws {
-        let pdf = try makePersistablePDFSource()
-        XCTAssertTrue(PDFSessionStore.save(pdf))
-        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
-
-        XCTAssertTrue(viewModel.restoreRetainedMap(pdf))
-        XCTAssertTrue(viewModel.mapSource === pdf)
-
-        let relaunched = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmStreet))
-        let cold = try XCTUnwrap(relaunched.restoreActiveMapSelection() as? PDFMapSource)
-        XCTAssertEqual(cold.url.standardizedFileURL, pdf.url.standardizedFileURL)
-    }
-
-    func testDeleteSwitchesOnlineBeforeCloseAndBackingRemoval() throws {
-        let directory = try ActiveMapSelectionStore.importedMapsDirectoryProvider()
-        let file = directory.appendingPathComponent("delete-through-view-model.mbtiles")
-        try makeMinimalMBTiles(at: file)
-        let source = try XCTUnwrap(OfflineTileMapSource(url: file))
-        XCTAssertTrue(ActiveMapSelectionStore.save(source))
-        let viewModel = MapViewModel(initialMapSource: source)
-
-        XCTAssertTrue(viewModel.deleteRetainedImportedMap(source, returningTo: .osmTopo))
-        XCTAssertEqual((viewModel.mapSource as? OnlineRasterBasemapSource)?.style, .osmTopo)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
-        guard case .noRetainedMap = ActiveMapSelectionStore.restoreRetained() else {
-            return XCTFail("successful delete must clear the durable library entry")
-        }
-    }
-
-    func testDeleteFailureKeepsOnlinePublicationDurableAndRetriesCleanup() throws {
-        let directory = try ActiveMapSelectionStore.importedMapsDirectoryProvider()
-        let file = directory.appendingPathComponent("delete-retry.mbtiles")
-        try makeMinimalMBTiles(at: file)
-        let source = try XCTUnwrap(OfflineTileMapSource(url: file))
-        var durableSource: MapSource = source
-        var removalAttempts = 0
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let dependencies = MapSelectionDependencies(
-            persistSelection: { candidate, _ in durableSource = candidate; return true },
-            restoreActive: { .restored(durableSource) },
-            restoreRetained: { .restored(source) },
-            removeRetained: { _ in
-                removalAttempts += 1
-                if removalAttempts == 1 { throw CocoaError(.fileWriteOutOfSpace) }
-            },
-            snapshotPDFSession: { snapshot },
-            persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true }
-        )
-        let viewModel = MapViewModel(
-            mapSelectionDependencies: dependencies,
-            initialMapSource: source
-        )
-
-        XCTAssertFalse(viewModel.deleteRetainedImportedMap(source, returningTo: .osmTopo))
-        XCTAssertTrue(viewModel.mapSource === durableSource)
-        XCTAssertTrue(durableSource is OnlineRasterBasemapSource)
-        XCTAssertNotNil(viewModel.mapSelectionPersistenceIssue)
-
-        XCTAssertTrue(viewModel.retryMapSelectionPersistence())
-        XCTAssertEqual(removalAttempts, 2)
-        XCTAssertNil(viewModel.mapSelectionPersistenceIssue)
-    }
-
-    func testSuccessfulReplacementDeletesSupersededPDFAndMBTilesOnlyAfterCommit() throws {
-        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
-        let oldPDF = try makePersistablePDFSource()
-        XCTAssertTrue(viewModel.selectMapSource(oldPDF))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oldPDF.url.path))
-
-        let imported = try ActiveMapSelectionStore.importedMapsDirectoryProvider()
-        let staleImportedTiles = imported.appendingPathComponent("stale-import.mbtiles")
-        try makeMinimalMBTiles(at: staleImportedTiles)
-        let generated = root.appendingPathComponent("offline_tiles", isDirectory: true)
-        let staleGeneratedTiles = generated.appendingPathComponent("stale-generated.mbtiles")
-        try makeMinimalMBTiles(at: staleGeneratedTiles)
-        let replacement = try makePersistablePDFSource()
-
-        XCTAssertTrue(viewModel.selectMapSource(replacement))
-
-        XCTAssertFalse(FileManager.default.fileExists(atPath: oldPDF.url.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: replacement.url.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: staleImportedTiles.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: staleGeneratedTiles.path))
-    }
-
-    func testFailedReplacementCommitNeverRunsManagedFileCleanup() throws {
-        let oldPDF = try makePersistablePDFSource()
-        let candidate = try makePersistablePDFSource()
-        var reconciliationCalls = 0
-        let snapshot = PDFSessionStore.snapshotActiveSession()
-        let dependencies = MapSelectionDependencies(
-            persistSelection: { _, _ in false },
-            restoreActive: { .noSelection },
-            restoreRetained: { .noRetainedMap },
-            removeRetained: { _ in },
-            snapshotPDFSession: { snapshot },
-            persistPDFSession: { _ in true },
-            restorePDFSession: { _ in true },
-            reconcileManagedMapFiles: {
-                reconciliationCalls += 1
-                return true
-            }
-        )
-        let viewModel = MapViewModel(
-            mapSelectionDependencies: dependencies,
-            initialMapSource: oldPDF
-        )
-
-        XCTAssertFalse(viewModel.selectMapSource(candidate))
-
-        XCTAssertEqual(reconciliationCalls, 0)
-        XCTAssertTrue(viewModel.mapSource === oldPDF)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: oldPDF.url.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: candidate.url.path))
-    }
-
-    func testColdReconciliationFailsClosedWithoutAuthenticatedCurrentSnapshot() throws {
-        let orphan = try makePersistablePDFSource().url
-
-        XCTAssertFalse(ActiveMapSelectionStore.reconcileManagedImportedMapFiles())
-        XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path))
-    }
-
     func testManagedFileReconciliationDoesNotFollowSymlinkOutsideRoot() throws {
         let imported = try ActiveMapSelectionStore.importedMapsDirectoryProvider()
         let keep = imported.appendingPathComponent("keep.pdf")
@@ -765,23 +436,6 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: misleading.path))
-    }
-
-    func testMBTilesReplacementKeepsOnlyDurablyRetainedManagedFile() throws {
-        let imported = try ActiveMapSelectionStore.importedMapsDirectoryProvider()
-        let firstURL = imported.appendingPathComponent("first.mbtiles")
-        try makeMinimalMBTiles(at: firstURL)
-        let first = try XCTUnwrap(OfflineTileMapSource(url: firstURL))
-        let viewModel = MapViewModel(initialMapSource: OnlineRasterBasemapSource(.osmTopo))
-        XCTAssertTrue(viewModel.selectMapSource(first))
-
-        let secondURL = imported.appendingPathComponent("second.mbtiles")
-        try makeMinimalMBTiles(at: secondURL)
-        let second = try XCTUnwrap(OfflineTileMapSource(url: secondURL))
-        XCTAssertTrue(viewModel.selectMapSource(second))
-
-        XCTAssertFalse(FileManager.default.fileExists(atPath: firstURL.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: secondURL.path))
     }
 
     func testPDFCalibrationFollowsIdenticalBytesAcrossDifferentNames() throws {
@@ -877,8 +531,13 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
             ]
         )
 
-        XCTAssertFalse(PDFSessionStore.save(source))
-        XCTAssertNil(PDFSessionStore.load())
+        // the UTM refit refuses collinear points up front (plan 02 s1
+        // degeneracy gate), so nothing calibrated exists to persist at all;
+        // the map stays uncalibrated instead of the save failing later
+        XCTAssertNil(source.calibration)
+        XCTAssertTrue(source.isUncalibrated)
+        XCTAssertTrue(PDFSessionStore.save(source))
+        XCTAssertNil(PDFSessionStore.load()?.calibration)
     }
 
     func testLegacyActivePDFCalibrationMigratesToContentIdentity() throws {
@@ -886,7 +545,9 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
         let legacyURL = directory.appendingPathComponent("legacy-active.pdf")
         let historicalURL = legacyDocumentsDirectory.appendingPathComponent("legacy-active.pdf")
         let renamedURL = directory.appendingPathComponent("renamed-after-migration.pdf")
-        let bytes = Data("legacy-active-sheet".utf8)
+        // a real (origin 0, unrotated) page now: v1 fiduciaries get moved out of
+        // PDFKit's display space on the way in, which needs the page to open
+        let bytes = minimalPDF(media: "0 0 100 100")
         try bytes.write(to: legacyURL)
         try bytes.write(to: historicalURL)
         try bytes.write(to: renamedURL)
@@ -995,6 +656,51 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
     }
 
     @discardableResult
+    func testLegacyActivePDFCalibrationOnAnUnreadablePageStaysPendingNotRefit() throws {
+        let directory = try PDFSessionStore.importedMapsDirectoryProvider()
+        let legacyURL = directory.appendingPathComponent("legacy-unreadable.pdf")
+        let historicalURL = legacyDocumentsDirectory.appendingPathComponent("legacy-unreadable.pdf")
+        let bytes = Data("legacy-active-sheet".utf8)
+        try bytes.write(to: legacyURL)
+        try bytes.write(to: historicalURL)
+        pdfFixtureURLs.append(contentsOf: [legacyURL, historicalURL])
+        try storeLegacyActivePDFDescriptor(fileName: legacyURL.lastPathComponent)
+
+        // PDFKit can't open it, so the old display space can't be undone: never
+        // refit those points as if they were raw, leave the map uncalibrated
+        let restored = try XCTUnwrap(PDFSessionStore.load())
+        XCTAssertNil(restored.calibration)
+        XCTAssertTrue(restored.isUncalibrated)
+        // ...but the points aren't thrown away, they sit in the library still
+        // flagged as display space under the byte hash
+        let sealed = try XCTUnwrap(PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1"))
+        let plain = try XCTUnwrap(SealedEnvelope.openFile(key: testKey, blob: sealed, label: "pdf_session/pdf_calibrations"))
+        let library = try XCTUnwrap(JSONSerialization.jsonObject(with: plain) as? [String: Any])
+        let key = try XCTUnwrap(PDFSessionStore.contentKey(for: legacyURL))
+        let pending = try XCTUnwrap((library["byContentHash"] as? [String: Any])?[key] as? [String: Any])
+        XCTAssertEqual((pending["fids"] as? [[String: Any]])?.map { $0["pdfX"] as? Double }, [0, 100, 0])
+        XCTAssertNil(pending["rawPageSpace"])
+        XCTAssertNil(pending["georef"])
+    }
+
+    /// one empty page, enough for PDFKit to hand back its box transform
+    private func minimalPDF(media: String) -> Data {
+        let objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+                       "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                       "<< /Type /Page /Parent 2 0 R /MediaBox [\(media)] /Resources << >> >>"]
+        var data = Data()
+        func append(_ s: String) { data.append(s.data(using: .isoLatin1)!) }
+        append("%PDF-1.7\n")
+        var offsets: [Int] = []
+        for (i, o) in objects.enumerated() { offsets.append(data.count); append("\(i + 1) 0 obj\n\(o)\nendobj\n") }
+        let xref = data.count
+        append("xref\n0 \(objects.count + 1)\n0000000000 65535 f \n")
+        offsets.forEach { append(String(format: "%010d 00000 n \n", $0)) }
+        append("trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n")
+        return data
+    }
+
+    @discardableResult
     private func storeLegacyActivePDFDescriptor(fileName: String) throws -> Data {
         let fids: [[String: Any]] = [
             ["id": "00000000-0000-0000-0000-000000000001",
@@ -1079,7 +785,7 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
             northEast: CLLocationCoordinate2D(latitude: -32, longitude: 152),
             pdfCropRect: CGRect(x: 0, y: 0, width: 200, height: 300)
         )
-        return PDFMapSource(url: file, bounds: bounds, fromGeoPDF: false)
+        return PDFMapSource(url: file, bounds: bounds)
     }
 
     private var expectedCalibrationTransform: AffineTransform2D {
@@ -1094,7 +800,6 @@ final class ActiveMapSelectionStoreTests: XCTestCase {
                 northEast: CLLocationCoordinate2D(latitude: -32, longitude: 152),
                 pdfCropRect: CGRect(x: 0, y: 0, width: 200, height: 200)
             ),
-            fromGeoPDF: false,
             preflightMediaBox: CGRect(x: 0, y: 0, width: 200, height: 200)
         )
     }

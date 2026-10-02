@@ -247,6 +247,44 @@ enum SafeStore {
         }
     }
 
+    /// the store at url isn't there and was never quarantined or sealed
+    struct VanishedStore: LocalizedError, LocalizedMessageError {
+        var errorDescription: String? { localizedMessage.text }
+        var localizedMessage: LocalizedMessage { Messages.displaySealedStoreFailedAuthenticationTamperedOrWrongStoreMessage() }
+    }
+
+    /// S1: what a missing file at url really means. nil = never written, a real
+    /// fresh start. A .corrupt-* sibling, or the sealed-only record saying this
+    /// path was sealed before, make it corrupt: gone after being written is never
+    /// "no data". No key = we can't tell, so locked (touch nothing)
+    static func absentStoreStatus<T>(_ url: URL, label: String) -> Load<T>? {
+        if quarantineSiblingExists(url) { return .corrupt(quarantinedTo: nil, error: VanishedStore()) }
+        let key: Data
+        do { key = try keyProvider() } catch { return .locked(error) }
+        do {
+            if try SealedMigrationPolicy.requiresSealed(policyID(url, label), key: key) {
+                return .corrupt(quarantinedTo: nil, error: VanishedStore())
+            }
+        } catch {
+            // the record itself wont open, so never call it empty
+            return .corrupt(quarantinedTo: nil, error: error)
+        }
+        return nil
+    }
+
+    /// true when this path was sealed at least once (the file may be gone since).
+    /// throws when the key or the record can't be read
+    static func wasSealedBefore(_ url: URL, label: String) throws -> Bool {
+        try SealedMigrationPolicy.requiresSealed(policyID(url, label), key: keyProvider())
+    }
+
+    /// <name>.corrupt-<epoch> next to url, what read() leaves behind
+    static func quarantineSiblingExists(_ url: URL) -> Bool {
+        let prefix = url.lastPathComponent + ".corrupt-"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)) ?? []
+        return names.contains { $0.hasPrefix(prefix) }
+    }
+
     /// Belt and braces: the bytes are already ciphertext, but keep the platform
     /// file protection too. `...UntilFirstUserAuthentication` rather than
     /// `.complete` on purpose - `.complete` would lock us out during background

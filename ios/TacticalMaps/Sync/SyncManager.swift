@@ -262,7 +262,20 @@ final class OutboundDeliveryTracker {
     }
 
     func pending(localId: String) -> PendingOutboundDelivery? { byLocalId[localId] }
+    func pending(requestId: String) -> PendingOutboundDelivery? {
+        localIdByRequest[requestId].flatMap { byLocalId[$0] }
+    }
     func all() -> [PendingOutboundDelivery] { Array(byLocalId.values) }
+
+    /// A non-retryable nack settles the op for good: it leaves the tracker and
+    /// never goes to reconciliation, so a rejected stamp isnt resent forever.
+    @discardableResult
+    func resolve(requestId: String) -> PendingOutboundDelivery? {
+        guard let localId = localIdByRequest.removeValue(forKey: requestId),
+              let pending = byLocalId[localId], pending.requestId == requestId else { return nil }
+        byLocalId.removeValue(forKey: localId)
+        return pending
+    }
 
     func acknowledge(_ ack: DeliveryAck) -> PendingOutboundDelivery? {
         guard ack.version == 1,
@@ -298,8 +311,9 @@ final class OutboundDeliveryTracker {
               pending.connectionGeneration == generation,
               pending.sessionDomain == sessionDomain,
               pending.attempts < maxAttempts,
-              pending.rejectionRetryable != false,
-              pending.rejectionCode.map({ Self.retryableCodes.contains($0) }) ?? true else { return nil }
+              // the relay's retry flag decides, so an unknown retry:true code
+              // behaves like storage (contract section 6)
+              pending.rejectionRetryable != false else { return nil }
         pending.attempts += 1
         pending.rejectionCode = nil
         pending.rejectionRetryable = nil
@@ -313,7 +327,6 @@ final class OutboundDeliveryTracker {
         return ids
     }
 
-    private static let retryableCodes: Set<String> = ["storage", "hello-required"]
 }
 
 func shouldResendRecoverableDelete(
@@ -338,9 +351,33 @@ final class SyncIssueLifecycle {
     private(set) var generation: Int64 = 0
     private var transientIssue: SyncIssue?
     private var persistentSecurityIssue: SyncIssue?
+    /// Stays until leave or Retry (paused states, room reset).
+    private var pinnedIssue: SyncIssue?
+    /// Survives reconnects, gone on dismiss (skipped records, quota...).
+    private var noticeIssue: SyncIssue?
     var issue: SyncIssue? {
         if transientIssue?.kind == .security { return transientIssue }
-        return persistentSecurityIssue ?? transientIssue
+        if let persistentSecurityIssue { return persistentSecurityIssue }
+        if pinnedIssue?.kind == .security { return pinnedIssue }
+        return transientIssue ?? pinnedIssue ?? noticeIssue
+    }
+
+    @discardableResult
+    func pin(_ message: LocalizedMessage, kind: SyncIssueKind) -> SyncIssue? {
+        pinnedIssue = SyncIssue(pendingMessage: message, kind: kind, generation: generation)
+        return issue
+    }
+
+    @discardableResult
+    func clearPin() -> SyncIssue? {
+        pinnedIssue = nil
+        return issue
+    }
+
+    @discardableResult
+    func notice(_ message: LocalizedMessage) -> SyncIssue? {
+        noticeIssue = SyncIssue(pendingMessage: message, kind: .connection, generation: generation)
+        return issue
     }
 
     func beginConnection() -> Int64 { generation += 1; return generation }
@@ -394,6 +431,15 @@ final class SyncIssueLifecycle {
     @discardableResult
     func dismiss() -> SyncIssue? {
         transientIssue = nil
+        noticeIssue = nil
+        return issue
+    }
+
+    /// Leave wipes everything tied to the join.
+    @discardableResult
+    func resetForLeave() -> SyncIssue? {
+        pinnedIssue = nil
+        noticeIssue = nil
         return issue
     }
 }
@@ -479,6 +525,8 @@ enum SyncRemoteModelApplier {
                       drawingStore: DrawingStore) throws {
         isApplying = true
         defer { isApplying = false }
+        let suspended = suspendUndoRegistration(waypointStore, drawingStore)
+        defer { suspended.forEach { $0.enableUndoRegistration() } }
         guard parsed.invalidSkipped == 0,
               parsed.waypoints.count + parsed.drawings.count == 1 else {
             throw SyncRemoteModelMutationError.invalidPayload
@@ -499,17 +547,17 @@ enum SyncRemoteModelApplier {
             // because only its own referenced layer participates in export.
             _ = try drawingStore.addLayersVerbatimDurably(parsed.newLayers)
             if let waypoint = parsed.waypoints.first {
-                if waypointStore.waypoints.contains(where: { $0.id == waypoint.id }) {
-                    _ = try waypointStore.commitEdit(waypoint, actionName: L10n.text("Apply Synced Waypoint"))
-                } else {
-                    _ = try waypointStore.addDurably(waypoint)
-                }
+                // only a write that changed something counts, a reconnect re-applying the
+                // same record mustnt cancel your pending undo
+                let changed = waypointStore.waypoints.contains(where: { $0.id == waypoint.id })
+                    ? try waypointStore.commitEdit(waypoint, actionName: L10n.text("Apply Synced Waypoint"))
+                    : try waypointStore.addDurably(waypoint)
+                if changed { waypointStore.notePeerWrite(waypoint.id) }
             } else if let shape = parsed.drawings.first {
-                if drawingStore.shapes.contains(where: { $0.id == shape.id }) {
-                    _ = try drawingStore.commitEdit(shape, actionName: L10n.text("Apply Synced Drawing"))
-                } else {
-                    _ = try drawingStore.addDurably(shape)
-                }
+                let changed = drawingStore.shapes.contains(where: { $0.id == shape.id })
+                    ? try drawingStore.commitEdit(shape, actionName: L10n.text("Apply Synced Drawing"))
+                    : try drawingStore.addDurably(shape)
+                if changed { drawingStore.notePeerWrite(shape.id) }
             }
         } catch let error as SyncRemoteModelMutationError {
             throw error
@@ -518,11 +566,102 @@ enum SyncRemoteModelApplier {
         }
     }
 
+    enum BatchOp {
+        case upsert(GeoJSONImporter.Result)
+        case delete(String)
+    }
+
+    struct BatchOutcome {
+        /// op index -> why that one record was refused (bad payload, or it
+        /// collides with an object of the other kind). Refused ops are skipped,
+        /// the rest of the batch still applies.
+        var refused: [Int: SyncRemoteModelMutationError] = [:]
+    }
+
+    /// A whole inbound batch or snapshot in one durable write per store
+    /// (contract 17). Same per-record checks as apply/delete above, done
+    /// against the stores plus the earlier ops of the batch. The drawing
+    /// document (layers + shapes) is written first so a waypoint never lands
+    /// pointing at a layer that failed to save.
+    static func applyBatch(_ ops: [BatchOp],
+                           waypointStore: WaypointStore,
+                           drawingStore: DrawingStore) throws -> BatchOutcome {
+        isApplying = true
+        defer { isApplying = false }
+        var outcome = BatchOutcome()
+        var waypointIDs = Set(waypointStore.waypoints.map(\.id))
+        var drawingIDs = Set(drawingStore.shapes.map(\.id))
+        var waypointUpserts: [Waypoint] = []
+        var shapeUpserts: [DrawingShape] = []
+        var waypointDeletes = Set<UUID>()
+        var shapeDeletes = Set<UUID>()
+        var newLayers: [DrawingLayer] = []
+        for (index, op) in ops.enumerated() {
+            switch op {
+            case .upsert(let parsed):
+                guard parsed.invalidSkipped == 0,
+                      parsed.waypoints.count + parsed.drawings.count == 1 else {
+                    outcome.refused[index] = .invalidPayload
+                    continue
+                }
+                if let waypoint = parsed.waypoints.first {
+                    guard !drawingIDs.contains(waypoint.id) else {
+                        outcome.refused[index] = .identityCollision(waypoint.id)
+                        continue
+                    }
+                    waypointUpserts.append(waypoint)
+                    waypointIDs.insert(waypoint.id)
+                    waypointDeletes.remove(waypoint.id)
+                } else if let shape = parsed.drawings.first {
+                    guard !waypointIDs.contains(shape.id) else {
+                        outcome.refused[index] = .identityCollision(shape.id)
+                        continue
+                    }
+                    shapeUpserts.append(shape)
+                    drawingIDs.insert(shape.id)
+                    shapeDeletes.remove(shape.id)
+                }
+                newLayers.append(contentsOf: parsed.newLayers)
+            case .delete(let localID):
+                guard let uuid = UUID(uuidString: localID) else {
+                    outcome.refused[index] = .invalidPayload
+                    continue
+                }
+                let isWaypoint = waypointIDs.contains(uuid)
+                let isDrawing = drawingIDs.contains(uuid)
+                guard !(isWaypoint && isDrawing) else {
+                    outcome.refused[index] = .identityCollision(uuid)
+                    continue
+                }
+                // no need to pull an earlier upsert of the same id back out of
+                // the list (that scan was O(upserts) per delete): the store's
+                // batch commit lets a delete win over any upsert of that id
+                if isWaypoint {
+                    waypointDeletes.insert(uuid)
+                    waypointIDs.remove(uuid)
+                }
+                if isDrawing {
+                    shapeDeletes.insert(uuid)
+                    drawingIDs.remove(uuid)
+                }
+            }
+        }
+        do {
+            try drawingStore.commitRemoteBatch(newLayers: newLayers, upserts: shapeUpserts, deletes: shapeDeletes)
+            try waypointStore.commitRemoteBatch(upserts: waypointUpserts, deletes: waypointDeletes)
+        } catch {
+            throw SyncRemoteModelMutationError.persistence(error)
+        }
+        return outcome
+    }
+
     static func delete(localID: String,
                        waypointStore: WaypointStore,
                        drawingStore: DrawingStore) throws {
         isApplying = true
         defer { isApplying = false }
+        let suspended = suspendUndoRegistration(waypointStore, drawingStore)
+        defer { suspended.forEach { $0.enableUndoRegistration() } }
         guard let uuid = UUID(uuidString: localID) else {
             throw SyncRemoteModelMutationError.invalidPayload
         }
@@ -532,11 +671,30 @@ enum SyncRemoteModelApplier {
             throw SyncRemoteModelMutationError.identityCollision(uuid)
         }
         do {
-            if let waypoint { _ = try waypointStore.deleteDurably(waypoint) }
-            if let drawing { _ = try drawingStore.deleteDurably(drawing) }
+            if let waypoint, try waypointStore.deleteDurably(waypoint) {
+                waypointStore.notePeerWrite(waypoint.id)
+            }
+            if let drawing, try drawingStore.deleteDurably(drawing) {
+                drawingStore.notePeerWrite(drawing.id)
+            }
         } catch {
             throw SyncRemoteModelMutationError.persistence(error)
         }
+    }
+
+    /// Peer writes arent ours to undo. Registering them (what we used to do) meant Undo reverted
+    /// a teammate's work, e.g. deleted the unit they just placed room wide, while your own last
+    /// action stayed put. Both stores normally share one UndoManager, dedupe so the disable /
+    /// enable calls stay balanced. Android gets the same result by folding peer writes into its
+    /// undo snapshots.
+    private static func suspendUndoRegistration(_ waypointStore: WaypointStore,
+                                                _ drawingStore: DrawingStore) -> [UndoManager] {
+        var seen = Set<ObjectIdentifier>()
+        let managers = [waypointStore.undoManager, drawingStore.undoManager]
+            .compactMap { $0 }
+            .filter { seen.insert(ObjectIdentifier($0)).inserted }
+        managers.forEach { $0.disableUndoRegistration() }
+        return managers
     }
 }
 
@@ -647,16 +805,21 @@ struct UnitSyncPresenceCadence: Equatable {
         lastBroadcastLocationTimestamp = nil
     }
 
-    static func locationIsFresh(timestamp: Date, now: Date = Date()) -> Bool {
+    /// 21.1: the bridge frame at background entry may use the newest fix up
+    /// to two minutes old (the threat model's two-minute rule).
+    static let bridgeLocationAge: TimeInterval = 120
+
+    static func locationIsFresh(timestamp: Date, now: Date = Date(),
+                                maximumAge: TimeInterval = maximumLocationAge) -> Bool {
         let age = now.timeIntervalSince(timestamp)
-        return age >= -maximumLocationFutureSkew && age <= maximumLocationAge
+        return age >= -maximumLocationFutureSkew && age <= maximumAge
     }
 }
 
 enum SyncConnectionWatchdogPolicy {
-    static let heartbeatInterval: TimeInterval = 20
-    static let heartbeatTimeout: TimeInterval = 8
-    static let handshakeTimeout: TimeInterval = 30
+    static let heartbeatInterval = TimeInterval(SyncHeartbeatPolicy.foregroundPingIntervalMs) / 1000
+    // 8 s used to kill sockets stuck behind one big inbound frame on slow links
+    static let heartbeatTimeout = TimeInterval(SyncHeartbeatPolicy.deadAfterMsWithoutPongOrFrame) / 1000
 
     static func isCurrent(
         scheduledGeneration: Int64,
@@ -721,7 +884,29 @@ final class SyncManager: ObservableObject {
     @Published private var pendingLastError: LocalizedMessage?
     var lastErrorMessage: LocalizedMessage? { pendingLastError }
     var lastError: String? { pendingLastError?.text }
-    @Published var peers: [String: PresencePeer] = [:]
+    /// Map presence lives in its own observable (contract 20.2) so a loc frame
+    /// never republishes the manager, ContentView or the drawings overlay.
+    let presence = SyncPresenceModel()
+    var peers: [String: PresencePeer] {
+        get { inboundPublication?.peers ?? presence.peers }
+        set {
+            if inboundPublication != nil { inboundPublication?.peers = newValue }
+            else { presence.peers = newValue }
+        }
+    }
+    private struct InboundPublication {
+        var peers: [String: PresencePeer]
+        var members: [String: OnlineMember]
+        var recipients: [String: TacMapChatRecipient]
+    }
+    private var inboundPublication: InboundPublication?
+    private var inboundPersistenceInFlight = false
+    private var modelEpoch: UInt64 = 0
+    private var pendingJournalWrites = 0
+    private var outboundPersistenceInFlight = false
+    private var pendingReplayCleanups = 0
+    private var afterReplayCleanup: [@MainActor () -> Void] = []
+
     /// Signature-verified v3 sessions currently reported by the relay. This is
     /// independent of `peers`, which contains only shared map locations.
     @Published private(set) var onlineMembers: [String: OnlineMember] = [:]
@@ -731,7 +916,17 @@ final class SyncManager: ObservableObject {
     @Published private(set) var chatSessionReady = false
     @Published private var pendingChatSessionIssue: LocalizedMessage?
     var chatSessionIssue: String? { pendingChatSessionIssue?.text }
-    let chatStore = TacMapChatStore()
+    let chatStore: TacMapChatStore
+    /// Set while sync is parked on PAUSED_ACTION_REQUIRED (relay refused us,
+    /// room full, identity rejected...). The sheet shows Retry for it.
+    @Published private(set) var pausedForAction: SyncPausedState?
+    @Published private(set) var mutationsPaused = false
+    /// Every contract issue code surfaced this join, in order. Tests read it,
+    /// the UI uses lastError.
+    private(set) var surfacedIssueLog: [SyncIssueCode] = []
+    var lastIssueKind: SyncIssueKind? { issueLifecycle.issue?.kind }
+    /// When the scheduled reconnect fires (scheduler clock), nil if none is armed.
+    var reconnectDueMs: Int64? { reconnectTimer == nil ? nil : reconnectBackoff.pending?.dueMs }
     @Published private(set) var presenceConfig = PresenceConfig()
     private var presenceConfigDurable = false
 
@@ -758,13 +953,22 @@ final class SyncManager: ObservableObject {
     /// Injected after construction so presence can read the current GPS fix.
     private(set) var locationService: LocationService?
 
-    private var task: URLSessionWebSocketTask?
-    private let webSocketSessionDelegate = SyncWebSocketSessionDelegate()
-    private lazy var webSocketSession = SyncWebSocketTransport.makeSession(
-        delegate: webSocketSessionDelegate
-    )
+    private var task: SyncSocket?
+    private let socketFactory: SyncSocketFactory
+    private let scheduler: SyncScheduler
+    private let pathMonitor: SyncPathMonitoring
+    private let randomUnit: () -> Double
+    private let storageRoot: URL?
+    private let relayURLProvider: @MainActor () -> String
+    /// Runs off main (PBKDF2, 20.3), so it must not touch the main actor.
+    private let roomKeyDeriver: (String) -> SyncCrypto.V3RoomKeys
+    private let offMainExecutor: SyncOffMainExecutor
+    private let persistenceExecutor: SyncOffMainExecutor
+    /// Test seams for counting durable writes. nil = SafeStore.
+    private let replayPersistenceWriter: SyncReplayState.PersistenceWriter?
+    private let journalPersistenceWriter: LocalModelRevisionJournal.PersistenceWriter?
     private let inboundFrameCloseGate = SyncInboundFrameCloseGate()
-    private let liveReceiveBudget = SyncLiveReceiveBudget()
+    private let receiveBudget = SyncReceiveBudget()
     private var roomKey: SymmetricKey?
     private var authToken: String?
     /// Resolved from OPSEC settings at join time so a self-hoster's relay is
@@ -800,19 +1004,23 @@ final class SyncManager: ObservableObject {
     private var resolvingPendingModel = false
     private var activeSessions: [String: V3ActiveSession] = [:]
     private let onlineMemberTracker = OnlineMemberTracker()
-    private let outboundDeliveries = OutboundDeliveryTracker()
-    private var deliveryRetryItems: [String: DispatchWorkItem] = [:]
-    private var reconnectWorkItem: DispatchWorkItem?
-    private var reconnectBackoff = SyncReconnectBackoff()
-    private var v3HandshakeTimeoutItem: DispatchWorkItem?
-    private var connectionHealthTimer: Timer?
-    private var connectionPingTimeoutItem: DispatchWorkItem?
-    private var connectionPingInFlight = false
+    private let outboundDeliveries = OutboundDeliveryTracker(maxAttempts: SyncAckTimer.maxAttempts)
+    private var reconnectTimer: SyncCancellable?
+    private var reconnectBackoff = SyncBackoffPolicy()
+    private var stableSessionTimer: SyncCancellable?
+    private var closeClassifier = SyncCloseClassifier()
+    private var handshakeWatchdog = SyncHandshakeWatchdog()
+    private var handshakeTimer: SyncCancellable?
+    private var heartbeatTimer: SyncCancellable?
+    private var pingDeadlineTimer: SyncCancellable?
+    private var lastInboundMs: Int64 = 0
+    private var socketOpened = false
+    private var lastPathStatus: SyncPathStatus?
+    private var diffTimer: SyncCancellable?
     private let v2SnapshotGate = V2SnapshotGate(
         maxItems: 10_000,
         maxAggregateBytes: 54_525_952
     )
-    private var v2SnapshotTimeoutItem: DispatchWorkItem?
     private var v2SnapshotFailureGeneration: Int64?
     private let issueLifecycle = SyncIssueLifecycle()
     private var activeConnectionGeneration: Int64 = 0
@@ -820,12 +1028,110 @@ final class SyncManager: ObservableObject {
     private var localPresenceCandidateCluster: PresenceCandidateCluster?
     private var remotePresenceCandidateClusters: [String: PresenceCandidateCluster] = [:]
 
-    private struct ValidatedRecordV3 {
-        let mutation: SyncReplayState.DurableMutation
-        let parsed: GeoJSONImporter.Result?
-        let localId: String?
-        let expectedModelHash: String?
+    // Outbound pacing and per-copy ack timers (contract section 11).
+    private struct PacedFrame {
+        let text: String
+        let frameClass: SyncOutboundPacer.FrameClass
+        let requestId: String?
+        let completion: (Bool) -> Void
     }
+    private var pacer: SyncOutboundPacer?
+    private var pacedFrames: [Int: PacedFrame] = [:]
+    private var queuedItemByRequest: [String: Int] = [:]
+    private var pacerWakeTimer: SyncCancellable?
+    private var ackStates: [String: SyncAckTimer] = [:]
+    private var ackTimers: [String: SyncCancellable] = [:]
+    /// rids of our own put/del copies that hit the wire and wait for an ack,
+    /// in write order. Feeds the "k ahead" part of the ack timeout.
+    private var writtenUnacked: [String] = []
+
+    /// State that lives for one room membership, across reconnects.
+    private struct JoinState {
+        var surfacedKeys = Set<String>()
+        var skippedWireIds: [String: SnapshotSkipCategory] = [:]
+        /// localId -> journal generation when we stopped publishing it
+        var suppressedUntilEdit: [String: Int64] = [:]
+        var mutationsPaused = false
+        var liveWindowResync = LiveWindowResyncPolicy()
+        var after4014 = false
+        var rejectedEpoch: UInt64?
+        var pacerAfter4008 = false
+    }
+    private var joinState = JoinState()
+    private typealias ValidatedRecordV3 = SyncValidatedRecordV3
+    private var liveWindowResyncTimer: SyncCancellable?
+    private var snapshotSeqRegressed = false
+    private var snapshotVerifiedClean = true
+
+    // SP3 efficiency state (contract sections 1, 17-21)
+
+    /// id -> value maps + per-object export cache, fed by the store publishers
+    private let modelIndex = SyncModelIndex()
+    /// localId <-> wireId for the joined v3 room, nil when not joined
+    private var wireIndex: SyncWireIdIndex?
+    private var presenceSendPolicy = PresenceSendPolicy()
+    /// bumped by join/leave so a PBKDF2 result for an old join is dropped
+    private var joinToken = 0
+
+    /// Inbound frames wait here between the receive loop and the drain
+    /// (contract 1). The receive loop re-arms only while there is room, so a
+    /// slow drain backs the socket up instead of growing without bound.
+    private struct QueuedInbound {
+        let object: [String: Any]
+        let bytes: Int
+        let socket: SyncSocket
+        let generation: Int64
+    }
+    static let inboundBatchMaxFrames = 64
+    static let inboundQueueMaxFrames = 1_024
+    static let inboundQueueMaxBytes = 16_777_216
+    private var inboundQueue: [QueuedInbound] = []
+    private var inboundHead = 0
+    private var inboundQueuedBytes = 0
+    private var inboundDrainTimer: SyncCancellable?
+    private var parkedReceive: (socket: SyncSocket, generation: Int64)?
+    /// snapshot records are being validated off main, the drain waits
+    private var snapshotValidationInFlight = false
+
+    /// Live put/del of the current drain, committed in memory and applied to
+    /// the model together (one commit write, one store write, one clear).
+    private struct StagedLiveRecord {
+        let value: ValidatedRecordV3
+        let priorHash: String?
+    }
+    private var liveGroup: [StagedLiveRecord] = []
+    private var liveGroupWireIds = Set<String>()
+    /// layers adopted by earlier records of the group, same rule as a snapshot
+    private var liveGroupStaging: SnapshotLayerStaging?
+
+    /// 17.1: accepted presence counters that are not on disk yet get flushed
+    /// at most once per 60 s
+    private var presenceFlushTimer: SyncCancellable?
+    private var lastReplayDurableMs: Int64 = 0
+
+    /// When background sharing stopped without the user asking (21.5), shown
+    /// on the next foreground return.
+    private var backgroundPausedAt: Date?
+
+    /// 21.4 switch. Shipped value is BackgroundPresencePolicy.reconnectEnabled
+    /// (off until doc change D1), tests turn it on.
+    private let backgroundReconnectEnabled: Bool
+    /// epoch the last foreground hello used, and how many spares above it the
+    /// persisted floor already covers
+    private var lastForegroundHello: (epoch: UInt64, spares: UInt64)?
+    private var backgroundPresencePolicy: BackgroundPresencePolicy?
+    /// A presence-only background session is up or being re-established.
+    /// ContentView keeps background location running while this holds.
+    @Published private(set) var backgroundPresenceSustained = false
+    /// The presence-only session of 21.4, nil for every normal session.
+    private struct BackgroundSession {
+        enum Phase { case awaitingBegin, receiving, finalPage, awaitingHelloAck, live }
+        let epoch: UInt64
+        var phase: Phase = .awaitingBegin
+        var seq: Int64?
+        var snapshotBytes = 0
+    }
+    private var backgroundSession: BackgroundSession?
 
     struct PresencePayload: Equatable {
         let lat: Double
@@ -885,14 +1191,18 @@ final class SyncManager: ObservableObject {
     private let clientId: String
     private var clock: Int64 = 0
     private var versions: [String: Int64] = [:]
+    /// v2 only: the `by` that goes with versions[id], for the equal-v tie break
+    private var versionsBy: [String: String] = [:]
     private var lastContent: [String: String] = [:]
     private var kindById: [String: String] = [:]
     private var observers = Set<AnyCancellable>()
     private var revisionObservers = Set<AnyCancellable>()
     private var modelRevisionJournal: LocalModelRevisionJournal?
     private var revisionJournalAvailable = false
-    private var observedModelHashes: [String: String] = [:]
-    private var modelObservationInitialized = false
+    private var revisionJournalLoading = false
+    private var startupRevisionWriteInFlight = false
+    private var startupRevisionEvents: [[String]] = []
+    private var afterRevisionJournalReady: [@MainActor () -> Void] = []
 
     // v2 containment ceilings (pending v3 protocol limits)
     private static let maxBase64Bytes = 1_048_576        // 1 MiB encoded ct
@@ -914,17 +1224,45 @@ final class SyncManager: ObservableObject {
     private var chatPeerKeys: [String: TacMapChatCrypto.PeerKey] = [:]
     private var pendingChatSends: [String: PendingChatSend] = [:]
     private var chatCounter: Int64 = 0
-    private var chatKeyRetryItem: DispatchWorkItem?
+    private var chatKeyRetryItem: SyncCancellable?
     private var chatKeyAdvertAttempts = 0
 
+    /// Everything after presenceSealedPolicy is the S6-02 test seam. Production
+    /// passes nothing and gets URLSession, the main queue, NWPathMonitor and
+    /// Application Support.
     init(
         sessionDomainGenerator: @escaping () throws -> Data = {
             try SyncIdentity.generateSessionDomain()
         },
         defaults: UserDefaults = .standard,
         presenceStore: DurableDefaultsDataStore? = nil,
-        presenceSealedPolicy: PresenceConfigSealedPolicy = .production
+        presenceSealedPolicy: PresenceConfigSealedPolicy = .production,
+        socketFactory: SyncSocketFactory? = nil,
+        scheduler: SyncScheduler? = nil,
+        pathMonitor: SyncPathMonitoring? = nil,
+        randomUnit: @escaping () -> Double = { Double.random(in: 0...1) },
+        storageRoot: URL? = nil,
+        relayURLProvider: (@MainActor () -> String)? = nil,
+        roomKeyDeriver: ((String) -> SyncCrypto.V3RoomKeys)? = nil,
+        replayPersistenceWriter: SyncReplayState.PersistenceWriter? = nil,
+        journalPersistenceWriter: LocalModelRevisionJournal.PersistenceWriter? = nil,
+        offMainExecutor: SyncOffMainExecutor? = nil,
+        persistenceExecutor: SyncOffMainExecutor? = nil,
+        backgroundReconnectEnabled: Bool = BackgroundPresencePolicy.reconnectEnabled
     ) {
+        self.backgroundReconnectEnabled = backgroundReconnectEnabled
+        self.replayPersistenceWriter = replayPersistenceWriter
+        self.journalPersistenceWriter = journalPersistenceWriter
+        self.offMainExecutor = offMainExecutor ?? DispatchSyncOffMainExecutor()
+        self.persistenceExecutor = persistenceExecutor ?? SyncPersistenceExecutor()
+        self.socketFactory = socketFactory ?? URLSessionSyncSocketFactory()
+        self.scheduler = scheduler ?? DispatchSyncScheduler()
+        self.pathMonitor = pathMonitor ?? NWPathSyncMonitor()
+        self.randomUnit = randomUnit
+        self.storageRoot = storageRoot
+        self.relayURLProvider = relayURLProvider ?? { OpsecSettings.shared.relayURL }
+        self.roomKeyDeriver = roomKeyDeriver ?? { SyncCrypto.deriveRoomV3($0) }
+        self.chatStore = TacMapChatStore(containerURL: storageRoot)
         self.sessionDomainGenerator = sessionDomainGenerator
         self.defaults = defaults
         self.presenceStore = presenceStore ?? .userDefaults(
@@ -942,6 +1280,12 @@ final class SyncManager: ObservableObject {
         loadPresenceConfig()
     }
 
+    /// Where replay state, the revision journal and chat live. Tests point
+    /// this at a temp dir so they never touch the app's real files.
+    private var storageContainerURL: URL? {
+        storageRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+    }
+
     /// Inject shared stores once the view hierarchy is up. Can call
     /// repeatedly, only first call actually binds.
     func configure(waypointStore: WaypointStore,
@@ -951,11 +1295,51 @@ final class SyncManager: ObservableObject {
         self.waypointStore = waypointStore
         self.drawingStore = drawingStore
         self.locationService = locationService
-        let container = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        let journal = LocalModelRevisionJournal(containerURL: container)
-        modelRevisionJournal = journal
-        revisionJournalAvailable = journal.load()
+        let journal = journalPersistenceWriter.map {
+            LocalModelRevisionJournal(containerURL: storageContainerURL, persistenceWriter: $0)
+        } ?? LocalModelRevisionJournal(containerURL: storageContainerURL)
+        revisionJournalLoading = true
         observeModelRevisions()
+        let loaded = ReplayLoadResult()
+        // SafeStore reads can migrate plaintext and persist a sealed-only
+        // barrier. Keep this private instance on the persistence worker until
+        // the load settles, while lifetime observers retain local edit events.
+        persistenceExecutor.execute({ loaded.success = journal.load() }) { [weak self] in
+            guard let self else { return }
+            self.modelRevisionJournal = journal
+            if loaded.success { self.drainStartupRevisionEvents() }
+            else { self.finishRevisionJournalStartup(success: false) }
+        }
+    }
+
+    private func drainStartupRevisionEvents() {
+        guard presenceCadence.foregroundReady, !startupRevisionWriteInFlight else { return }
+        guard !startupRevisionEvents.isEmpty, let journal = modelRevisionJournal else {
+            finishRevisionJournalStartup(success: true)
+            return
+        }
+        let ids = startupRevisionEvents.removeFirst()
+        startupRevisionWriteInFlight = true
+        journal.bumpAll(ids, on: persistenceExecutor) { [weak self] error in
+            guard let self else { return }
+            self.startupRevisionWriteInFlight = false
+            if error == nil { self.drainStartupRevisionEvents() }
+            else { self.finishRevisionJournalStartup(success: false) }
+        }
+    }
+
+    private func finishRevisionJournalStartup(success: Bool) {
+        revisionJournalLoading = false
+        revisionJournalAvailable = success
+        startupRevisionEvents.removeAll()
+        if !success {
+            pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+            if wantConnected { failClosedV3(pendingLastError!) }
+        }
+        let ready = afterRevisionJournalReady
+        afterRevisionJournalReady.removeAll()
+        ready.forEach { $0() }
+        if success { markDiffDirty() }
     }
 
     /// Keeps mission-state processing foreground-only while allowing an
@@ -976,10 +1360,18 @@ final class SyncManager: ObservableObject {
         )
         if !foregroundReady {
             clearChatSessionSecrets()
+            if wasForegroundReady { enterBackground() }
         }
         reschedulePresenceBroadcastTimer()
 
         if foregroundReady {
+            if revisionJournalLoading, modelRevisionJournal != nil { drainStartupRevisionEvents() }
+            if !wasForegroundReady {
+                // a presence-only background session never carries on into
+                // the foreground, the normal reconnect below replaces it
+                endBackgroundPresence()
+                surfaceBackgroundPauseIfAny()
+            }
             // A previous signed presence may have advertised an extended
             // screen-off lifetime. Rotate the session when that eligibility is
             // revoked so peers remove it immediately, even if no fresh fix is
@@ -991,6 +1383,9 @@ final class SyncManager: ObservableObject {
             }
             if !wasForegroundReady, wantConnected {
                 reconnectForForegroundReconciliation()
+            } else if !wasForegroundReady, pausedForAction?.retryOnForeground == true {
+                // room full / session conflict get one fresh try per return
+                retryPausedConnection()
             } else {
                 sendPresence()
             }
@@ -1000,11 +1395,43 @@ final class SyncManager: ObservableObject {
         // A background presence session may only continue an already verified
         // socket. Snapshot/authentication and reconnect persistence stay in the
         // unlocked foreground path.
-        guard backgroundPresenceEnabled, status == .connected else {
+        guard backgroundPresenceEnabled, status == .connected || backgroundPresenceSustained else {
             pauseConnectionForBackground()
             return
         }
-        sendPresence()
+        if wasForegroundReady {
+            // 21.1: background heartbeat values, then one bridge frame so peers
+            // see the long retention (and stop routing chat) right away
+            startConnectionHealthChecks()
+            armBackgroundPresencePolicy()
+            sendPresence(bridge: true)
+        } else {
+            sendPresence()
+        }
+    }
+
+    /// Foreground -> background (contract 21.1 / 21.2). Delivery retries stop
+    /// here: acks are dropped with every other inbound frame in background,
+    /// so retrying would only end in a cancelled socket and a false
+    /// "unconfirmed" error. Pending ops wait for the foreground snapshot, which
+    /// tells us which ones landed (S2-05).
+    private func enterBackground() {
+        clearOutboundDeliveries(markForReconciliation: true)
+        // queued frames are foreground-only work, the next snapshot covers them
+        resetInboundQueue(rearmParked: true)
+        dropInboundAndLiveWork()
+        presenceFlushTimer?.cancel()
+        presenceFlushTimer = nil
+        // 17.1 clean point. Best effort: an auth-bound key may be locked already,
+        // then the stride flag just stays false which is the safe side.
+        replayState?.writeCleanPresenceFence(on: persistenceExecutor)
+    }
+
+    /// 21.5: background sharing stopped without the user asking. Say when, once.
+    private func surfaceBackgroundPauseIfAny() {
+        guard let pausedAt = backgroundPausedAt else { return }
+        backgroundPausedAt = nil
+        surface(.backgroundPaused, scope: .backgroundPeriod(pausedAt), at: pausedAt)
     }
 
     /// Location callbacks are the most reliable wake source in both lifecycle
@@ -1012,7 +1439,147 @@ final class SyncManager: ObservableObject {
     /// while allowing a freshly requested stationary fix to publish promptly.
     func locationDidUpdate() {
         guard presenceCadence.canBroadcast else { return }
+        if !presenceCadence.foregroundReady, task == nil, backgroundPresencePolicy?.dropped == true {
+            // 21.4: the next presence opportunity after a drop
+            backgroundPresenceWake()
+            return
+        }
         sendPresence()
+    }
+
+    // MARK: Background presence reconnect (contract 21.4, gated on doc change D1)
+
+    /// At background entry on a healthy opted-in session: remember which
+    /// spare epochs the last foreground hello left us.
+    private func armBackgroundPresencePolicy() {
+        guard backgroundReconnectEnabled, let hello = lastForegroundHello else { return }
+        backgroundPresencePolicy = BackgroundPresencePolicy(
+            lastForegroundEpoch: hello.epoch, spares: hello.spares, reconnectEnabled: true)
+        backgroundPresenceSustained = true
+    }
+
+    /// Background location wake or the network coming back after a drop.
+    private func backgroundPresenceWake() {
+        guard var policy = backgroundPresencePolicy, task == nil else { return }
+        let eligible = wantConnected && presenceConfig.shareLocation && presenceCadence.backgroundEnabled
+        let decision = policy.fixDue(atMs: scheduler.nowMs, eligible: eligible)
+        backgroundPresencePolicy = policy
+        switch decision {
+        case .connect(let epoch):
+            openBackgroundPresenceSession(epoch: epoch)
+        case .wait:
+            break
+        case .pause:
+            pauseBackgroundPresence()
+        }
+    }
+
+    /// A background presence socket ended without us asking.
+    private func backgroundPresenceDropped(failedAttempt: Bool) {
+        guard var policy = backgroundPresencePolicy else {
+            // reconnect off (or never armed): sharing just stops, say so later
+            backgroundPausedAt = backgroundPausedAt ?? Date()
+            return
+        }
+        if failedAttempt { policy.attemptFailed() } else { policy.socketClosed(atMs: scheduler.nowMs) }
+        backgroundPresencePolicy = policy
+    }
+
+    private func pauseBackgroundPresence() {
+        backgroundPausedAt = backgroundPausedAt ?? Date()
+        endBackgroundPresence()
+    }
+
+    private func endBackgroundPresence() {
+        backgroundPresencePolicy = nil
+        backgroundSession = nil
+        if backgroundPresenceSustained { backgroundPresenceSustained = false }
+    }
+
+    /// Fresh in-memory session domain and a spare epoch the foreground already
+    /// made durable. Nothing in this session writes to disk, opens a record,
+    /// or sends anything but hello and loc (21.4).
+    private func openBackgroundPresenceSession(epoch: UInt64) {
+        guard protocolVersion == 3, let roomId,
+              let base = Self.validatedRelayBaseForRuntime(relayEndpoint),
+              let generated = try? sessionDomainGenerator(), generated.count == 32 else {
+            pauseBackgroundPresence()
+            return
+        }
+        sessionDomain = generated
+        activeConnectionGeneration = issueLifecycle.beginConnection()
+        presenceCounter = 0
+        localHelloVersion = nil
+        awaitingHelloAck = false
+        activeSessions.removeAll()
+        backgroundSession = BackgroundSession(epoch: epoch)
+        guard let socket = openRelaySocket(base: base, roomId: roomId) else {
+            pauseBackgroundPresence()
+            return
+        }
+        receive(on: socket, generation: activeConnectionGeneration)
+    }
+
+    /// 21.4 frames. The snapshot is drained, not processed: only fence order
+    /// and the 4 MiB ceiling are checked, no record is opened, verified,
+    /// applied or stored. Then hello, hello-ack, presence only.
+    private func handleBackgroundSessionFrame(_ data: Data, socket: SyncSocket) {
+        guard var session = backgroundSession else { return }
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let type = object?["t"] as? String
+        func fail() {
+            backgroundSession = session
+            endSession(socket: socket, cause: .local(.structuralSnapshot), issueReported: true)
+        }
+        switch session.phase {
+        case .awaitingBegin, .receiving, .finalPage:
+            session.snapshotBytes += data.count
+            if var policy = backgroundPresencePolicy, policy.snapshotBytes(session.snapshotBytes) != nil {
+                backgroundPresencePolicy = policy
+                pauseBackgroundPresence()
+                endSession(socket: socket, cause: .local(.lifecyclePause), issueReported: true)
+                return
+            }
+            switch (session.phase, type) {
+            case (.awaitingBegin, "snapshot-begin"):
+                guard let seq = strictNonNegativeInt64(object?["seq"]) else { return fail() }
+                session.seq = seq
+                session.phase = .receiving
+            case (.receiving, "snapshot"):
+                guard let more = strictJSONBoolean(object?["more"]) else { return fail() }
+                if !more { session.phase = .finalPage }
+            case (.finalPage, "snapshot-end"):
+                guard let seq = strictNonNegativeInt64(object?["seq"]), seq == session.seq else { return fail() }
+                session.phase = .awaitingHelloAck
+                backgroundSession = session
+                handshakeWatchdog.snapshotEnded(atMs: scheduler.nowMs)
+                armHandshakeTimer()
+                writeHello(epochHex: HelloEpochPolicy.hex(session.epoch))
+                return
+            default:
+                return fail()
+            }
+            backgroundSession = session
+        case .awaitingHelloAck:
+            guard type == "hello-ack", let object, let actorId = myActorId,
+                  let expected = localHelloVersion, let ownSession = sessionDomain,
+                  let by = object["by"] as? String, let sd = object["sd"] as? String,
+                  let vs = object["vs"] as? String,
+                  SyncIdentity.helloAckMatches(actorId: actorId, sessionDomain: ownSession,
+                                               expectedVersion: expected, frameActorId: by,
+                                               frameSessionDomain: sd, frameVersion: vs) else { return }
+            session.phase = .live
+            backgroundSession = session
+            awaitingHelloAck = false
+            cancelHandshakeWatchdog()
+            backgroundPresencePolicy?.attemptSucceeded()
+            status = .connected
+            presenceCadence.startAuthenticatedSession()
+            startConnectionHealthChecks()
+            sendPresence(bridge: true)
+        case .live:
+            break
+        }
     }
 
     /// A v3 peer may currently be retaining our sender-signed background
@@ -1044,9 +1611,21 @@ final class SyncManager: ObservableObject {
             return false
         }
         let stoppedSharing = presenceConfig.shareLocation && !value.shareLocation
+        let identityChanged = presenceConfig.callsign != value.callsign
+            || presenceConfig.affiliation != value.affiliation
+            || presenceConfig.echelon != value.echelon
+            || presenceConfig.function != value.function
+            || presenceConfig.isHQ != value.isHQ
         presenceConfig = value
         presenceConfigDurable = true
-        if stoppedSharing { withdrawSharedLocation() }
+        if stoppedSharing {
+            withdrawSharedLocation()
+        } else if identityChanged {
+            // 20.1: a new callsign / symbol goes out on the next fix, not
+            // after the stationary heartbeat
+            presenceSendPolicy.configDidChange()
+            sendPresence()
+        }
         return true
     }
 
@@ -1168,7 +1747,7 @@ final class SyncManager: ObservableObject {
             return
         }
         guard let configuredRelay = Self.validatedRelayBaseForRuntime(
-            OpsecSettings.shared.relayURL
+            relayURLProvider()
         ) else {
             pendingLastError = Messages.syncConfiguredRelayUnavailableMessage()
             return
@@ -1191,51 +1770,139 @@ final class SyncManager: ObservableObject {
         // it again before every URLSession task is created.
         relayEndpoint = configuredRelay
 
-        if code.hasPrefix("3:") {
-            protocolVersion = 3
-            let rawCode = String(code.dropFirst(2))
-            let keys = SyncCrypto.deriveRoomV3(rawCode)
+        // 20.3: the 210k-iteration PBKDF2 runs off main. CONNECTING shows right
+        // away; the result only lands if this join is still the current one
+        // (leave or another join bumps the token).
+        joinToken &+= 1
+        let token = joinToken
+        let isV3 = code.hasPrefix("3:")
+        protocolVersion = isV3 ? 3 : 2
+        room = code
+        status = .connecting
+        let rawCode = String(code.dropFirst(2))
+        let deriver = roomKeyDeriver
+        let derived = DerivedJoinKeys()
+        offMainExecutor.execute({
+            if isV3 { derived.v3 = deriver(rawCode) } else { derived.v2 = SyncCrypto.deriveRoom(rawCode) }
+        }) { [weak self] in
+            guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+            // A new join must load after the prior socket's queued seals and
+            // clean point, so an immediate leave/rejoin cannot reuse a floor.
+            let finish: @MainActor () -> Void = { [weak self] in
+                guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                self.persistenceExecutor.execute({}) { [weak self] in
+                    guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                    self.finishJoin(code: code, v3: derived.v3, v2: derived.v2, proposedRoomName: proposedRoomName)
+                }
+            }
+            if self.pendingReplayCleanups > 0 { self.afterReplayCleanup.append(finish) }
+            else { finish() }
+        }
+    }
+
+    /// Box for the off-main key derivation result.
+    private final class DerivedJoinKeys {
+        var v3: SyncCrypto.V3RoomKeys?
+        var v2: SyncCrypto.RoomKeys?
+    }
+
+    private func finishJoin(code: String,
+                            v3: SyncCrypto.V3RoomKeys?,
+                            v2: SyncCrypto.RoomKeys?,
+                            proposedRoomName: String?) {
+        if v3 != nil {
+            if revisionJournalLoading {
+                let token = joinToken
+                afterRevisionJournalReady.append { [weak self] in
+                    guard let self, self.joinToken == token, self.wantConnected, self.room == code,
+                          self.presenceCadence.foregroundReady else { return }
+                    self.finishJoin(code: code, v3: v3, v2: v2, proposedRoomName: proposedRoomName)
+                }
+                return
+            }
+            guard revisionJournalAvailable else {
+                pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+                abandonJoin()
+                return
+            }
+        }
+        if let keys = v3 {
             v3Keys = keys
             roomKey = keys.roomKey
             roomId = keys.roomId
             authToken = keys.authToken
             guard let pubRaw = myPublicKeyRaw else {
                 pendingLastError = Messages.syncSigningIdentityIsUnavailableMessage()
-                wantConnected = false
+                abandonJoin()
                 return
             }
             let localActorId = SyncIdentity.actorId(roomIdRaw: keys.roomIdRaw, pubkeyRaw: pubRaw)
             myActorId = localActorId
-            let containerURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            let rs = SyncReplayState(roomId: keys.roomId, containerURL: containerURL)
-            guard rs.load(localActorId: localActorId, publicKey: myPublicKey) else {
-                pendingLastError = Messages.syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage()
-                wantConnected = false
-                roomKey = nil; authToken = nil; roomId = nil; v3Keys = nil; myActorId = nil
-                return
+            let rs = replayPersistenceWriter.map {
+                SyncReplayState(roomId: keys.roomId, containerURL: storageContainerURL, persistenceWriter: $0)
+            } ?? SyncReplayState(roomId: keys.roomId, containerURL: storageContainerURL)
+            let token = joinToken
+            let publicKey = myPublicKey
+            let loaded = ReplayLoadResult()
+            // Loading may repair an old actor pin and seal the replay document.
+            // Keep that repair on the same serial worker as later commits.
+            persistenceExecutor.execute({
+                loaded.success = rs.load(localActorId: localActorId, publicKey: publicKey)
+            }) { [weak self] in
+                guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                guard loaded.success else {
+                    self.pendingLastError = Messages.syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage()
+                    self.abandonJoin()
+                    return
+                }
+                self.finishV3Join(keys: keys, replay: rs)
+                self.finishJoinedRoom(proposedRoomName: proposedRoomName)
             }
-            replayState = rs
-            do {
-                try chatStore.open(roomId: keys.roomId)
-                pendingChatSessionIssue = nil
-            } catch {
-                // Unit Sync can still operate, but chat remains fail-closed: no
-                // frame is sent unless its sealed history/replay document is
-                // available for a durable-before-send commit.
-                pendingChatSessionIssue = (error as? TacMapChatStore.StoreError)?.localizedMessage
-                ?? (error as? TacMapChatCrypto.CryptoError)?.localizedMessage
-                ?? .literal(error.localizedDescription)
-            }
-        } else {
-            protocolVersion = 2
-            let keys = SyncCrypto.deriveRoom(String(code.dropFirst(2)))
+            return
+        } else if let keys = v2 {
             roomKey = keys.roomKey
             roomId = keys.roomId
             authToken = keys.authToken
             chatStore.close()
             pendingChatSessionIssue = Messages.chatTacmapChatRequiresASecureVRoomMessage()
+        } else {
+            abandonJoin()
+            return
         }
 
+        finishJoinedRoom(proposedRoomName: proposedRoomName)
+    }
+
+    private final class ReplayLoadResult {
+        var success = false
+    }
+
+    private func finishV3Join(keys: SyncCrypto.V3RoomKeys, replay rs: SyncReplayState) {
+        rs.onDurableWrite = { [weak self] in
+            guard let self else { return }
+            self.lastReplayDurableMs = self.scheduler.nowMs
+        }
+        lastReplayDurableMs = scheduler.nowMs
+        replayState = rs
+        // contract 18: the wire-id index is built once, now that the keys
+        // and the stores are both attached
+        rebuildWireIndex(metadataKey: keys.metadataKey)
+        // chat fences of sessions the replay state has moved past can go
+        chatStore.durableSessionDomain = { [weak rs] actor in rs?.durableSessionDomain(actor) }
+        do {
+            try chatStore.open(roomId: keys.roomId)
+            pendingChatSessionIssue = nil
+        } catch {
+            // Unit Sync can still operate, but chat remains fail-closed: no
+            // frame is sent unless its sealed history/replay document is
+            // available for a durable-before-send commit.
+            pendingChatSessionIssue = (error as? TacMapChatStore.StoreError)?.localizedMessage
+            ?? (error as? TacMapChatCrypto.CryptoError)?.localizedMessage
+            ?? .literal(error.localizedDescription)
+        }
+    }
+
+    private func finishJoinedRoom(proposedRoomName: String?) {
         if let activeRoomId = roomId {
             if let proposedRoomName,
                !PresenceConfig.normalizedRoomName(proposedRoomName).isEmpty {
@@ -1245,10 +1912,28 @@ final class SyncManager: ObservableObject {
             }
             roomName = presenceConfig.roomName(for: activeRoomId)
         }
-        room = code
+        pathMonitor.onChange = { [weak self] status in self?.pathChanged(status) }
+        pathMonitor.start()
         connect()
         observeStores()
         startPresenceTimers()
+    }
+
+    /// A join that could not finish (locked replay state, missing identity).
+    private func abandonJoin() {
+        wantConnected = false
+        roomKey = nil; authToken = nil; roomId = nil; v3Keys = nil; myActorId = nil
+        wireIndex = nil
+        room = nil
+        status = .offline
+        protocolVersion = 2
+    }
+
+    private func rebuildWireIndex(metadataKey: Data) {
+        let index = SyncWireIdIndex(metadataKey: metadataKey)
+        index.insert(modelIndex.allIds)
+        index.insert(lastContent.keys.compactMap(UUID.init(uuidString:)))
+        wireIndex = index
     }
 
     func leave() {
@@ -1258,6 +1943,20 @@ final class SyncManager: ObservableObject {
     private func leave(clearLastError: Bool) {
         wantConnected = false
         reconnectBackoff.reset()
+        closeClassifier.reset()
+        joinState = JoinState()
+        mutationsPaused = false
+        pausedForAction = nil
+        surfacedIssueLog.removeAll()
+        stableSessionTimer?.cancel()
+        stableSessionTimer = nil
+        liveWindowResyncTimer?.cancel()
+        liveWindowResyncTimer = nil
+        pathMonitor.stop()
+        pathMonitor.onChange = nil
+        lastPathStatus = nil
+        chatStore.durableSessionDomain = nil
+        pendingLastError = issueLifecycle.resetForLeave()?.pendingMessage
         clearChatSessionSecrets()
         chatStore.close()
         pendingChatSessionIssue = nil
@@ -1265,27 +1964,47 @@ final class SyncManager: ObservableObject {
         stopPresenceTimers()
         stopConnectionHealthChecks()
         presenceSendInFlight = false
-        reconnectWorkItem?.cancel()
-        reconnectWorkItem = nil
-        v2SnapshotTimeoutItem?.cancel()
-        v2SnapshotTimeoutItem = nil
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
+        reconnectTimer?.cancel()
+        reconnectTimer = nil
+        cancelHandshakeWatchdog()
+        diffTimer?.cancel()
+        diffTimer = nil
         v2SnapshotGate.cancel()
         v2SnapshotFailureGeneration = nil
         let leavingTask = task
         let explicitLeaveFrame = signedExplicitLeaveFrame()
+        let leavingPacer = pacer
         task = nil
-        if let leavingTask, let explicitLeaveFrame {
-            leavingTask.send(.string(explicitLeaveFrame)) { _ in
-                leavingTask.cancel(with: .goingAway, reason: nil)
-            }
+        resetOutboundPacing()
+        if let leavingTask, let explicitLeaveFrame, let leavingPacer {
+            sendPacedLeave(explicitLeaveFrame, socket: leavingTask, pacer: leavingPacer)
         } else {
-            leavingTask?.cancel(with: .goingAway, reason: nil)
+            leavingTask?.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
         }
 
-        // v3: persist replay state but don't clear it (survives leave/restart)
-        try? replayState?.save()
+        // v3: replay state survives leave/restart. Leave is a 17.1 clean
+        // point, so the counters go down exact and the next load needs no floor.
+        dropInboundAndLiveWork()
+        presenceFlushTimer?.cancel()
+        presenceFlushTimer = nil
+        if let state = replayState {
+            pendingReplayCleanups += 1
+            state.writeCleanPresenceFence(on: persistenceExecutor) { [weak self] _ in
+                guard let self else { return }
+                self.pendingReplayCleanups -= 1
+                if self.pendingReplayCleanups == 0 {
+                    let waiting = self.afterReplayCleanup
+                    self.afterReplayCleanup.removeAll()
+                    waiting.forEach { $0() }
+                }
+            }
+        }
+        replayState?.onDurableWrite = nil
+        joinToken &+= 1
+        wireIndex = nil
+        backgroundPausedAt = nil
+        endBackgroundPresence()
+        lastForegroundHello = nil
 
         roomKey = nil
         authToken = nil
@@ -1293,14 +2012,14 @@ final class SyncManager: ObservableObject {
         roomName = nil
         status = .offline
         clock = 0
-        versions.removeAll(); lastContent.removeAll(); kindById.removeAll()
+        versions.removeAll(); versionsBy.removeAll(); lastContent.removeAll(); kindById.removeAll()
         forcedLocalDiff.removeAll(); resolvingPendingModel = false
         forcedLegacyDeletes.removeAll()
         pendingLegacyDeleteConfirmations.removeAll()
         clearOutboundDeliveries(markForReconciliation: false)
         peers.removeAll()
         activeSessions.removeAll()
-        onlineMembers = onlineMemberTracker.clear()
+        setOnlineMembers(onlineMemberTracker.clear())
         peerKeys.removeAll(); peerTs.removeAll()
         lastGoodLocalPresenceFix = nil
         localPresenceCandidateCluster = nil
@@ -1335,10 +2054,7 @@ final class SyncManager: ObservableObject {
     /// just the room the user happens to rejoin. Call only after mission-data
     /// unlock so a locked DEK causes no filesystem mutation.
     func migrateLegacyLocalStoresAfterUnlock() {
-        guard let support = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else { return }
+        guard let support = storageContainerURL else { return }
         do {
             _ = try SyncLocalStore.migrateAllLegacyStores(
                 applicationSupportDirectory: support
@@ -1360,6 +2076,7 @@ final class SyncManager: ObservableObject {
         case recipientChanged
         case counterExhausted
         case transportUnavailable
+        case recipientInBackground
 
         var errorDescription: String? { localizedMessage.text }
 
@@ -1372,6 +2089,7 @@ final class SyncManager: ObservableObject {
             case .recipientChanged: return Messages.chatThatUnitSSecureSessionChangedSelectItAgainMessage()
             case .counterExhausted: return Messages.chatThisChatSessionReachedItsMessageLimitReconnectUnitMessage()
             case .transportUnavailable: return Messages.chatTheMessageCouldNotBeRoutedToTheRelayMessage()
+            case .recipientInBackground: return Messages.chatRecipientInBackgroundMessage()
             }
         }
     }
@@ -1396,6 +2114,9 @@ final class SyncManager: ObservableObject {
 
     func restoreChatAfterMissionUnlock() {
         guard protocolVersion == 3, let roomId else { return }
+        // A transient .inactive never locked chat, so there is nothing to
+        // restore and no reason to rotate a healthy session (S2-12).
+        guard chatStore.isLocked || chatStore.activeRoomId != roomId else { return }
         do {
             try chatStore.open(roomId: roomId)
             pendingChatSessionIssue = nil
@@ -1442,6 +2163,15 @@ final class SyncManager: ObservableObject {
                   key.keyId == recipient.keyId else {
                 throw ChatSendError.recipientChanged
             }
+            // 21.6: a backgrounded peer drops every inbound frame, a direct
+            // message to it would show Routed and vanish (S6-04)
+            // per-send reason, the chat view shows the thrown error
+            if case .blocked = ChatSendGate.check(
+                scope: .direct,
+                recipientLatestRetentionSeconds: latestAdvertisedRetention(recipient)
+            ) {
+                throw ChatSendError.recipientInBackground
+            }
             targetKey = key
         }
 
@@ -1481,7 +2211,7 @@ final class SyncManager: ObservableObject {
         )
         try chatStore.appendOutgoing(message) // durable-before-send
         pendingChatSends[messageId] = PendingChatSend(frame: frame)
-        guard send(frame.object, completion: { [weak self] succeeded in
+        guard send(frame.object, frameClass: .chat, completion: { [weak self] succeeded in
             guard let self, !succeeded else { return }
             self.pendingChatSends.removeValue(forKey: messageId)
             _ = try? self.chatStore.updateDelivery(
@@ -1497,6 +2227,15 @@ final class SyncManager: ObservableObject {
         return messageId
     }
 
+    /// Retention advertised by the recipient's latest accepted presence on
+    /// this exact session, nil when it has not shared a location.
+    private func latestAdvertisedRetention(_ recipient: TacMapChatRecipient) -> Int? {
+        guard let peer = peers[recipient.actorId],
+              peer.sessionDomain == recipient.sessionDomain,
+              peer.retentionWindow.isFinite else { return nil }
+        return Int(peer.retentionWindow)
+    }
+
     private func startChatSessionV3() {
         guard protocolVersion == 3, status == .connected,
               chatStore.activeRoomId == roomId,
@@ -1506,7 +2245,10 @@ final class SyncManager: ObservableObject {
             pendingChatSessionIssue = chatStore.pendingIssue ?? Messages.chatHistoryUnavailableMessage()
             return
         }
-        clearChatSessionSecrets()
+        // Peers may announce their authenticated key before our hello-ack.
+        // Starting this socket's local key must retain those current-session
+        // endpoints; connection teardown still clears all local and peer keys.
+        clearLocalChatSessionSecrets()
         do {
             chatLocalSession = try TacMapChatCrypto.makeLocalSession(
                 roomIdRaw: keys.roomIdRaw,
@@ -1527,7 +2269,7 @@ final class SyncManager: ObservableObject {
         guard status == .connected, !chatSessionReady,
               let session = chatLocalSession else { return }
         chatKeyAdvertAttempts += 1
-        _ = send(session.advertisement) { [weak self] succeeded in
+        _ = send(session.advertisement, frameClass: .control) { [weak self] succeeded in
             guard let self, !succeeded else { return }
             self.pendingChatSessionIssue = Messages.chatTheChatKeyAdvertisementCouldNotReachTheRelayMessage()
         }
@@ -1539,23 +2281,27 @@ final class SyncManager: ObservableObject {
             return
         }
         let expectedKeyId = session.keyId
-        let retry = DispatchWorkItem { [weak self] in
+        chatKeyRetryItem = scheduler.schedule(afterMs: 2_000) { [weak self] in
             guard let self, self.chatLocalSession?.keyId == expectedKeyId,
                   !self.chatSessionReady else { return }
+            self.chatKeyRetryItem = nil
             self.sendChatKeyAdvertisement()
         }
-        chatKeyRetryItem = retry
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: retry)
     }
 
     private func clearChatSessionSecrets() {
+        clearLocalChatSessionSecrets()
+        chatPeerKeys.removeAll(keepingCapacity: false)
+        inboundPublication?.recipients.removeAll(keepingCapacity: false)
+        chatRecipients.removeAll(keepingCapacity: false)
+    }
+
+    private func clearLocalChatSessionSecrets() {
         chatKeyRetryItem?.cancel()
         chatKeyRetryItem = nil
         chatKeyAdvertAttempts = 0
         chatSessionReady = false
         chatLocalSession = nil
-        chatPeerKeys.removeAll(keepingCapacity: false)
-        chatRecipients.removeAll(keepingCapacity: false)
         chatCounter = 0
         for messageId in pendingChatSends.keys {
             _ = try? chatStore.updateDelivery(id: messageId, state: .failed, failureCode: "session-ended")
@@ -1567,7 +2313,7 @@ final class SyncManager: ObservableObject {
         var next: [String: TacMapChatRecipient] = [:]
         for (actorId, key) in chatPeerKeys {
             guard activeSessions[actorId]?.sessionDomain == key.sessionDomain else { continue }
-            let displayName = onlineMembers[actorId]?.displayName
+            let displayName = (inboundPublication?.members ?? onlineMembers)[actorId]?.displayName
                 ?? peers[actorId]?.callsign
                 ?? L10n.text("Unit %1$@", String(actorId.suffix(6)).uppercased())
             next[actorId] = TacMapChatRecipient(
@@ -1577,13 +2323,34 @@ final class SyncManager: ObservableObject {
                 keyId: key.keyId
             )
         }
-        chatRecipients = next
+        // 20.2: an unchanged value must not republish the manager
+        if inboundPublication != nil { inboundPublication?.recipients = next }
+        else if next != chatRecipients { chatRecipients = next }
+    }
+
+    /// Assign only when something a view shows changed. The tracker bumps
+    /// lastSeenAt on every frame, which nothing displays, and republishing it
+    /// re-rendered the whole map per presence frame (S5-12).
+    private func setOnlineMembers(_ next: [String: OnlineMember]) {
+        if inboundPublication != nil { inboundPublication?.members = next; return }
+        guard next.count != onlineMembers.count || next.contains(where: { id, member in
+            guard let current = onlineMembers[id] else { return true }
+            return !current.sameDisplay(as: member)
+        }) else { return }
+        onlineMembers = next
     }
 
     // MARK: Connection
 
     private func connect() {
-        guard presenceCadence.foregroundReady, let roomId else { return }
+        guard presenceCadence.foregroundReady, pausedForAction == nil, let roomId else { return }
+        // Foreground reconciliation can race the journal startup callback:
+        // finishJoin has room keys while its replay load is still queued.
+        // Only the loaded, current room authority may open a v3 socket.
+        if protocolVersion == 3 {
+            guard revisionJournalAvailable, !revisionJournalLoading,
+                  replayState?.roomId == roomId, v3Keys?.roomId == roomId else { return }
+        }
         guard let base = Self.validatedRelayBaseForRuntime(relayEndpoint) else {
             wantConnected = false
             status = .offline
@@ -1593,12 +2360,10 @@ final class SyncManager: ObservableObject {
         relayEndpoint = base
         presenceSendInFlight = false
         stopConnectionHealthChecks()
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
-        reconnectWorkItem?.cancel()
-        reconnectWorkItem = nil
-        v2SnapshotTimeoutItem?.cancel()
-        v2SnapshotTimeoutItem = nil
+        cancelHandshakeWatchdog()
+        dropInboundAndLiveWork()
+        reconnectTimer?.cancel()
+        reconnectTimer = nil
         v2SnapshotGate.cancel()
         clearOutboundDeliveries(markForReconciliation: true)
         activeConnectionGeneration = issueLifecycle.beginConnection()
@@ -1633,17 +2398,31 @@ final class SyncManager: ObservableObject {
             localHelloVersion = nil
             activeSessions.removeAll()
             remotePresenceCandidateClusters.removeAll()
-            onlineMembers = onlineMemberTracker.clear()
+            setOnlineMembers(onlineMemberTracker.clear())
         } else {
             // A legacy relay may ignore delivery request IDs. Rebuild v2's
             // baseline from its reconnect snapshot or resend with a fresh
             // version; never suppress a merely queued edit permanently.
             versions.removeAll()
+            versionsBy.removeAll()
             lastContent.removeAll()
             kindById.removeAll()
         }
+        snapshotSeqRegressed = false
+        snapshotVerifiedClean = true
+        reconnectBackoff.attemptStarted(atMs: scheduler.nowMs)
+        guard let socket = openRelaySocket(base: base, roomId: roomId) else { return }
+        if protocolVersion == 2 {
+            v2SnapshotGate.start(socketIdentity: socket, generation: activeConnectionGeneration)
+        }
+        receive(on: socket, generation: activeConnectionGeneration)
+    }
+
+    /// Build the upgrade request, create the socket and arm the per-socket
+    /// machinery. Shared by the normal connect and the 21.4 background one.
+    private func openRelaySocket(base: String, roomId: String) -> SyncSocket? {
         let path = protocolVersion == 3 ? "/v3/room/\(roomId)" : "/room/\(roomId)"
-        guard let url = URL(string: base + path) else { return }
+        guard let url = URL(string: base + path) else { return nil }
         status = .connecting
         var req = URLRequest(url: url)
         if let authToken { req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization") }
@@ -1652,114 +2431,295 @@ final class SyncManager: ObservableObject {
             req.setValue(roomId, forHTTPHeaderField: "X-Room-Id")
         }
         req = SyncWebSocketTransport.prepareRequest(req)
-        let t = webSocketSession.webSocketTask(with: req)
-        SyncWebSocketTransport.configure(t)
-        task = t
+        let socket = socketFactory.makeSocket(request: req)
+        task = socket
+        socketOpened = false
+        startOutboundPacing()
         let connectionGeneration = activeConnectionGeneration
-        if protocolVersion == 2 {
-            v2SnapshotGate.start(socketIdentity: t, generation: connectionGeneration)
-            scheduleV2SnapshotTimeout(socket: t, generation: connectionGeneration)
+        socket.onOpen = { [weak self, weak socket] in
+            guard let self, let socket, self.task === socket,
+                  self.activeConnectionGeneration == connectionGeneration else { return }
+            self.transportOpened()
         }
-        t.resume()
-        receive(on: t, generation: connectionGeneration)
-        if protocolVersion == 3 {
-            scheduleV3HandshakeTimeout(socket: t, generation: connectionGeneration)
-        }
+        startHandshakeWatchdog(socket: socket, generation: connectionGeneration)
+        socket.resume()
+        return socket
     }
 
-    private func receive(on socket: URLSessionWebSocketTask, generation: Int64) {
+    private func receive(on socket: SyncSocket, generation: Int64) {
         socket.receive { [weak self, weak socket] result in
-            Task { @MainActor in
-                guard let self, let socket, self.task === socket,
-                      self.activeConnectionGeneration == generation else { return }
-                switch result {
-                case .failure:
-                    self.handleDisconnect(socket: socket)
-                case .success(let message):
-                    let decision: SyncInboundFrameDecision
-                    switch message {
-                    case .string(let text):
-                        decision = SyncInboundFramePolicy.inspect(text: text)
-                    case .data(let data):
-                        // Bound binary payloads before any UTF-8 allocation.
-                        decision = SyncInboundFramePolicy.inspect(data: data)
-                    @unknown default:
-                        decision = .reject(.invalidUTF8)
-                    }
-                    guard case .accept(let text, let data) = decision else {
-                        let rejection: SyncInboundFrameRejection
-                        if case .reject(let exact) = decision {
-                            rejection = exact
-                        } else {
-                            rejection = .invalidUTF8
-                        }
-                        self.rejectInboundFrame(
-                            socket: socket,
-                            generation: generation,
-                            rejection: rejection
-                        )
-                        return
-                    }
-                    if !self.liveReceiveBudget.admit(
-                        generation: generation,
-                        byteCount: data.count,
-                        phase: self.status == .connected ? .live : .initial
-                    ) {
-                        self.rejectInboundFrame(
-                            socket: socket,
-                            generation: generation,
-                            rejection: .rateLimited
-                        )
-                        return
-                    }
-                    // Mission objects, replay counters, acknowledgements, and
-                    // membership state all have durable foreground-only work.
-                    // Keep reading so the socket remains healthy, but discard
-                    // frames while locked/backgrounded and reconcile by snapshot
-                    // before processing resumes.
-                    if self.presenceCadence.foregroundReady {
-                        self.handleMessage(
-                            text,
-                            data: data,
-                            socket: socket,
-                            generation: generation
-                        )
-                    }
-                    self.receive(on: socket, generation: generation)
-                }
+            guard let self, let socket, self.task === socket,
+                  self.activeConnectionGeneration == generation else { return }
+            switch result {
+            case .failure:
+                self.endSession(socket: socket, cause: .remote)
+            case .success(let message):
+                self.handleInbound(message, socket: socket, generation: generation)
             }
         }
     }
 
+    private func handleInbound(_ message: SyncSocketMessage, socket: SyncSocket, generation: Int64) {
+        let now = scheduler.nowMs
+        lastInboundMs = now
+        socketOpened = true
+        noteHandshakeProgress()
+        let decision: SyncInboundFrameDecision
+        switch message {
+        case .string(let text):
+            decision = SyncInboundFramePolicy.inspect(text: text)
+        case .data(let data):
+            // Bound binary payloads before any UTF-8 allocation.
+            decision = SyncInboundFramePolicy.inspect(data: data)
+        }
+        guard case .accept(_, let data) = decision else {
+            if case .reject(let exact) = decision {
+                rejectInboundFrame(socket: socket, generation: generation, rejection: exact)
+            } else {
+                rejectInboundFrame(socket: socket, generation: generation, rejection: .invalidUTF8)
+            }
+            return
+        }
+        // Mission objects, replay counters, acknowledgements, and membership
+        // state all have durable foreground-only work. Keep reading so the
+        // socket stays healthy, but discard frames while locked/backgrounded
+        // (unparsed) and reconcile by snapshot before processing resumes.
+        guard presenceCadence.foregroundReady else {
+            guard receiveBudget.admit(
+                generation: generation, phase: .background, frameType: nil,
+                byteCount: data.count, activeSessions: 0, nowMs: now
+            ) else {
+                rejectInboundFrame(socket: socket, generation: generation, rejection: .rateLimited)
+                return
+            }
+            if backgroundSession != nil {
+                handleBackgroundSessionFrame(data, socket: socket)
+                guard task === socket, activeConnectionGeneration == generation else { return }
+            }
+            receive(on: socket, generation: generation)
+            return
+        }
+        let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard receiveBudget.admit(
+            generation: generation,
+            phase: status == .connected ? .live : .initial,
+            frameType: parsed?["t"] as? String,
+            byteCount: data.count,
+            activeSessions: activeSessions.count,
+            nowMs: now
+        ) else {
+            rejectInboundFrame(socket: socket, generation: generation, rejection: .rateLimited)
+            return
+        }
+        guard let parsed else {
+            // not JSON: dropped like always, keep reading
+            receive(on: socket, generation: generation)
+            return
+        }
+        // Contract 1: the receive callback only enqueues. The drain processes
+        // whatever is queued in batches, so a burst of live records costs one
+        // replay commit and one store write instead of one each.
+        enqueueInbound(QueuedInbound(object: parsed, bytes: data.count, socket: socket, generation: generation))
+    }
+
+    // MARK: Inbound queue and batch drain (contract 1, 17)
+
+    private var queuedInboundCount: Int { inboundQueue.count - inboundHead }
+
+    private func enqueueInbound(_ frame: QueuedInbound) {
+        inboundQueue.append(frame)
+        inboundQueuedBytes += frame.bytes
+        if queuedInboundCount < Self.inboundQueueMaxFrames, inboundQueuedBytes < Self.inboundQueueMaxBytes {
+            receive(on: frame.socket, generation: frame.generation)
+        } else {
+            // full: dont re-arm, the socket backs up until the drain makes room
+            parkedReceive = (frame.socket, frame.generation)
+        }
+        scheduleInboundDrain()
+    }
+
+    private func scheduleInboundDrain() {
+        guard inboundDrainTimer == nil, !snapshotValidationInFlight, !inboundPersistenceInFlight, !outboundPersistenceInFlight, queuedInboundCount > 0 else { return }
+        inboundDrainTimer = scheduler.schedule(afterMs: 0) { [weak self] in
+            guard let self else { return }
+            self.inboundDrainTimer = nil
+            self.drainInbound()
+        }
+    }
+
+    /// One batch: at most 64 frames that are already queued, in arrival
+    /// order, never waiting for more. Replay changes collect in one open
+    /// replay batch; live records are applied to the model together at the
+    /// end (or before any frame that needs the model or sends something).
+    private func drainInbound() {
+        guard !snapshotValidationInFlight, !inboundPersistenceInFlight, !outboundPersistenceInFlight else { return }
+        let rs = replayState
+        rs?.beginBatch()
+        if protocolVersion == 3 {
+            inboundPublication = InboundPublication(peers: presence.peers, members: onlineMembers, recipients: chatRecipients)
+        }
+        var processed = 0
+        while processed < Self.inboundBatchMaxFrames, inboundHead < inboundQueue.count {
+            let frame = inboundQueue[inboundHead]
+            let type = frame.object["t"] as? String ?? ""
+            let duplicate = (frame.object["id"] as? String).map { liveGroupWireIds.contains($0) } ?? false
+            if protocolVersion == 3, (!Self.batchableInboundTypes.contains(type) || duplicate),
+               rs?.hasUnflushedChanges == true || !liveGroup.isEmpty {
+                break
+            }
+            inboundHead += 1
+            inboundQueuedBytes -= frame.bytes
+            // a frame from an ended session, or one that waited while we went
+            // to background, is foreground work the next snapshot covers
+            guard task === frame.socket, activeConnectionGeneration == frame.generation,
+                  presenceCadence.foregroundReady else { continue }
+            processed += 1
+            // fail-closed: any unexpected throw from downstream parsing is
+            // swallowed so a malformed frame never kills the receive loop
+            do {
+                try handleParsedMessage(frame.object, frameBytes: frame.bytes,
+                                        socket: frame.socket, generation: frame.generation)
+            } catch {
+                // silently drop, dont log the frame content (SEC-019)
+            }
+            if snapshotValidationInFlight { break }
+        }
+        compactInboundQueue()
+        if let rs, protocolVersion == 3 {
+            finishInboundBatch(rs)
+        } else {
+            if let rs { try? rs.endBatch() }
+            resumeParkedReceive()
+            scheduleInboundDrain()
+        }
+    }
+
+    private func finishInboundBatch(_ rs: SyncReplayState) {
+        inboundPersistenceInFlight = true
+        let generation = activeConnectionGeneration
+        let token = joinToken
+        let group = liveGroup
+        liveGroup.removeAll()
+        liveGroupWireIds.removeAll()
+        liveGroupStaging = nil
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do {
+                if !group.isEmpty {
+                    let outcome = try self.applyAcceptedRecords(group.map {
+                        ($0.value, self.modelContentHash(localId: $0.value.localId))
+                    })
+                    try rs.clearPendingModelApplications(outcome.clears)
+                    if !outcome.unsupported.isEmpty {
+                        self.surface(.skippedUnsupported, scope: .join, count: outcome.unsupported.count)
+                    }
+                }
+                rs.flushBatch(on: self.persistenceExecutor) { [weak self] error in
+                    guard let self, self.replayState === rs, self.joinToken == token,
+                          self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+                    if let error { self.snapshotPersistenceFailed(error); return }
+                    do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+                    self.inboundPersistenceInFlight = false
+                    let publication = self.inboundPublication
+                    self.inboundPublication = nil
+                    if let publication {
+                        if self.presence.peers != publication.peers { self.presence.peers = publication.peers }
+                        self.setOnlineMembers(publication.members)
+                        if self.chatRecipients != publication.recipients { self.chatRecipients = publication.recipients }
+                    }
+                    self.resumeParkedReceive()
+                    self.scheduleInboundDrain()
+                }
+            } catch { self.snapshotPersistenceFailed(error) }
+        }
+    }
+
+    private func compactInboundQueue() {
+        if inboundHead >= inboundQueue.count {
+            inboundQueue.removeAll(keepingCapacity: true)
+            inboundHead = 0
+            inboundQueuedBytes = 0
+        } else if inboundHead > 256 {
+            inboundQueue.removeFirst(inboundHead)
+            inboundHead = 0
+        }
+    }
+
+    private func resumeParkedReceive() {
+        guard let parked = parkedReceive,
+              queuedInboundCount < Self.inboundQueueMaxFrames,
+              inboundQueuedBytes < Self.inboundQueueMaxBytes else { return }
+        parkedReceive = nil
+        guard task === parked.socket, activeConnectionGeneration == parked.generation else { return }
+        receive(on: parked.socket, generation: parked.generation)
+    }
+
+    /// Throw away queued frames. rearmParked keeps a live socket reading (the
+    /// background case), otherwise the socket is going away anyway.
+    private func resetInboundQueue(rearmParked: Bool) {
+        inboundDrainTimer?.cancel()
+        inboundDrainTimer = nil
+        inboundQueue.removeAll(keepingCapacity: false)
+        inboundHead = 0
+        inboundQueuedBytes = 0
+        let parked = parkedReceive
+        parkedReceive = nil
+        if rearmParked, let parked, task === parked.socket, activeConnectionGeneration == parked.generation {
+            receive(on: parked.socket, generation: parked.generation)
+        }
+    }
+
+    /// Session over: nothing queued or staged survives into the next one.
+    /// Staged live records keep their durable pending markers, the next
+    /// snapshot resolves those exactly like after a crash.
+    private func dropInboundAndLiveWork() {
+        resetInboundQueue(rearmParked: false)
+        liveGroup.removeAll()
+        liveGroupWireIds.removeAll()
+        liveGroupStaging = nil
+        snapshotValidationInFlight = false
+        inboundPersistenceInFlight = false
+        outboundPersistenceInFlight = false
+        inboundPublication = nil
+    }
+
     private func rejectInboundFrame(
-        socket: URLSessionWebSocketTask,
+        socket: SyncSocket,
         generation: Int64,
         rejection: SyncInboundFrameRejection
     ) {
         guard inboundFrameCloseGate.claimClose(generation: generation) else { return }
-        let closeCode: URLSessionWebSocketTask.CloseCode
+        let action: SyncLocalCloseAction
         switch rejection {
-        case .oversized:
-            closeCode = .messageTooBig
-        case .invalidUTF8:
-            closeCode = .invalidFramePayloadData
-        case .rateLimited:
-            closeCode = .policyViolation
+        case .oversized: action = .oversizedInbound
+        case .invalidUTF8: action = .binaryInbound
+        case .rateLimited: action = .receiveBudgetExceeded
         }
-        socket.cancel(with: closeCode, reason: nil)
-        handleDisconnect(socket: socket)
+        endSession(socket: socket, cause: .local(action))
     }
 
     private func markPeersStale(nowUptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         peers = peers.mapValues { PresenceExpiryPolicy.markedStale($0, nowUptime: nowUptime) }
     }
 
-    private func handleDisconnect(socket: URLSessionWebSocketTask) {
-        guard task === socket else { return }
+    private enum SessionEndCause {
+        /// receive/send/ping failed: read close code or HTTP status off the socket
+        case remote
+        /// we closed it ourselves for this reason
+        case local(SyncLocalCloseAction)
+    }
+
+    /// Volatile per-socket cleanup shared by every way a session ends.
+    private func tearDownSession() {
         stopConnectionHealthChecks()
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
+        cancelHandshakeWatchdog()
+        dropInboundAndLiveWork()
         task = nil
+        resetOutboundPacing()
         clearChatSessionSecrets()
         presenceSendInFlight = false
         status = .offline
@@ -1771,8 +2731,6 @@ final class SyncManager: ObservableObject {
         snapshotWireIds.removeAll()
         snapshotConfirmedLocalDeletes.removeAll()
         pendingLegacyDeleteConfirmations.removeAll()
-        v2SnapshotTimeoutItem?.cancel()
-        v2SnapshotTimeoutItem = nil
         v2SnapshotGate.cancel()
         awaitingHelloAck = false
         sessionDomain = nil
@@ -1780,23 +2738,151 @@ final class SyncManager: ObservableObject {
         markPeersStale()
         activeSessions.removeAll()
         remotePresenceCandidateClusters.removeAll()
-        onlineMembers = onlineMemberTracker.clear()
+        setOnlineMembers(onlineMemberTracker.clear())
+    }
+
+    /// The one place a socket session ends. Local closes are classified by
+    /// our own reason, remote ones by the relay's close code (or the upgrade
+    /// status when the socket never opened), see contract section 7.
+    private func endSession(socket: SyncSocket, cause: SessionEndCause, issueReported: Bool = false) {
+        guard task === socket else { return }
+        let remoteCode = socket.closeCode
+        let httpStatus = socket.httpStatusCode
+        // didOpen and the receive failure hop to main separately, so a relay
+        // that upgrades and closes right away (4013, 4011..) can beat onOpen.
+        // A close code or a 101 only exist on a socket that did open.
+        let opened = socketOpened || remoteCode != 0 || httpStatus == 101
+        let closedHelloEpoch = localHelloVersion.flatMap { UInt64($0.prefix(16), radix: 16) }
+        let wasBackgroundPresence = wantConnected && !presenceCadence.foregroundReady
+            && presenceCadence.backgroundEnabled && status == .connected
+        let backgroundAttemptFailed = backgroundSession.map { $0.phase != .live } ?? false
+        backgroundSession = nil
+        tearDownSession()
+        if case .local(let action) = cause {
+            socket.cancel(closeCode: action.closeCode, reason: nil)
+        }
+        reconnectBackoff.sessionEnded()
+        stableSessionTimer?.cancel()
+        stableSessionTimer = nil
         // Background presence may continue only on the socket authenticated in
         // the foreground. If it drops, wait for foreground unlock rather than
         // touching durable replay/session state behind the mission-key lock.
-        guard wantConnected, presenceCadence.foregroundReady else { return }
+        guard wantConnected, presenceCadence.foregroundReady else {
+            // 21.4 / 21.5: a dropped background session waits for the next
+            // presence opportunity to reconnect (only once doc change D1
+            // ships), otherwise sharing pauses and the next foreground return
+            // says so. Our own lifecycle pause or leave is not a drop.
+            if wasBackgroundPresence || backgroundAttemptFailed, !Self.isOwnLifecycleClose(cause) {
+                backgroundPresenceDropped(failedAttempt: backgroundAttemptFailed)
+            }
+            return
+        }
         clearOutboundDeliveries(markForReconciliation: true)
-        if v2SnapshotFailureGeneration != activeConnectionGeneration {
+
+        let now = scheduler.nowMs
+        let decision: SyncConnectionDecision
+        switch cause {
+        case .remote:
+            decision = opened
+                ? closeClassifier.closed(code: remoteCode == 0 ? 1006 : remoteCode, afterOwnLeave: false, nowMs: now)
+                : closeClassifier.upgradeFailed(httpStatus: httpStatus, nowMs: now)
+        case .local(let action):
+            switch action {
+            case .leave, .lifecyclePause:
+                decision = .none
+            case .liveWindowResync:
+                decision = SyncConnectionDecision(action: .reconnectNow)
+            case .sessionNack:
+                decision = closeClassifier.sessionNack(nowMs: now)
+            case .structuralSnapshot:
+                decision = closeClassifier.structuralSnapshotFailure()
+            default:
+                decision = .reconnect(.transient)
+            }
+        }
+
+        switch decision.action {
+        case .none:
+            return
+        case .stop:
+            enterPausedForAction(decision.issue ?? .relayRefusedRoom, retryOnForeground: decision.retryOnForeground)
+            return
+        case .reconnectNow:
+            // resync: clean close, straight back for a fresh snapshot, no backoff
+            reconnectTimer?.cancel()
+            reconnectTimer = scheduler.schedule(afterMs: 0) { [weak self] in
+                guard let self, self.wantConnected, self.task == nil else { return }
+                self.reconnectTimer = nil
+                self.connect()
+            }
+            return
+        case .escalateEpoch:
+            joinState.after4014 = true
+            joinState.rejectedEpoch = closedHelloEpoch
+        case .reconnect:
+            break
+        }
+        if decision.pacerAfter4008 { joinState.pacerAfter4008 = true }
+        if let issue = decision.issue {
+            surface(issue, scope: .failureChain)
+        } else if !issueReported, v2SnapshotFailureGeneration != activeConnectionGeneration {
             pendingLastError = issueLifecycle.report(
                 Messages.syncUnitSyncDisconnectedCheckTheRelayOrNetworkReconnectingMessage(),
                 kind: .connection,
                 generation: activeConnectionGeneration
             )?.pendingMessage
         }
-        reconnectWorkItem?.cancel()
+        scheduleReconnect(decision.backoffClass ?? .transient)
+    }
+
+    private static func isOwnLifecycleClose(_ cause: SessionEndCause) -> Bool {
+        if case .local(let action) = cause { return action == .leave || action == .lifecyclePause }
+        return false
+    }
+
+    /// PAUSED_ACTION_REQUIRED: room, keys, replay state and chat binding stay,
+    /// the socket does not come back until Retry (or a foreground return for
+    /// the rows that allow it).
+    private func enterPausedForAction(_ issue: SyncIssueCode, retryOnForeground: Bool) {
+        wantConnected = false
+        reconnectTimer?.cancel()
+        reconnectTimer = nil
+        if let socket = task {
+            tearDownSession()
+            clearOutboundDeliveries(markForReconciliation: true)
+            socket.cancel(closeCode: 1000, reason: nil)
+        }
+        status = .offline
+        pausedForAction = SyncPausedState(issue: issue, retryOnForeground: retryOnForeground)
+        surfacedIssueLog.append(issue)
+        pendingLastError = issueLifecycle.pin(
+            message(for: issue), kind: issue.isSecurity ? .security : .connection
+        )?.pendingMessage
+    }
+
+    /// The Retry action. Resets every failure counter and connects.
+    func retryPausedConnection() {
+        guard pausedForAction != nil, room != nil, roomId != nil else { return }
+        pausedForAction = nil
+        pendingLastError = issueLifecycle.clearPin()?.pendingMessage
+        closeClassifier.reset()
+        reconnectBackoff.reset()
+        joinState.after4014 = false
+        joinState.rejectedEpoch = nil
+        wantConnected = true
+        connect()
+    }
+
+    private func scheduleReconnect(_ backoffClass: SyncBackoffClass) {
+        let now = scheduler.nowMs
+        reconnectBackoff.failure(backoffClass, random: randomUnit(), nowMs: now)
+        scheduleReconnectTimer(atMs: reconnectBackoff.pending?.dueMs ?? now)
+    }
+
+    private func scheduleReconnectTimer(atMs dueMs: Int64) {
+        reconnectTimer?.cancel()
         let disconnectedGeneration = activeConnectionGeneration
-        let reconnectDelay = reconnectBackoff.nextDelay()
-        let reconnect = DispatchWorkItem { [weak self] in
+        reconnectTimer = scheduler.schedule(afterMs: max(0, dueMs - scheduler.nowMs)) { [weak self] in
             guard let self,
                   SyncReconnectAttemptGuard.shouldRun(
                     scheduledGeneration: disconnectedGeneration,
@@ -1804,189 +2890,200 @@ final class SyncManager: ObservableObject {
                     wantsConnection: self.wantConnected,
                     hasActiveSocket: self.task != nil
                   ) else { return }
-            self.reconnectWorkItem = nil
+            self.reconnectTimer = nil
             self.connect()
         }
-        reconnectWorkItem = reconnect
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + reconnectDelay,
-            execute: reconnect
-        )
     }
 
     private func pauseConnectionForBackground() {
-        reconnectWorkItem?.cancel()
-        reconnectWorkItem = nil
+        endBackgroundPresence()
+        reconnectTimer?.cancel()
+        reconnectTimer = nil
         stopConnectionHealthChecks()
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
+        cancelHandshakeWatchdog()
         guard let socket = task else {
             status = .offline
             return
         }
-        // `handleDisconnect` performs the normal volatile-session cleanup. Its
-        // reconnect gate is closed while foregroundReady is false.
-        handleDisconnect(socket: socket)
-        socket.cancel(with: .goingAway, reason: nil)
+        // endSession does the normal volatile cleanup. Its reconnect gate is
+        // closed while foregroundReady is false.
+        endSession(socket: socket, cause: .local(.lifecyclePause))
     }
 
     private func reconnectForForegroundReconciliation() {
         guard wantConnected, roomId != nil else { return }
         clearChatSessionSecrets()
         stopConnectionHealthChecks()
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
-        reconnectWorkItem?.cancel()
-        reconnectWorkItem = nil
+        cancelHandshakeWatchdog()
+        reconnectTimer?.cancel()
+        reconnectTimer = nil
         presenceSendInFlight = false
+        dropInboundAndLiveWork()
         if let socket = task {
             task = nil
-            socket.cancel(with: .goingAway, reason: nil)
+            resetOutboundPacing()
+            socket.cancel(closeCode: SyncLocalCloseAction.lifecyclePause.closeCode, reason: nil)
         }
         status = .offline
         markPeersStale()
         activeSessions.removeAll()
         remotePresenceCandidateClusters.removeAll()
-        onlineMembers = onlineMemberTracker.clear()
+        setOnlineMembers(onlineMemberTracker.clear())
         connect()
     }
 
-    private func scheduleV3HandshakeTimeout(
-        socket: URLSessionWebSocketTask,
-        generation: Int64
-    ) {
-        v3HandshakeTimeoutItem?.cancel()
-        let timeout = DispatchWorkItem { [weak self, weak socket] in
-            guard let self, let socket,
-                  self.task === socket,
-                  self.status != .connected,
-                  SyncConnectionWatchdogPolicy.isCurrent(
-                    scheduledGeneration: generation,
-                    currentGeneration: self.activeConnectionGeneration,
-                    wantsConnection: self.wantConnected,
-                    hasCurrentSocket: self.task === socket
-                  ) else { return }
-            self.v3HandshakeTimeoutItem = nil
-            self.pendingLastError = self.issueLifecycle.report(
-                Messages.syncUnitSyncHandshakeTimedOutReconnectingAutomaticallyMessage(),
-                kind: .connection,
-                generation: generation
-            )?.pendingMessage
-            self.handleDisconnect(socket: socket)
-            socket.cancel(with: .goingAway, reason: nil)
-        }
-        v3HandshakeTimeoutItem = timeout
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + SyncConnectionWatchdogPolicy.handshakeTimeout,
-            execute: timeout
-        )
+    // MARK: Handshake watchdog
+
+    private func startHandshakeWatchdog(socket: SyncSocket, generation: Int64) {
+        handshakeWatchdog.socketCreated(atMs: scheduler.nowMs)
+        armHandshakeTimer()
     }
 
-    private func startConnectionHealthChecks() {
-        stopConnectionHealthChecks()
-        guard task != nil, status == .connected else { return }
-        let timer = Timer(
-            timeInterval: SyncConnectionWatchdogPolicy.heartbeatInterval,
-            repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.pingConnection() }
+    private func cancelHandshakeWatchdog() {
+        handshakeTimer?.cancel()
+        handshakeTimer = nil
+        handshakeWatchdog.connected()
+    }
+
+    private func transportOpened() {
+        socketOpened = true
+        guard !handshakeWatchdog.finished else { return }
+        handshakeWatchdog.opened(atMs: scheduler.nowMs)
+        armHandshakeTimer()
+    }
+
+    /// Any complete inbound message counts as progress (iOS cant see partial
+    /// frames), so a slow but moving snapshot never times out (S2-03, S3-05).
+    private func noteHandshakeProgress() {
+        guard !handshakeWatchdog.finished else { return }
+        handshakeWatchdog.progress(atMs: scheduler.nowMs)
+        armHandshakeTimer()
+    }
+
+    private func armHandshakeTimer() {
+        handshakeTimer?.cancel()
+        handshakeTimer = nil
+        guard let deadline = handshakeWatchdog.nextDeadline(), let socket = task else { return }
+        let generation = activeConnectionGeneration
+        handshakeTimer = scheduler.schedule(afterMs: max(0, deadline.atMs - scheduler.nowMs)) { [weak self, weak socket] in
+            guard let self, let socket, self.task === socket,
+                  self.activeConnectionGeneration == generation else { return }
+            self.handshakeTimer = nil
+            guard let fire = self.handshakeWatchdog.check(nowMs: self.scheduler.nowMs) else {
+                self.armHandshakeTimer()
+                return
+            }
+            self.handshakeWatchdogFired(fire, socket: socket, generation: generation)
         }
-        connectionHealthTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func handshakeWatchdogFired(_ fire: SyncHandshakeWatchdog.Fire, socket: SyncSocket, generation: Int64) {
+        if backgroundSession != nil {
+            // a failed background attempt is counted by the policy, the user
+            // hears about it only if sharing ends up paused
+            endSession(socket: socket, cause: .local(fire.localClose), issueReported: true)
+            return
+        }
+        if protocolVersion == 2,
+           case .rejected(let reason) = v2SnapshotGate.timeout(socketIdentity: socket, generation: generation) {
+            failV2Snapshot(socket: socket, generation: generation, reason: reason)
+            return
+        }
+        pendingLastError = issueLifecycle.report(
+            Messages.syncUnitSyncHandshakeTimedOutReconnectingAutomaticallyMessage(),
+            kind: .connection,
+            generation: generation
+        )?.pendingMessage
+        endSession(socket: socket, cause: .local(fire.localClose), issueReported: true)
+    }
+
+    // MARK: Heartbeat
+
+    private func startConnectionHealthChecks() {
+        heartbeatTimer?.cancel()
+        heartbeatTimer = nil
+        guard task != nil, status == .connected else { return }
+        let interval = presenceCadence.foregroundReady
+            ? SyncHeartbeatPolicy.foregroundPingIntervalMs
+            : SyncHeartbeatPolicy.backgroundPingIntervalMs
+        heartbeatTimer = scheduler.schedule(afterMs: interval) { [weak self] in
+            guard let self else { return }
+            self.heartbeatTimer = nil
+            self.sendLivenessProbe(timeoutMs: SyncHeartbeatPolicy.deadAfterMsWithoutPongOrFrame)
+            self.startConnectionHealthChecks()
+        }
     }
 
     private func stopConnectionHealthChecks() {
-        connectionHealthTimer?.invalidate()
-        connectionHealthTimer = nil
-        connectionPingTimeoutItem?.cancel()
-        connectionPingTimeoutItem = nil
-        connectionPingInFlight = false
+        heartbeatTimer?.cancel()
+        heartbeatTimer = nil
+        pingDeadlineTimer?.cancel()
+        pingDeadlineTimer = nil
     }
 
-    private func pingConnection() {
-        guard status == .connected,
-              !connectionPingInFlight,
-              let socket = task else { return }
+    /// Ping and give the link timeoutMs to show any sign of life (a pong or
+    /// any inbound frame). Nothing back means the socket is dead. 8 s used to
+    /// kill sockets stuck behind one big inbound frame on a slow link.
+    private func sendLivenessProbe(timeoutMs: Int64) {
+        guard status == .connected, pingDeadlineTimer == nil, let socket = task else { return }
         let generation = activeConnectionGeneration
-        connectionPingInFlight = true
-
-        let timeout = DispatchWorkItem { [weak self, weak socket] in
-            guard let self, let socket,
-                  self.connectionPingInFlight,
-                  self.task === socket,
-                  SyncConnectionWatchdogPolicy.isCurrent(
-                    scheduledGeneration: generation,
-                    currentGeneration: self.activeConnectionGeneration,
-                    wantsConnection: self.wantConnected,
-                    hasCurrentSocket: self.task === socket
-                  ) else { return }
-            self.connectionPingTimeoutItem = nil
-            self.connectionPingInFlight = false
-            self.handleDisconnect(socket: socket)
-            socket.cancel(with: .goingAway, reason: nil)
+        let startedMs = scheduler.nowMs
+        pingDeadlineTimer = scheduler.schedule(afterMs: timeoutMs) { [weak self, weak socket] in
+            guard let self, let socket, self.task === socket,
+                  self.activeConnectionGeneration == generation else { return }
+            self.pingDeadlineTimer = nil
+            guard self.lastInboundMs < startedMs else { return }
+            self.endSession(socket: socket, cause: .local(.livenessTimeout))
         }
-        connectionPingTimeoutItem = timeout
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + SyncConnectionWatchdogPolicy.heartbeatTimeout,
-            execute: timeout
-        )
-
         socket.sendPing { [weak self, weak socket] error in
-            Task { @MainActor in
-                guard let self, let socket,
-                      self.task === socket,
-                      self.activeConnectionGeneration == generation else { return }
-                self.connectionPingTimeoutItem?.cancel()
-                self.connectionPingTimeoutItem = nil
-                self.connectionPingInFlight = false
-                if error != nil {
-                    self.handleDisconnect(socket: socket)
-                    socket.cancel(with: .goingAway, reason: nil)
-                }
+            guard let self, let socket, self.task === socket,
+                  self.activeConnectionGeneration == generation else { return }
+            if error != nil {
+                self.endSession(socket: socket, cause: .remote)
+                return
             }
+            self.lastInboundMs = max(self.lastInboundMs, self.scheduler.nowMs)
+            self.pingDeadlineTimer?.cancel()
+            self.pingDeadlineTimer = nil
         }
     }
 
-    private func scheduleV2SnapshotTimeout(
-        socket: URLSessionWebSocketTask,
-        generation: Int64
-    ) {
-        v2SnapshotTimeoutItem?.cancel()
-        let timeout = DispatchWorkItem { [weak self, weak socket] in
-            Task { @MainActor in
-                guard let self, let socket else { return }
-                if case .rejected(let reason) = self.v2SnapshotGate.timeout(
-                    socketIdentity: socket,
-                    generation: generation
-                ) {
-                    self.failV2Snapshot(
-                        socket: socket,
-                        generation: generation,
-                        reason: reason
-                    )
-                }
-            }
+    // MARK: Reachability (S2-13)
+
+    private func pathChanged(_ status: SyncPathStatus) {
+        let previous = lastPathStatus
+        lastPathStatus = status
+        guard let previous else { return } // first report is just the baseline
+        let regained = !previous.satisfied && status.satisfied
+        let swapped = previous.satisfied && status.satisfied && previous.interfaces != status.interfaces
+        let lost = previous.satisfied && !status.satisfied
+        if regained, !presenceCadence.foregroundReady, task == nil, backgroundPresencePolicy?.dropped == true {
+            // 21.4: network back is the other reconnect opportunity
+            backgroundPresenceWake()
+            return
         }
-        v2SnapshotTimeoutItem = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
+        if self.status == .connected, lost || swapped {
+            sendLivenessProbe(timeoutMs: SyncHeartbeatPolicy.pathChangeProbeTimeoutMs)
+        }
+        guard regained || swapped, wantConnected, pausedForAction == nil,
+              presenceCadence.foregroundReady, task == nil, reconnectTimer != nil,
+              let due = reconnectBackoff.reachabilityRegained(nowMs: scheduler.nowMs) else { return }
+        scheduleReconnectTimer(atMs: due)
     }
 
     private func failV2Snapshot(
-        socket: URLSessionWebSocketTask,
+        socket: SyncSocket,
         generation: Int64,
         reason: LocalizedMessage
     ) {
         guard task === socket, activeConnectionGeneration == generation else { return }
-        v2SnapshotTimeoutItem?.cancel()
-        v2SnapshotTimeoutItem = nil
         v2SnapshotFailureGeneration = generation
-        status = .offline
         pendingLastError = issueLifecycle.report(
             Messages.syncUnitSyncSnapshotFailedVerifyTheRelayOrNetworkMessage("").withArgument(0, reason),
             kind: .connection,
             generation: generation
         )?.pendingMessage
-        socket.cancel(with: .internalServerError, reason: nil)
+        endSession(socket: socket, cause: .local(.structuralSnapshot))
     }
 
     // MARK: Outbound
@@ -1997,122 +3094,168 @@ final class SyncManager: ObservableObject {
             drawingStore.$shapes,
             drawingStore.$layers
         )
-        .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-        .sink { [weak self] wps, shapes, layers in
-            guard let self else { return }
-            if self.protocolVersion == 3 {
-                self.syncLocalStateV3(waypoints: wps, shapes: shapes, layers: layers)
-            } else {
-                self.syncLocalState(waypoints: wps, shapes: shapes, layers: layers)
-            }
+        .sink { [weak self] _, _, _ in
+            self?.markDiffDirty()
         }
         .store(in: &observers)
     }
 
-    /// Lifetime observer: records local ABA mutations even while no room is joined.
-    private func observeModelRevisions() {
-        Publishers.CombineLatest3(
-            waypointStore.$waypoints,
-            drawingStore.$shapes,
-            drawingStore.$layers
-        )
-        .sink { [weak self] waypoints, shapes, layers in
+    /// 250 ms debounce for the local diff, on the injected clock so tests can
+    /// step it. Acks also land here instead of diffing synchronously.
+    private func markDiffDirty() {
+        guard diffTimer == nil else { return }
+        diffTimer = scheduler.schedule(afterMs: 250) { [weak self] in
             guard let self else { return }
-            let current = self.modelHashes(waypoints: waypoints, shapes: shapes, layers: layers)
-            guard self.presenceCadence.foregroundReady else {
-                // No mission-object mutation should normally occur behind the
-                // lock. Keep only an in-memory baseline and never touch the
-                // auth-bound revision journal from background callbacks.
-                self.observedModelHashes = current
-                self.modelObservationInitialized = true
-                return
-            }
-            if !self.modelObservationInitialized {
-                self.observedModelHashes = current
-                self.modelObservationInitialized = true
-                return
-            }
-            if self.resolvingPendingModel {
-                self.observedModelHashes = current
-                return
-            }
-            let changed = Set(self.observedModelHashes.keys).union(current.keys).filter {
-                self.observedModelHashes[$0] != current[$0]
-            }
-            guard !changed.isEmpty else { return }
-            do {
-                guard self.revisionJournalAvailable, let journal = self.modelRevisionJournal else {
-                    throw SyncReplayState.ReplayError.invalidState
-                }
-                for id in changed { try journal.bump(id) }
-                self.observedModelHashes = current
-            } catch {
-                self.revisionJournalAvailable = false
-                self.pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
-                self.failClosedV3(self.pendingLastError!)
-            }
+            self.diffTimer = nil
+            self.runLocalDiff()
         }
-        .store(in: &revisionObservers)
     }
 
-    private func modelHashes(waypoints: [Waypoint], shapes: [DrawingShape], layers: [DrawingLayer]) -> [String: String] {
-        var out: [String: String] = [:]
-        for waypoint in waypoints {
-            if let content = try? GeoJSONExporter.export(waypoints: [waypoint], drawings: [], layers: layers) {
-                out[waypoint.id.uuidString] = SyncIdentity.bytesToHex(SyncIdentity.sha256(Data(content.utf8)))
-            }
+    private func runLocalDiff() {
+        guard waypointStore != nil, drawingStore != nil else { return }
+        if protocolVersion == 3 {
+            syncLocalStateV3()
+        } else {
+            syncLocalState()
         }
-        for shape in shapes {
-            if let content = try? GeoJSONExporter.export(waypoints: [], drawings: [shape], layers: layers) {
-                out[shape.id.uuidString] = SyncIdentity.bytesToHex(SyncIdentity.sha256(Data(content.utf8)))
-            }
-        }
-        return out
     }
 
-    private func refreshObservedModelBaseline(localId: String?) {
-        guard let localId else { return }
-        if let hash = modelContentHash(localId: localId) { observedModelHashes[localId] = hash }
-        else { observedModelHashes.removeValue(forKey: localId) }
+    /// Lifetime observer: records local ABA mutations even while no room is joined.
+    ///
+    /// One subscription per store publisher, so each store mutation event
+    /// becomes exactly one journal write with every touched id in it (contract
+    /// 17). Only objects whose value or layer actually changed get looked at,
+    /// instead of exporting and hashing the whole model on every publish.
+    private func observeModelRevisions() {
+        _ = modelIndex.updateWaypoints(waypointStore.waypoints)
+        _ = modelIndex.updateShapes(drawingStore.shapes)
+        _ = modelIndex.updateLayers(drawingStore.layers)
+        // @Published sends on willSet, so read the new value off the event,
+        // never back off the store
+        waypointStore.$waypoints.dropFirst()
+            .sink { [weak self] waypoints in self?.waypointsDidChange(waypoints) }
+            .store(in: &revisionObservers)
+        drawingStore.$shapes.dropFirst()
+            .sink { [weak self] shapes in self?.shapesDidChange(shapes) }
+            .store(in: &revisionObservers)
+        drawingStore.$layers.dropFirst()
+            .sink { [weak self] layers in self?.layersDidChange(layers) }
+            .store(in: &revisionObservers)
     }
 
-    private func syncLocalState(waypoints: [Waypoint], shapes: [DrawingShape], layers: [DrawingLayer]) {
-        guard presenceCadence.foregroundReady, status == .connected else { return }
+    private func waypointsDidChange(_ next: [Waypoint]) {
+        let previous = modelIndex.updateWaypoints(next)
+        guard !previous.isEmpty else { return }
+        var changed = Set<UUID>()
+        for (id, old) in previous {
+            // added or removed always counts, no export needed for that
+            guard let old, modelIndex.contains(id) else { changed.insert(id); continue }
+            // old side first, the new export replaces the cache entry
+            let oldHash = modelIndex.exportHash(waypoint: old)
+            if oldHash != modelIndex.export(id)?.hash { changed.insert(id) }
+        }
+        modelObjectsChanged(changed, added: previous.filter { $0.value == nil }.map(\.key))
+    }
+
+    private func shapesDidChange(_ next: [DrawingShape]) {
+        let previous = modelIndex.updateShapes(next)
+        guard !previous.isEmpty else { return }
+        var changed = Set<UUID>()
+        for (id, old) in previous {
+            // added or removed always counts, no export needed for that
+            guard let old, modelIndex.contains(id) else { changed.insert(id); continue }
+            // old side first, the new export replaces the cache entry
+            let oldHash = modelIndex.exportHash(shape: old)
+            if oldHash != modelIndex.export(id)?.hash { changed.insert(id) }
+        }
+        modelObjectsChanged(changed, added: previous.filter { $0.value == nil }.map(\.key))
+    }
+
+    private func layersDidChange(_ next: [DrawingLayer]) {
+        // a renamed / recoloured / added / removed layer changes the export of
+        // every object on it, nothing else does
+        modelObjectsChanged(modelIndex.updateLayers(next), added: [])
+    }
+
+    private func modelObjectsChanged(_ changed: Set<UUID>, added: [UUID]) {
+        if !changed.isEmpty { modelEpoch &+= 1 }
+        wireIndex?.insert(added)
+        guard !changed.isEmpty else { return }
+        // No mission-object mutation should normally occur behind the lock,
+        // and a remote apply is not a local edit. Both just move the baseline
+        // (the index) and never touch the auth-bound revision journal.
+        guard presenceCadence.foregroundReady, !resolvingPendingModel else { return }
+        if revisionJournalLoading {
+            startupRevisionEvents.append(changed.map(\.uuidString))
+            return
+        }
+        do {
+            guard revisionJournalAvailable, let journal = modelRevisionJournal else {
+                throw SyncReplayState.ReplayError.invalidState
+            }
+            pendingJournalWrites += 1
+            journal.bumpAll(changed.map(\.uuidString), on: persistenceExecutor) { [weak self] error in
+                guard let self else { return }
+                self.pendingJournalWrites -= 1
+                if error != nil {
+                    self.revisionJournalAvailable = false
+                    self.pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+                    self.failClosedV3(self.pendingLastError!)
+                } else if self.pendingJournalWrites == 0 { self.markDiffDirty() }
+            }
+        } catch {
+            revisionJournalAvailable = false
+            pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+            failClosedV3(pendingLastError!)
+        }
+    }
+
+    private func syncLocalState() {
+        guard presenceCadence.foregroundReady, status == .connected, !joinState.mutationsPaused else { return }
+        // v2 ids go out lowercase like Android and the relay expect (S3-01).
+        // Exports come off the cache, an unchanged object is not re-exported.
         var current: [String: (kind: String, content: String)] = [:]
-        for wp in waypoints {
-            if let s = try? GeoJSONExporter.export(waypoints: [wp], drawings: [], layers: layers) {
-                current[wp.id.uuidString] = ("waypoint", s)
-            }
-        }
-        for shape in shapes {
-            if let s = try? GeoJSONExporter.export(waypoints: [], drawings: [shape], layers: layers) {
-                current[shape.id.uuidString] = ("drawing", s)
-            }
+        for uuid in modelIndex.allIds {
+            guard let export = modelIndex.export(uuid), let kind = modelIndex.kind(of: uuid) else { continue }
+            current[LegacyV2Ids.outboundId(uuid)] = (kind.rawValue, export.content)
         }
 
         for (id, entry) in current {
             if forcedLegacyDeletes[id] != nil { forcedLegacyDeletes.removeValue(forKey: id) }
             if lastContent[id] == entry.content && !forcedLocalDiff.contains(id) { continue }
+            if isSuppressedUntilLocalEdit(id) { continue }
             let hash = contentHash(entry.content)
             if let pending = outboundDeliveries.pending(localId: id),
                pending.desiredContentHash == hash, pending.kind == entry.kind { continue }
             clock += 1
             versions[id] = clock
+            versionsBy[id] = clientId
             sendPut(id: id, v: clock, kind: entry.kind, content: entry.content)
         }
         let gone = Set(lastContent.keys).union(forcedLocalDiff).union(forcedLegacyDeletes.keys)
             .union(outboundDeliveries.all().map(\.localId))
             .filter { current[$0] == nil && !$0.hasPrefix("wire:") }
         for id in gone {
+            if isSuppressedUntilLocalEdit(id) { continue }
             if let pending = outboundDeliveries.pending(localId: id),
                pending.desiredContentHash == nil, pending.kind == "del" { continue }
             clock += 1
+            versions[id] = clock
+            versionsBy[id] = clientId
             sendDel(id: id, v: clock)
         }
     }
 
     private func sendPut(id: String, v: Int64, kind: String, content: String) {
         guard let key = roomKey, let seed = deviceSeed else { return }
+        let probe: [String: Any] = [
+            "t": "put", "id": id, "v": v, "by": clientId, "kind": kind, "rid": String(repeating: "0", count: 32)
+        ]
+        guard fitsOnTheWire(innerWithoutSignature: ["c": content, "pub": myPublicKey], outer: probe) else {
+            suppressUntilLocalEdit(id)
+            surface(.objectTooLarge, scope: .object(id))
+            return
+        }
         // Sign the write, then seal {content, pub, sig} together. The signature
         // rides INSIDE the sealed blob so the relay stays E2E-blind to device
         // identity; a receiver proves room-key possession by opening it and
@@ -2164,36 +3307,17 @@ final class SyncManager: ObservableObject {
     @discardableResult
     private func send(
         _ obj: [String: Any],
+        frameClass: SyncOutboundPacer.FrameClass,
         completion: @escaping (Bool) -> Void
     ) -> Bool {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj),
-              let text = String(data: data, encoding: .utf8),
-              let task else { return false }
-        let generation = activeConnectionGeneration
-        task.send(.string(text)) { [weak self] error in
-            Task { @MainActor in
-                guard let self,
-                      SyncConnectionWatchdogPolicy.isCurrent(
-                        scheduledGeneration: generation,
-                        currentGeneration: self.activeConnectionGeneration,
-                        wantsConnection: self.wantConnected,
-                        hasCurrentSocket: self.task === task
-                      ) else { return }
-                completion(error == nil)
-                guard error != nil else { return }
-                // A failed write is definitive transport evidence. Do not keep
-                // presenting a half-open socket as Connected while retries are
-                // silently discarded; the normal generation-bound reconnect
-                // path will establish a fresh authenticated session.
-                self.handleDisconnect(socket: task)
-                task.cancel(with: .goingAway, reason: nil)
-            }
-        }
-        return true
+        guard let text = encodedFrame(obj), task != nil else { return false }
+        return enqueueFrame(text, frameClass: frameClass, requestId: nil, completion: completion)
     }
 
     private func encodedFrame(_ object: [String: Any]) -> String? {
-        guard let data = try? JSONSerialization.data(withJSONObject: object),
+        // unescaped slashes keep base64 ct at its real size, which is what the
+        // pre-send size check measures
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes]),
               let text = String(data: data, encoding: .utf8) else { return nil }
         return text
     }
@@ -2210,47 +3334,176 @@ final class SyncManager: ObservableObject {
         SyncIdentity.urlB64Encode(SyncIdentity.sha256(Data(ciphertext.utf8)))
     }
 
-    private func queueDelivery(_ delivery: PendingOutboundDelivery) {
-        if let prior = outboundDeliveries.register(delivery) {
-            deliveryRetryItems.removeValue(forKey: prior.requestId)?.cancel()
+    // MARK: Outbound pacing (contract section 11)
+
+    private func sendPacedLeave(_ text: String, socket: SyncSocket, pacer: SyncOutboundPacer) {
+        // Keep the old socket's buckets, but discard all work except leave.
+        for frameClass in SyncOutboundPacer.FrameClass.allCases {
+            for item in pacer.queued(frameClass) { pacer.remove(id: item.id) }
         }
-        task?.send(.string(delivery.frame)) { _ in }
-        scheduleDeliveryRetry(delivery)
+        pacer.enqueue(.control, bytes: text.utf8.count)
+        guard pacer.next(nowMs: Double(scheduler.nowMs)) != nil else {
+            socket.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
+            return
+        }
+        socket.send(text: text) { _ in
+            socket.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
+        }
     }
 
-    private func scheduleDeliveryRetry(_ delivery: PendingOutboundDelivery) {
-        deliveryRetryItems.removeValue(forKey: delivery.requestId)?.cancel()
-        let delay = min(8.0, pow(2.0, Double(max(0, delivery.attempts - 1))))
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            Task { @MainActor in
-                guard let retry = self.outboundDeliveries.nextAttempt(
-                    requestId: delivery.requestId,
-                    generation: delivery.connectionGeneration,
-                    sessionDomain: delivery.sessionDomain
-                ) else {
-                    if self.outboundDeliveries.pending(localId: delivery.localId)?.requestId == delivery.requestId {
-                        self.pendingLastError = self.issueLifecycle.report(
-                            Messages.syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage(),
-                            kind: .security,
-                            generation: delivery.connectionGeneration
-                        )?.pendingMessage
-                        self.task?.cancel(with: .internalServerError, reason: nil)
-                    }
+    private func startOutboundPacing() {
+        resetOutboundPacing()
+        pacer = SyncOutboundPacer(nowMs: Double(scheduler.nowMs), after4008: joinState.pacerAfter4008)
+        joinState.pacerAfter4008 = false
+    }
+
+    /// Drops the socket's queue. Completions of frames that never left are
+    /// not called, same as a write on a cancelled task never reporting back.
+    private func resetOutboundPacing() {
+        pacerWakeTimer?.cancel()
+        pacerWakeTimer = nil
+        pacer = nil
+        pacedFrames.removeAll()
+        queuedItemByRequest.removeAll()
+    }
+
+    /// Every application frame goes through here (hello, chat-key, chat, loc,
+    /// put, del and their retries), so one socket never outruns
+    /// relayLimits.clientPacing.
+    @discardableResult
+    private func enqueueFrame(
+        _ text: String,
+        frameClass: SyncOutboundPacer.FrameClass,
+        requestId: String?,
+        completion: @escaping (Bool) -> Void
+    ) -> Bool {
+        guard let pacer, task != nil else { return false }
+        let queued = pacer.enqueue(frameClass, bytes: text.utf8.count, requestId: requestId)
+        if let replaced = queued.replaced, let old = pacedFrames.removeValue(forKey: replaced) {
+            old.completion(false)
+        }
+        pacedFrames[queued.id] = PacedFrame(
+            text: text, frameClass: frameClass, requestId: requestId, completion: completion)
+        if let requestId { queuedItemByRequest[requestId] = queued.id }
+        pumpOutbound()
+        return true
+    }
+
+    private func pumpOutbound() {
+        guard let pacer, let socket = task else { return }
+        let generation = activeConnectionGeneration
+        while let item = pacer.next(nowMs: Double(scheduler.nowMs)) {
+            guard let frame = pacedFrames.removeValue(forKey: item.id) else { continue }
+            if let rid = item.requestId, queuedItemByRequest[rid] == item.id {
+                queuedItemByRequest.removeValue(forKey: rid)
+            }
+            socket.send(text: frame.text) { [weak self, weak socket] error in
+                guard let self, let socket, self.task === socket,
+                      self.activeConnectionGeneration == generation else { return }
+                frame.completion(error == nil)
+                guard error == nil else {
+                    // A failed write is definitive transport evidence. Do not
+                    // keep showing a half-open socket as Connected.
+                    self.endSession(socket: socket, cause: .remote)
                     return
                 }
-                self.task?.send(.string(retry.frame)) { _ in }
-                self.scheduleDeliveryRetry(retry)
+                if let rid = frame.requestId { self.mutationCopyWritten(rid) }
             }
         }
-        deliveryRetryItems[delivery.requestId] = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+        schedulePacerWake()
+    }
+
+    private func schedulePacerWake() {
+        pacerWakeTimer?.cancel()
+        pacerWakeTimer = nil
+        guard let pacer, let wake = pacer.nextWakeMs(nowMs: Double(scheduler.nowMs)) else { return }
+        let delay = max(1, Int64((wake - Double(scheduler.nowMs)).rounded(.up)))
+        pacerWakeTimer = scheduler.schedule(afterMs: delay) { [weak self] in
+            guard let self else { return }
+            self.pacerWakeTimer = nil
+            self.pumpOutbound()
+        }
+    }
+
+    private func queueDelivery(_ delivery: PendingOutboundDelivery) {
+        if let prior = outboundDeliveries.register(delivery) {
+            // Superseding settles the old window slot even if its ack is lost.
+            // Drop it without pumping until the new reservation is queued.
+            dropUnwrittenCopy(prior.requestId)
+            ackTimers.removeValue(forKey: prior.requestId)?.cancel()
+            ackStates.removeValue(forKey: prior.requestId)
+            writtenUnacked.removeAll { $0 == prior.requestId }
+            pacer?.settle(requestId: prior.requestId)
+        }
+        ackStates[delivery.requestId] = SyncAckTimer()
+        enqueueFrame(delivery.frame, frameClass: .mutation, requestId: delivery.requestId) { _ in }
+    }
+
+    private func dropUnwrittenCopy(_ requestId: String) {
+        guard let id = queuedItemByRequest.removeValue(forKey: requestId) else { return }
+        pacer?.remove(id: id)
+        pacedFrames.removeValue(forKey: id)
+    }
+
+    /// The ack clock for a copy starts when that copy is on the wire, never
+    /// when it was queued (S3-06, S5-09).
+    private func mutationCopyWritten(_ requestId: String) {
+        guard var state = ackStates[requestId], state.copyUnwritten,
+              outboundDeliveries.pending(requestId: requestId) != nil else { return }
+        let ahead = writtenUnacked.filter { $0 != requestId }.count
+        if !writtenUnacked.contains(requestId) { writtenUnacked.append(requestId) }
+        let deadline = state.writeComplete(atMs: scheduler.nowMs, aheadInFlight: ahead)
+        ackStates[requestId] = state
+        ackTimers.removeValue(forKey: requestId)?.cancel()
+        let generation = activeConnectionGeneration
+        ackTimers[requestId] = scheduler.schedule(afterMs: max(0, deadline - scheduler.nowMs)) { [weak self] in
+            guard let self, self.activeConnectionGeneration == generation else { return }
+            self.ackTimers.removeValue(forKey: requestId)
+            self.ackTimedOut(requestId)
+        }
+    }
+
+    private func ackTimedOut(_ requestId: String) {
+        guard var state = ackStates[requestId],
+              let pending = outboundDeliveries.pending(requestId: requestId) else { return }
+        if state.ackTimeout(),
+           let retry = outboundDeliveries.nextAttempt(
+            requestId: requestId,
+            generation: pending.connectionGeneration,
+            sessionDomain: pending.sessionDomain
+           ) {
+            ackStates[requestId] = state
+            enqueueFrame(retry.frame, frameClass: .retry, requestId: requestId) { _ in }
+            return
+        }
+        ackStates[requestId] = state
+        // still unconfirmed after bounded retries: availability, not security
+        surface(.unconfirmedReconnect, scope: .session)
+        if let socket = task {
+            endSession(socket: socket, cause: .local(.ackExhausted), issueReported: true)
+        }
+    }
+
+    /// Ack, nack or local resolve: the op is done with this socket.
+    private func settleDelivery(_ requestId: String) {
+        ackTimers.removeValue(forKey: requestId)?.cancel()
+        ackStates.removeValue(forKey: requestId)
+        writtenUnacked.removeAll { $0 == requestId }
+        dropUnwrittenCopy(requestId)
+        pacer?.settle(requestId: requestId)
+        pumpOutbound()
     }
 
     private func clearOutboundDeliveries(markForReconciliation: Bool) {
-        deliveryRetryItems.values.forEach { $0.cancel() }
-        deliveryRetryItems.removeAll()
+        ackTimers.values.forEach { $0.cancel() }
+        ackTimers.removeAll()
+        ackStates.removeAll()
+        writtenUnacked.removeAll()
         let pending = outboundDeliveries.all()
+        for delivery in pending {
+            dropUnwrittenCopy(delivery.requestId)
+            pacer?.settle(requestId: delivery.requestId)
+        }
         let unconfirmed = outboundDeliveries.resetForReconnect()
         if markForReconciliation {
             forcedLocalDiff.formUnion(unconfirmed.filter { !$0.hasPrefix("wire:") })
@@ -2268,81 +3521,238 @@ final class SyncManager: ObservableObject {
 
     // MARK: - v3 Outbound
 
-    private func syncLocalStateV3(waypoints: [Waypoint], shapes: [DrawingShape], layers: [DrawingLayer]) {
+    /// One outbound diff pass (contract 11.2, 17, 18). Unchanged objects come
+    /// off the export cache and are skipped on a lastContent compare before
+    /// anything is hashed or HMACed, wire ids come off the index, and every
+    /// stamp of the pass is reserved in a single replay write before the
+    /// first frame is queued.
+    private func syncLocalStateV3() {
         guard presenceCadence.foregroundReady,
               status == .connected, let keys = v3Keys, let rs = replayState,
+              let actorId = myActorId, let sd = sessionDomain,
               revisionJournalAvailable,
-              !resolvingPendingModel, !rs.hasPendingModelApplications() else { return }
-        var current: [String: (kind: String, content: String, localId: UUID)] = [:]
-        for wp in waypoints {
-            if let s = try? GeoJSONExporter.export(waypoints: [wp], drawings: [], layers: layers) {
-                current[wp.id.uuidString] = ("waypoint", s, wp.id)
-            }
-        }
-        for shape in shapes {
-            if let s = try? GeoJSONExporter.export(waypoints: [], drawings: [shape], layers: layers) {
-                current[shape.id.uuidString] = ("drawing", s, shape.id)
-            }
-        }
+              // counter-window proved the relay cant take our writes anymore
+              !joinState.mutationsPaused,
+              !resolvingPendingModel, !inboundPersistenceInFlight, !snapshotValidationInFlight, !outboundPersistenceInFlight, pendingJournalWrites == 0,
+              !rs.hasPendingModelApplications() else { return }
+        let index = ensureWireIndex(keys)
+        let sessionString = SyncIdentity.urlB64Encode(sd)
 
-        for (id, entry) in current where lastContent[id] != entry.content || forcedLocalDiff.contains(id) {
-            let wireId = SyncIdentity.wireObjectId(
-                metadataKey: keys.metadataKey,
-                localUuidBytes: SyncIdentity.uuidToBytes(entry.localId))
-            let hash = SyncIdentity.bytesToHex(SyncIdentity.sha256(Data(entry.content.utf8)))
+        struct Candidate {
+            let localId: String
+            let wireId: String
+            let kind: String
+            let content: String?
+            let contentHash: String?
+            let recovery: VersionStamp?
+        }
+        var candidates: [Candidate] = []
+        for uuid in modelIndex.allIds {
+            let id = uuid.uuidString
+            guard let export = modelIndex.export(uuid),
+                  lastContent[id] != export.content || forcedLocalDiff.contains(id) else { continue }
+            if isSuppressedUntilLocalEdit(id) { continue }
+            let kind = modelIndex.kind(of: uuid)?.rawValue ?? "drawing"
             if let pending = outboundDeliveries.pending(localId: id),
-               pending.desiredContentHash == hash, pending.kind == entry.kind { continue }
-            let recovery = replayState?.recoverableLocalPut(
-                wireObjectId: wireId, actorId: myActorId ?? "", pubkey: myPublicKey, contentHash: hash)
-            _ = sendPutV3(localId: id, wireObjectId: wireId, kind: entry.kind,
-                          content: entry.content, recoveryStamp: recovery)
+               pending.desiredContentHash == export.hash, pending.kind == kind { continue }
+            let wireId = index.wireId(for: uuid)
+            let probe: [String: Any] = [
+                "t": "put", "id": wireId, "vs": String(repeating: "0", count: 17) + actorId,
+                "by": actorId, "kind": kind, "pub": myPublicKey, "sd": sessionString,
+                "rid": String(repeating: "0", count: 32)
+            ]
+            guard fitsOnTheWire(innerWithoutSignature: ["c": export.content], outer: probe) else {
+                // reserve nothing, send nothing, wait for the user to shrink it
+                suppressUntilLocalEdit(id)
+                surface(.objectTooLarge, scope: .object(id))
+                continue
+            }
+            let recovery = rs.recoverableLocalPut(
+                wireObjectId: wireId, actorId: actorId, pubkey: myPublicKey, contentHash: export.hash)
+            candidates.append(Candidate(localId: id, wireId: wireId, kind: kind, content: export.content,
+                                        contentHash: export.hash, recovery: recovery))
         }
         let gone = Set(lastContent.keys).union(forcedLocalDiff)
             .union(outboundDeliveries.all().map(\.localId))
-            .filter { current[$0] == nil && !$0.hasPrefix("wire:") }
+            .filter { !$0.hasPrefix("wire:") && !localObjectExists($0) }
         for id in gone {
+            if isSuppressedUntilLocalEdit(id) { continue }
             if let pending = outboundDeliveries.pending(localId: id),
                pending.desiredContentHash == nil, pending.kind == "del" { continue }
-            if let uuid = UUID(uuidString: id) {
-                let wireId = SyncIdentity.wireObjectId(
-                    metadataKey: keys.metadataKey,
-                    localUuidBytes: SyncIdentity.uuidToBytes(uuid))
-                guard sendDelV3(localId: id, wireObjectId: wireId) else { continue }
+            guard let uuid = UUID(uuidString: id) else { continue }
+            candidates.append(Candidate(localId: id, wireId: index.wireId(for: uuid), kind: "del",
+                                        content: nil, contentHash: nil, recovery: nil))
+        }
+        guard !candidates.isEmpty else { return }
+
+        let stamps: [VersionStamp?]
+        rs.beginBatch()
+        do {
+            stamps = try rs.reserveLocalMutations(candidates.map {
+                SyncReplayState.LocalReservation(
+                    wireObjectId: $0.wireId,
+                    kind: $0.contentHash.map { .put(contentHash: $0) } ?? .delete,
+                    recoveryStamp: $0.recovery)
+            }, actorId: actorId, pubkey: myPublicKey, deferPersistence: true)
+        } catch {
+            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
+            return
+        }
+        outboundPersistenceInFlight = true
+        let generation = activeConnectionGeneration
+        let token = joinToken
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else {
+                try? rs.endBatch(); return
             }
+            self.outboundPersistenceInFlight = false
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+            for (candidate, stamp) in zip(candidates, stamps) {
+                guard let stamp else { continue }
+                // A model edit during the seal gets a new reservation next pass.
+                guard self.modelContentHash(localId: candidate.localId) == candidate.contentHash else { continue }
+                if let content = candidate.content {
+                    self.queuePutV3(localId: candidate.localId, wireObjectId: candidate.wireId,
+                                    kind: candidate.kind, content: content, stamp: stamp)
+                } else {
+                    self.queueDelV3(localId: candidate.localId, wireObjectId: candidate.wireId, stamp: stamp)
+                }
+            }
+            self.scheduleInboundDrain()
+            self.markDiffDirty()
         }
     }
 
-    @discardableResult
-    private func sendPutV3(localId: String, wireObjectId: String, kind: String, content: String,
-                           recoveryStamp: VersionStamp? = nil) -> Bool {
-        guard let key = roomKey, let actorId = myActorId, let rs = replayState,
-              let sd = sessionDomain, let keys = v3Keys,
-              let seed = deviceSeed else { return false }
-        let counter: Int64
-        if let recoveryStamp, recoveryStamp.actorId == actorId { counter = recoveryStamp.counter }
-        else {
-            do { counter = try rs.reserveNextCounter() }
-            catch { failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage()); return false }
+    // MARK: Suppression and per-join bookkeeping (contract 0.1, 2.3, 6)
+
+    /// True while the user has not touched this object since we decided not
+    /// to publish it (skipped record, too large, quota/invalid/stale nack).
+    private func isSuppressedUntilLocalEdit(_ localId: String) -> Bool {
+        guard let generation = joinState.suppressedUntilEdit[localId] else { return false }
+        if modelRevisionJournal?.generation(localId) == generation { return true }
+        joinState.suppressedUntilEdit.removeValue(forKey: localId)
+        return false
+    }
+
+    private func suppressUntilLocalEdit(_ localId: String) {
+        guard !localId.hasPrefix("wire:") else { return }
+        joinState.suppressedUntilEdit[localId] = modelRevisionJournal?.generation(localId) ?? 0
+        forcedLocalDiff.remove(localId)
+    }
+
+    private func recordSkip(_ wireId: String, _ category: SnapshotSkipCategory) {
+        if joinState.skippedWireIds[wireId] == nil || category == .unverified {
+            joinState.skippedWireIds[wireId] = category
         }
-        let counterHex = VersionStamp.counterHex16(counter)
-        let vs = VersionStamp(counter: counter, actorId: actorId).encode()
-        let contentData = Data(content.utf8)
-        let payloadHash = SyncIdentity.sha256(contentData)
+        // an untouched local copy must never be pushed over the record we
+        // could not read, that turns version skew into data loss
+        if let localId = findLocalIdForWireId(wireId) { suppressUntilLocalEdit(localId) }
+    }
+
+    private enum IssueScope {
+        case join
+        case session
+        case failureChain
+        case object(String)
+        /// one background period, keyed by when it paused
+        case backgroundPeriod(Date)
+    }
+
+    /// Report a contract issue once per scope. The classifier already makes
+    /// failure-chain issues fire once.
+    private func surface(_ issue: SyncIssueCode, scope: IssueScope, count: Int = 0, at: Date? = nil) {
+        let key: String?
+        switch scope {
+        case .join: key = issue.rawValue
+        case .session: key = "\(issue.rawValue)#\(activeConnectionGeneration)"
+        case .failureChain: key = nil
+        case .object(let id): key = "\(issue.rawValue)#\(id)"
+        case .backgroundPeriod(let pausedAt): key = "\(issue.rawValue)#\(pausedAt.timeIntervalSince1970)"
+        }
+        if let key, !joinState.surfacedKeys.insert(key).inserted { return }
+        surfacedIssueLog.append(issue)
+        let text = message(for: issue, count: count, at: at)
+        switch issue {
+        case .roomResetChangesPaused:
+            pendingLastError = issueLifecycle.pin(text, kind: .connection)?.pendingMessage
+        case .chatReplayFull, .chatRecipientInBackground:
+            break
+        case .unconfirmedReconnect, .relayBusy, .relayRateLimited:
+            pendingLastError = issueLifecycle.report(
+                text, kind: .connection, generation: activeConnectionGeneration)?.pendingMessage
+        default:
+            if issue.isSecurity {
+                pendingLastError = issueLifecycle.report(
+                    text, kind: .security, generation: activeConnectionGeneration)?.pendingMessage
+            } else {
+                pendingLastError = issueLifecycle.notice(text)?.pendingMessage
+            }
+        }
+        remoteUpdateSubject.send(text.text)
+    }
+
+    private func message(for issue: SyncIssueCode, count: Int = 0, at: Date? = nil) -> LocalizedMessage {
+        switch issue {
+        case .skippedUnsupported: return Messages.syncRecordsSkippedUnsupportedMessage(String(count))
+        case .skippedUnverified: return Messages.syncRecordsSkippedUnverifiedMessage(String(count))
+        case .roomResetSuspected: return Messages.syncRoomResetSuspectedMessage()
+        case .roomResetChangesPaused: return Messages.syncRoomResetChangesPausedMessage()
+        case .objectTooLarge: return Messages.syncObjectTooLargeMessage()
+        case .roomQuotaNack: return Messages.syncTheUnitSyncRoomIsFullSoThisSavedMessage()
+        case .relayInvalidNack: return Messages.syncTheUnitSyncRelayRejectedAChangeAsInvalidMessage()
+        case .unconfirmedReconnect: return Messages.syncAUnitSyncChangeIsStillUnconfirmedAfterBoundedMessage()
+        case .snapshotStructural: return Messages.syncSyncSnapshotAuthenticationFailedMessage()
+        case .relayBusy: return Messages.syncRelayBusyMessage()
+        case .relayRateLimited: return Messages.syncRelayRateLimitedMessage()
+        case .roomFullCannotJoin: return Messages.syncRoomFullCannotJoinMessage()
+        case .relayRefusedRoom: return Messages.syncRelayRefusedRoomMessage()
+        case .identityRejected: return Messages.syncIdentityRejectedMessage()
+        case .sessionConflict: return Messages.syncSessionConflictMessage()
+        case .sessionCounterBehind: return Messages.syncSessionCounterBehindMessage()
+        case .snapshotMalformedStopped: return Messages.syncSnapshotMalformedStoppedMessage()
+        case .backgroundPaused:
+            let time = DateFormatter.localizedString(from: at ?? Date(), dateStyle: .none, timeStyle: .short)
+            return Messages.syncBackgroundPausedMessage(time)
+        case .chatReplayFull: return Messages.chatReplayTableFullMessage()
+        case .chatRecipientInBackground: return Messages.chatRecipientInBackgroundMessage()
+        }
+    }
+
+    /// Exact frame bytes against CT_MAX / MAX_FRAME_BYTES before a stamp is
+    /// reserved (S1-09). The signature is a placeholder of the real length.
+    private func fitsOnTheWire(innerWithoutSignature inner: [String: Any], outer: [String: Any]) -> Bool {
+        var probe = inner
+        probe["sig"] = String(repeating: "A", count: OutboundSizeCheck.signaturePlaceholderChars)
+        guard let innerData = try? JSONSerialization.data(withJSONObject: probe) else { return false }
+        var frame = outer
+        frame["ct"] = ""
+        guard let frameData = try? JSONSerialization.data(withJSONObject: frame, options: [.withoutEscapingSlashes]) else {
+            return false
+        }
+        return OutboundSizeCheck.fits(innerUtf8Bytes: innerData.count, frameBytesWithoutCiphertext: frameData.count)
+    }
+
+    /// Sign, seal and queue one put whose stamp is already durable (reserved
+    /// by the diff pass, or a recovery stamp from the replay state).
+    private func queuePutV3(localId: String, wireObjectId: String, kind: String, content: String,
+                            stamp: VersionStamp) {
+        guard let key = roomKey, let actorId = myActorId, stamp.actorId == actorId,
+              let sd = sessionDomain, let keys = v3Keys,
+              let seed = deviceSeed else { return }
+        let counterHex = VersionStamp.counterHex16(stamp.counter)
+        let vs = stamp.encode()
+        let payloadHash = SyncIdentity.sha256(Data(content.utf8))
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainPut, roomIdRaw: keys.roomIdRaw,
             actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
             objectId: wireObjectId, kind: kind, payloadHash: payloadHash)
-        guard let sig = SyncSigning.sign(seed, preimage) else { return false }
+        guard let sig = SyncSigning.sign(seed, preimage) else { return }
         let inner: [String: Any] = ["c": content, "sig": sig]
         guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
-              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: kind)) else { return false }
-        let mutation = SyncReplayState.DurableMutation(
-            wireObjectId: wireObjectId, stamp: VersionStamp(counter: counter, actorId: actorId),
-            publicKey: myPublicKey, kind: .put(contentHash: SyncIdentity.bytesToHex(payloadHash)))
-        if recoveryStamp == nil {
-            do { guard try rs.commit(mutation) else { return false } }
-            catch { failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage()); return false }
-        }
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: kind)) else { return }
         let ciphertext = sealed.base64EncodedString()
         let session = SyncIdentity.urlB64Encode(sd)
         let requestId = newDeliveryRequestId()
@@ -2350,45 +3760,32 @@ final class SyncManager: ObservableObject {
             "t": "put", "id": wireObjectId, "vs": vs, "by": actorId, "kind": kind,
             "ct": ciphertext, "pub": myPublicKey, "sd": session, "rid": requestId
         ]
-        guard let frame = encodedFrame(object) else { return false }
+        guard let frame = encodedFrame(object) else { return }
         queueDelivery(PendingOutboundDelivery(
             localId: localId, requestId: requestId, connectionGeneration: activeConnectionGeneration,
             actorId: actorId, sessionDomain: session, wireObjectId: wireObjectId,
             objectVersion: vs, kind: kind, ciphertextHash: ciphertextHash(ciphertext),
             desiredContentHash: SyncIdentity.bytesToHex(payloadHash), desiredContent: content, frame: frame
         ))
-        return true
     }
 
-    @discardableResult
-    private func sendDelV3(localId: String, wireObjectId: String, recoveryStamp: VersionStamp? = nil) -> Bool {
-        guard let key = roomKey, let actorId = myActorId, let rs = replayState,
+    /// Same for a delete. The post hello-ack resend of recoverable deletes
+    /// comes through here with the tombstone's own stamp, so it writes nothing.
+    private func queueDelV3(localId: String, wireObjectId: String, stamp: VersionStamp) {
+        guard let key = roomKey, let actorId = myActorId, stamp.actorId == actorId,
               let sd = sessionDomain, let keys = v3Keys,
-              let seed = deviceSeed else { return false }
-        let counter: Int64
-        if let recoveryStamp, recoveryStamp.actorId == actorId { counter = recoveryStamp.counter }
-        else {
-            do { counter = try rs.reserveNextCounter() }
-            catch { failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage()); return false }
-        }
-        let counterHex = VersionStamp.counterHex16(counter)
-        let vs = VersionStamp(counter: counter, actorId: actorId).encode()
+              let seed = deviceSeed else { return }
+        let counterHex = VersionStamp.counterHex16(stamp.counter)
+        let vs = stamp.encode()
         let payloadHash = SyncIdentity.sha256(Data())
         let preimage = SyncIdentity.buildPreimage(
             domain: SyncIdentity.domainDelete, roomIdRaw: keys.roomIdRaw,
             actorId: actorId, sessionDomain: sd, counterHex16: counterHex,
             objectId: wireObjectId, kind: "del", payloadHash: payloadHash)
-        guard let sig = SyncSigning.sign(seed, preimage) else { return false }
+        guard let sig = SyncSigning.sign(seed, preimage) else { return }
         let inner: [String: Any] = ["sig": sig]
         guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
-              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: "del")) else { return false }
-        let mutation = SyncReplayState.DurableMutation(
-            wireObjectId: wireObjectId, stamp: VersionStamp(counter: counter, actorId: actorId),
-            publicKey: myPublicKey, kind: .delete)
-        if recoveryStamp == nil {
-            do { guard try rs.commit(mutation) else { return false } }
-            catch { failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage()); return false }
-        }
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aadV3(wireObjectId: wireObjectId, vs: vs, kind: "del")) else { return }
         let ciphertext = sealed.base64EncodedString()
         let session = SyncIdentity.urlB64Encode(sd)
         let requestId = newDeliveryRequestId()
@@ -2396,25 +3793,71 @@ final class SyncManager: ObservableObject {
             "t": "del", "id": wireObjectId, "vs": vs, "by": actorId, "kind": "del",
             "ct": ciphertext, "pub": myPublicKey, "sd": session, "rid": requestId
         ]
-        guard let frame = encodedFrame(object) else { return false }
+        guard let frame = encodedFrame(object) else { return }
         queueDelivery(PendingOutboundDelivery(
             localId: localId, requestId: requestId, connectionGeneration: activeConnectionGeneration,
             actorId: actorId, sessionDomain: session, wireObjectId: wireObjectId,
             objectVersion: vs, kind: "del", ciphertextHash: ciphertextHash(ciphertext),
             desiredContentHash: nil, desiredContent: nil, frame: frame
         ))
-        return true
     }
 
     private func sendHelloV3() {
-        guard let actorId = myActorId, let sd = sessionDomain,
-              let keys = v3Keys, let pubRaw = myPublicKeyRaw,
-              let seed = deviceSeed, let rs = replayState else {
+        guard let actorId = myActorId, sessionDomain != nil,
+              v3Keys != nil, myPublicKeyRaw != nil,
+              deviceSeed != nil, let rs = replayState else {
             failClosedV3(Messages.syncCouldNotConstructAuthenticatedHelloMessage()); return
         }
+        // Lost/fresh replay state starts at the unix-minute floor and a 4014
+        // doubles the rejected epoch, so one attempt usually clears the
+        // relay's stored epoch instead of N full snapshots (S3-11).
+        let persisted = rs.getHelloEpoch(actorId).flatMap { UInt64($0, radix: 16) }
+        // 14 / 21.4: with background presence opted in, persist next + 64 so a
+        // background reconnect can use a spare without ever writing
+        let spare: UInt64 = backgroundReconnectEnabled && presenceConfig.shareLocation
+            ? HelloEpochPolicy.backgroundSpareBlock : 0
         let epoch: String
-        do { epoch = try rs.reserveHelloEpoch(actorId: actorId, pubkey: myPublicKey) }
-        catch { failClosedV3(Messages.syncCouldNotReserveAuthenticatedSessionEpochMessage()); return }
+        do {
+            let floor = try HelloEpochPolicy.floor(
+                persisted: persisted,
+                nowMs: scheduler.wallMs,
+                after4014: joinState.after4014,
+                rejected: joinState.rejectedEpoch)
+            rs.beginBatch()
+            epoch = try rs.reserveHelloEpoch(actorId: actorId, pubkey: myPublicKey, floor: floor, spare: spare, deferPersistence: true)
+        } catch HelloEpochPolicy.Failure.exhausted, SyncReplayState.ReplayError.counterExhausted {
+            enterPausedForAction(.sessionCounterBehind, retryOnForeground: false)
+            return
+        } catch {
+            failClosedV3(Messages.syncCouldNotReserveAuthenticatedSessionEpochMessage()); return
+        }
+        snapshotValidationInFlight = true
+        let generation = activeConnectionGeneration, token = joinToken
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else {
+                try? rs.endBatch(); return
+            }
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+            self.snapshotValidationInFlight = false
+            self.joinState.after4014 = false
+            self.joinState.rejectedEpoch = nil
+            if let value = UInt64(epoch, radix: 16) { self.lastForegroundHello = (value, spare) }
+            self.writeHello(epochHex: epoch)
+            self.scheduleInboundDrain()
+        }
+    }
+
+    /// Sign and queue a hello for an epoch that is already durable (the one
+    /// just reserved, or a spare from that reservation in background).
+    private func writeHello(epochHex epoch: String) {
+        guard let actorId = myActorId, let sd = sessionDomain,
+              let keys = v3Keys, let pubRaw = myPublicKeyRaw,
+              let seed = deviceSeed else {
+            failClosedV3(Messages.syncCouldNotConstructAuthenticatedHelloMessage()); return
+        }
         let vs = "\(epoch):\(actorId)"
         localHelloVersion = vs
         let preimage = SyncIdentity.buildPreimage(
@@ -2432,7 +3875,12 @@ final class SyncManager: ObservableObject {
         // Transport failures use the same socket/generation-bound reconnect
         // path as every other frame. A delayed error from a replaced hello must
         // never fail-close the newer authenticated session.
-        guard send(frame, completion: { _ in }) else {
+        guard send(frame, frameClass: .control, completion: { [weak self] written in
+            guard let self, written, !self.handshakeWatchdog.finished else { return }
+            // hello-ack clock starts when the hello is actually on the wire
+            self.handshakeWatchdog.helloWritten(atMs: self.scheduler.nowMs)
+            self.armHandshakeTimer()
+        }) else {
             failClosedV3(Messages.syncCouldNotSendAuthenticatedHelloMessage())
             return
         }
@@ -2548,6 +3996,7 @@ final class SyncManager: ObservableObject {
         return send(
             ["t": "loc", "by": actorId, "ct": sealed.base64EncodedString(),
              "pub": myPublicKey, "sd": SyncIdentity.urlB64Encode(sd), "vs": vs],
+            frameClass: .presence,
             completion: completion
         )
     }
@@ -2555,19 +4004,21 @@ final class SyncManager: ObservableObject {
     private func failClosedV3(_ message: LocalizedMessage) {
         clearChatSessionSecrets()
         stopConnectionHealthChecks()
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
+        cancelHandshakeWatchdog()
+        dropInboundAndLiveWork()
+        endBackgroundPresence()
         pendingLastError = issueLifecycle.report(
             message, kind: .security, generation: activeConnectionGeneration
         )?.pendingMessage
         wantConnected = false
-        task?.cancel(with: .internalServerError, reason: nil)
+        task?.cancel(closeCode: 1011, reason: nil)
         task = nil
+        resetOutboundPacing()
         status = .offline
         peers.removeAll()
         activeSessions.removeAll()
         remotePresenceCandidateClusters.removeAll()
-        onlineMembers = onlineMemberTracker.clear()
+        setOnlineMembers(onlineMemberTracker.clear())
     }
 
     private func reportRemoteModelPersistenceFailure(_ error: Error,
@@ -2721,20 +4172,31 @@ final class SyncManager: ObservableObject {
 
     // MARK: - Presence broadcasting
 
-    /// Send a recent GPS fix. Foreground presence remains live; screen-off
-    /// sends are coalesced to the OPSEC-selected interval. A failed socket send
-    /// remains due so the next Core Location wake can retry promptly.
-    func sendPresence() {
+    /// Send a recent GPS fix. Foreground presence follows PresenceSendPolicy
+    /// (contract 20.1: moving units every 5 s, a parked one every 20 s);
+    /// screen-off sends are coalesced to the OPSEC-selected interval. A failed
+    /// socket send remains due so the next Core Location wake can retry.
+    /// bridge = the one frame at background entry (21.1): background retention,
+    /// fix up to 120 s old, no cadence wait.
+    func sendPresence(bridge: Bool = false) {
         guard status == .connected,
               presenceConfig.shareLocation,
               let locationService,
               LiveLocationPermissionPolicy.shouldStartUpdates(
                 for: locationService.authorisationStatus
               ),
-              !presenceSendInFlight,
+              // the bridge may overtake a frame still in flight, the pacer
+              // keeps only the newest queued presence anyway
+              !presenceSendInFlight || bridge,
               let activeTask = task else { return }
         let uptime = ProcessInfo.processInfo.systemUptime
-        guard presenceCadence.isDue(at: uptime) else { return }
+        let nowMs = scheduler.nowMs
+        let foreground = presenceCadence.foregroundReady
+        if foreground {
+            guard presenceSendPolicy.minIntervalElapsed(nowMs: nowMs) else { return }
+        } else {
+            guard bridge || presenceCadence.isDue(at: uptime) else { return }
+        }
 
         let now = Date()
         // Standard Core Location delivery is movement driven. Proactively
@@ -2749,12 +4211,20 @@ final class SyncManager: ObservableObject {
         guard let loc = locationService.lastLocation,
               UnitSyncPresenceCadence.locationIsFresh(
                 timestamp: loc.timestamp,
-                now: now
+                now: now,
+                maximumAge: bridge ? UnitSyncPresenceCadence.bridgeLocationAge
+                    : UnitSyncPresenceCadence.maximumLocationAge
               ),
-              presenceCadence.canBroadcast(
+              bridge || presenceCadence.canBroadcast(
                 locationTimestamp: loc.timestamp,
                 at: uptime
               ) else { return }
+        let fix = PresenceSendPolicy.Fix(
+            latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude,
+            speedMps: loc.speed, courseDegrees: loc.course,
+            horizontalAccuracyMetres: loc.horizontalAccuracy)
+        // stationary suppression is foreground only, background keeps its interval
+        if foreground, !presenceSendPolicy.shouldSend(fix, nowMs: nowMs) { return }
         let heading = max(0, loc.course)
         let speed = max(0, loc.speed)
         guard let qualityFix = PresenceLocationQuality.fix(from: loc, uptime: uptime),
@@ -2789,6 +4259,7 @@ final class SyncManager: ObservableObject {
                     locationTimestamp: locationTimestamp,
                     at: uptime
                 )
+                self.presenceSendPolicy.markSent(fix, atMs: nowMs)
             }
         }
 
@@ -2843,6 +4314,7 @@ final class SyncManager: ObservableObject {
         return send(
             ["t": "loc", "clientId": clientId,
              "ct": sealed.base64EncodedString()],
+            frameClass: .presence,
             completion: completion
         )
     }
@@ -2896,42 +4368,16 @@ final class SyncManager: ObservableObject {
                 result[clientId] = peer
             }
         }
-        onlineMembers = onlineMemberTracker.expireStaleMetadata()
+        setOnlineMembers(onlineMemberTracker.expireStaleMetadata())
         refreshChatRecipients()
     }
 
     // MARK: Inbound
 
-    private func handleMessage(
-        _ text: String,
-        data: Data,
-        socket: URLSessionWebSocketTask,
-        generation: Int64
-    ) {
-        // Defense in depth: the receive boundary has already bounded these
-        // exact bytes before constructing or parsing JSON.
-        guard data.count <= SyncInboundFramePolicy.maxFrameBytes,
-              String(data: data, encoding: .utf8) == text,
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return }
-        // fail-closed: any unexpected throw from downstream parsing is swallowed
-        // so a malformed frame never kills the receive loop
-        do {
-            try handleParsedMessage(
-                obj,
-                frameBytes: data.count,
-                socket: socket,
-                generation: generation
-            )
-        } catch {
-            // silently drop — don't log the frame content (SEC-019)
-        }
-    }
-
     private func handleParsedMessage(
         _ obj: [String: Any],
         frameBytes: Int,
-        socket: URLSessionWebSocketTask,
+        socket: SyncSocket,
         generation: Int64
     ) throws {
         if protocolVersion == 3 { handleParsedMessageV3(obj, frameBytes: frameBytes); return }
@@ -2949,8 +4395,7 @@ final class SyncManager: ObservableObject {
             case .rejected(let reason):
                 failV2Snapshot(socket: socket, generation: generation, reason: reason)
             case .completed(let batch):
-                v2SnapshotTimeoutItem?.cancel()
-                v2SnapshotTimeoutItem = nil
+                cancelHandshakeWatchdog()
                 for item in batch.records {
                     applyRecord(item, snapshotGeneration: generation)
                 }
@@ -2958,18 +4403,19 @@ final class SyncManager: ObservableObject {
                 guard task === socket, activeConnectionGeneration == generation else { return }
                 finalizeLegacyDeleteSnapshotConfirmations(snapshotGeneration: generation)
                 v2SnapshotFailureGeneration = nil
-                reconnectBackoff.reset()
+                // v2 has no hello-ack, snapshot completion is its "connected".
+                // Still not a stable session though, same rule as v3.
+                reconnectBackoff.connected(atMs: scheduler.nowMs)
+                armStableSessionTimer()
+                closeClassifier.connectionSucceeded()
                 status = .connected
                 pendingLastError = issueLifecycle.connectionSucceeded(
                     generation: generation,
                     verifiedCleanSnapshot: false
                 )?.pendingMessage
-                syncLocalState(
-                    waypoints: waypointStore.waypoints,
-                    shapes: drawingStore.shapes,
-                    layers: drawingStore.layers
-                )
+                syncLocalState()
                 presenceCadence.startAuthenticatedSession()
+                presenceSendPolicy.startSession()
                 startConnectionHealthChecks()
                 sendPresence()
             }
@@ -3018,9 +4464,24 @@ final class SyncManager: ObservableObject {
             version: 1, requestId: requestId, actorId: actor, sessionDomain: session,
             wireObjectId: wireId, objectVersion: objectVersion, kind: kind,
             ciphertextHash: cth
-        )) else { return }
-        deliveryRetryItems.removeValue(forKey: delivered.requestId)?.cancel()
+        )) else {
+            // a superseded copy still frees its in-flight slot
+            if pacer?.isInFlight(requestId) == true, actor == (v3 ? myActorId : clientId) {
+                settleDelivery(requestId)
+            }
+            return
+        }
+        settleDelivery(delivered.requestId)
+        // the first op-ack proves this session works end to end
+        reconnectBackoff.opAcknowledged()
+        markDeliveryConfirmed(delivered)
+        // never a synchronous full diff from an ack, the debounce picks it up
+        if status == .connected { markDiffDirty() }
+    }
 
+    /// The relay holds exactly what we sent: make it the echo baseline when
+    /// the model still matches, otherwise the next diff republishes.
+    private func markDeliveryConfirmed(_ delivered: PendingOutboundDelivery) {
         if let desired = delivered.desiredContent {
             if reexport(id: delivered.localId) == desired {
                 lastContent[delivered.localId] = desired
@@ -3038,19 +4499,10 @@ final class SyncManager: ObservableObject {
         } else {
             forcedLocalDiff.insert(delivered.localId)
         }
-        if status == .connected {
-            if protocolVersion == 3 {
-                syncLocalStateV3(waypoints: waypointStore.waypoints,
-                                 shapes: drawingStore.shapes,
-                                 layers: drawingStore.layers)
-            } else {
-                syncLocalState(waypoints: waypointStore.waypoints,
-                               shapes: drawingStore.shapes,
-                               layers: drawingStore.layers)
-            }
-        }
     }
 
+    /// op-nack (contract section 6). Nacks are relay statements: they settle
+    /// or retry our own op, never touch replay state, never SECURITY.
     private func applyDeliveryNack(_ obj: [String: Any], v3: Bool) {
         guard Self.strictJSONInteger(obj["av"], minimum: 1, maximum: 1) == 1,
               let requestId = obj["rid"] as? String,
@@ -3068,35 +4520,63 @@ final class SyncManager: ObservableObject {
             version: 1, requestId: requestId, actorId: actor,
             sessionDomain: session, code: code, retryable: retryable
         )) else { return }
-        let message: LocalizedMessage
-        switch code {
-        case "quota":
-            message = Messages.syncTheUnitSyncRoomIsFullSoThisSavedMessage()
-        case "storage":
-            message = Messages.syncTheUnitSyncRelayCouldNotDurablySaveThisMessage()
-        case "stale", "not-found", "counter-window":
-            message = Messages.syncTheUnitSyncRelayRejectedAnOutOfDateMessage()
-        case "session-replaced", "session-mismatch", "hello-required":
-            message = Messages.syncThisUnitSyncSessionCanNoLongerConfirmChangesMessage()
-        default:
-            message = Messages.syncTheUnitSyncRelayRejectedAChangeAsInvalidMessage()
-        }
-        pendingLastError = issueLifecycle.report(
-            message, kind: .security, generation: pending.connectionGeneration
-        )?.pendingMessage
-        if retryable {
-            scheduleDeliveryRetry(pending)
-        } else {
-            deliveryRetryItems.removeValue(forKey: pending.requestId)?.cancel()
-            if ["stale", "not-found", "counter-window", "session-replaced", "session-mismatch", "hello-required"].contains(code) {
-                task?.cancel(with: .internalServerError, reason: nil)
-            }
+        let outcome = SyncNackPolicy.decide(
+            code: code,
+            retryable: retryable,
+            rejectedStampIsOwnPersisted: isOwnPersistedStamp(pending),
+            wireIdSkipped: joinState.skippedWireIds[pending.wireObjectId] != nil
+        )
+        switch outcome {
+        case .retry:
+            // keep it, the running ack timer retransmits through the pacer
+            break
+        case .reconnect(let action):
+            if let socket = task { endSession(socket: socket, cause: .local(action)) }
+        case .confirmed:
+            outboundDeliveries.resolve(requestId: requestId)
+            settleDelivery(requestId)
+            markDeliveryConfirmed(pending)
+        case .suppress(let issue):
+            outboundDeliveries.resolve(requestId: requestId)
+            settleDelivery(requestId)
+            suppressUntilLocalEdit(pending.localId)
+            if let issue { surface(issue, scope: .session) }
+        case .pauseMutations:
+            outboundDeliveries.resolve(requestId: requestId)
+            settleDelivery(requestId)
+            pauseMutationsForJoin()
         }
     }
 
+    /// stale on a stamp that is still our own persisted one means the relay
+    /// already stored this exact write (S3-15), it just came from an older sd.
+    private func isOwnPersistedStamp(_ pending: PendingOutboundDelivery) -> Bool {
+        if protocolVersion == 3 {
+            guard let actorId = myActorId, pending.actorId == actorId,
+                  let stamp = replayState?.getStamp(pending.wireObjectId) else { return false }
+            return stamp.actorId == actorId && stamp.encode() == pending.objectVersion
+        }
+        guard let v = Int64(pending.objectVersion) else { return false }
+        return versions[pending.localId] == v && versionsBy[pending.localId] == clientId
+    }
+
+    /// counter-window: the relay's high water sits below our counters for
+    /// good (expired or purged room). Keep presence, chat and inbound, stop
+    /// writing for the rest of the join and say so once.
+    private func pauseMutationsForJoin() {
+        guard !joinState.mutationsPaused else { return }
+        joinState.mutationsPaused = true
+        mutationsPaused = true
+        for delivery in outboundDeliveries.all() {
+            outboundDeliveries.resolve(requestId: delivery.requestId)
+            settleDelivery(delivery.requestId)
+        }
+        surface(.roomResetChangesPaused, scope: .join)
+    }
+
     private func localObjectExists(_ localId: String) -> Bool {
-        waypointStore.waypoints.contains { $0.id.uuidString == localId } ||
-            drawingStore.shapes.contains { $0.id.uuidString == localId }
+        guard let uuid = UUID(uuidString: localId) else { return false }
+        return modelIndex.contains(uuid)
     }
 
     /// Decrypt and parse an incoming `loc` message (or a member from the
@@ -3170,40 +4650,45 @@ final class SyncManager: ObservableObject {
             applyDelete(rec, snapshotGeneration: snapshotGeneration)
             return
         }
-        guard let id = rec["id"] as? String, !id.isEmpty else { return }
+        // Verify with the id exactly as sent, key our state by its lowercase
+        // form so shipped uppercase iOS senders and Android meet (S3-01).
+        guard let rawId = rec["id"] as? String, let id = LegacyV2Ids.stateKey(rawId) else { return }
         guard let v = strictVersion(rec["v"]) else { return }
-        // Monotonic per-id version: reject anything <= the highest applied, and
-        // keep rejecting after a delete (versions[id] survives as a tombstone) so
-        // a relay can't resurrect a deleted object by replaying an older-but-
-        // validly-signed put.
-        if let known = versions[id], known >= v { return } // stale / superseded / post-delete
         let recKind = rec["kind"] as? String ?? "unknown"
         let by = rec["by"] as? String ?? ""
+        // Monotonic per-id (v, by): a relay cant resurrect a deleted object by
+        // replaying an older-but-validly-signed put, and an equal v goes to the
+        // higher writer exactly like the relay picks it (S3-14).
+        guard LegacyV2Ids.beats(v: v, by: by, lastV: versions[id], lastBy: versionsBy[id]) else { return }
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
               ctB64.utf8.count <= Self.maxBase64Bytes,
               let blob = Data(base64Encoded: ctB64),
-              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: recKind)),
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: rawId, v: v, kind: recKind)),
               let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return }
         let content = inner["c"] as? String ?? ""
         // Device authorship: the write must be signed by the key pinned to `by`
         // (TOFU). A room member can't forge a write as another established
         // device; a key that doesn't match the pin is rejected as a swap.
         guard verifyObjectSig(by: by, inner: inner,
-                              signed: SyncSigning.objectMessage(id, v, recKind, by, content)),
+                              signed: SyncSigning.objectMessage(rawId, v, recKind, by, content)),
               let contentData = content.data(using: .utf8) else { return }
         let fallback = drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
         guard let parsed = try? GeoJSONImporter.parse(contentData, existingLayers: drawingStore.layers,
                                                       fallbackLayerID: fallback) else { return }
+        let embedded = parsed.waypoints.first?.id ?? parsed.drawings.first?.id
+        guard embedded.map(LegacyV2Ids.outboundId) == id else { return }
         if forcedLegacyDeletes[id] != nil {
             clock = max(clock, v)
             versions[id] = v
+            versionsBy[id] = by
             return
         }
         if forcedLocalDiff.contains(id) {
             let current = reexport(id: id)
             clock = max(clock, v)
             versions[id] = v
+            versionsBy[id] = by
             if current == content {
                 lastContent[id] = current
                 kindById[id] = recKind
@@ -3222,6 +4707,7 @@ final class SyncManager: ObservableObject {
                 // eligible for a later relay snapshot/retry.
                 clock = max(clock, v)
                 versions[id] = v
+                versionsBy[id] = by
                 kindById[id] = parsed.waypoints.isEmpty ? "drawing" : "waypoint"
                 lastContent[id] = reexport(id: id)
             }
@@ -3236,20 +4722,20 @@ final class SyncManager: ObservableObject {
     }
 
     private func applyDelete(_ rec: [String: Any], snapshotGeneration: Int64? = nil) {
-        guard let id = rec["id"] as? String, !id.isEmpty else { return }
+        guard let rawId = rec["id"] as? String, let id = LegacyV2Ids.stateKey(rawId) else { return }
         guard let v = strictVersion(rec["v"]) else { return }
-        if let known = versions[id], known >= v { return } // stale / already-superseded delete
         let by = rec["by"] as? String ?? ""
+        guard LegacyV2Ids.beats(v: v, by: by, lastV: versions[id], lastBy: versionsBy[id]) else { return }
         // Open the sealed proof (proves room-key possession, so a relay with no
         // room key can't forge a delete) then verify the device signature.
         guard let key = roomKey,
               let ctB64 = rec["ct"] as? String,
               ctB64.utf8.count <= Self.maxBase64Bytes,
               let blob = Data(base64Encoded: ctB64),
-              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: id, v: v, kind: "del")),
+              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aad(id: rawId, v: v, kind: "del")),
               let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
               verifyObjectSig(by: by, inner: inner,
-                              signed: SyncSigning.objectMessage(id, v, "del", by, "")) else { return }
+                              signed: SyncSigning.objectMessage(rawId, v, "del", by, "")) else { return }
         if let recovery = forcedLegacyDeletes[id] {
             let exactSnapshotConfirmation = snapshotGeneration.map {
                 recovery.matchesVerifiedTombstone(
@@ -3264,12 +4750,14 @@ final class SyncManager: ObservableObject {
             } ?? false
             clock = max(clock, v)
             versions[id] = v
+            versionsBy[id] = by
             if exactSnapshotConfirmation { pendingLegacyDeleteConfirmations.insert(id) }
             return
         }
         if forcedLocalDiff.contains(id) && localObjectExists(id) {
             clock = max(clock, v)
             versions[id] = v
+            versionsBy[id] = by
             return
         }
         do {
@@ -3280,6 +4768,7 @@ final class SyncManager: ObservableObject {
             ) {
                 clock = max(clock, v)
                 versions[id] = v
+                versionsBy[id] = by
                 lastContent[id] = nil
                 kindById[id] = nil
             }
@@ -3295,7 +4784,7 @@ final class SyncManager: ObservableObject {
         for id in pendingLegacyDeleteConfirmations {
             guard let recovery = forcedLegacyDeletes[id],
                   recovery.snapshotGeneration == snapshotGeneration else { continue }
-            deliveryRetryItems.removeValue(forKey: recovery.requestId)?.cancel()
+            ackTimers.removeValue(forKey: recovery.requestId)?.cancel()
             forcedLegacyDeletes.removeValue(forKey: id)
             lastContent.removeValue(forKey: id)
             kindById.removeValue(forKey: id)
@@ -3317,16 +4806,12 @@ final class SyncManager: ObservableObject {
         return SyncSigning.verify(pub, signed, sig)
     }
 
-    /// Re-serialise so the next diff doesn't see a spurious change.
+    /// Re-serialise so the next diff doesn't see a spurious change. Comes
+    /// off the export cache, an unchanged object is never exported twice.
     private func reexport(id: String) -> String {
-        let layers = drawingStore.layers
-        if let wp = waypointStore.waypoints.first(where: { $0.id.uuidString == id }) {
-            return (try? GeoJSONExporter.export(waypoints: [wp], drawings: [], layers: layers)) ?? ""
-        }
-        if let shape = drawingStore.shapes.first(where: { $0.id.uuidString == id }) {
-            return (try? GeoJSONExporter.export(waypoints: [], drawings: [shape], layers: layers)) ?? ""
-        }
-        return ""
+        // UUID compare so v2's lowercase keys and v3's uppercase ones both hit
+        guard let uuid = UUID(uuidString: id) else { return "" }
+        return modelIndex.export(uuid)?.content ?? ""
     }
 
     // strict parsing helpers (SEC-006) — reject anything that isn't an exact,
@@ -3359,12 +4844,21 @@ final class SyncManager: ObservableObject {
 
     // MARK: - v3 Inbound
 
+    /// Frames that only touch in-memory session state or the replay batch.
+    /// Anything else (acks, snapshot fences, chat, hello-ack...) reads the
+    /// model, sends, or writes another store, so the batch is made durable and
+    /// the staged live records applied first.
+    static let batchableInboundTypes: Set<String> = ["put", "del", "loc", "hello", "leave", "chat-key"]
+
     private func handleParsedMessageV3(_ obj: [String: Any], frameBytes: Int) {
-        switch obj["t"] as? String {
+        let type = obj["t"] as? String
+        switch type {
         case "snapshot-begin":
-            guard status == .connecting,
+            // a second begin, a begin mid-session or a bad seq is a fence
+            // violation: reject the whole snapshot, never part of it
+            guard status == .connecting, snapshotSeq == nil,
                   let seq = strictNonNegativeInt64(obj["seq"]) else {
-                failClosedV3(Messages.syncInvalidSyncSnapshotFenceMessage())
+                structuralSnapshotFailure()
                 return
             }
             snapshotSeq = seq
@@ -3374,30 +4868,49 @@ final class SyncManager: ObservableObject {
             snapshotAggregateBytes = frameBytes
             snapshotWireIds.removeAll()
             status = .snapshotting
+            // seq below what we already saw: relay rolled back, or the room was
+            // purged/wiped. Say it once per join and keep syncing, the replay
+            // rules already reject anything older (contract section 5).
+            if let rs = replayState, rs.lastSnapshotSeq >= 0, seq < rs.lastSnapshotSeq {
+                snapshotSeqRegressed = true
+                surface(.roomResetSuspected, scope: .join)
+            }
         case "snapshot":
             snapshotAggregateBytes += frameBytes
-            guard status == .snapshotting, snapshotSeq != nil,
-                  let items = obj["items"] as? [[String: Any]],
-                  let more = obj["more"] as? Bool,
-                  !snapshotSawFinalPage,
+            guard status == .snapshotting, snapshotSeq != nil, !snapshotSawFinalPage,
+                  let items = obj["items"] as? [Any],
+                  let more = strictJSONBoolean(obj["more"]),
                   snapshotRecords.count <= Self.maxSnapshotItems - items.count,
                   snapshotAggregateBytes <= Self.maxSnapshotAggregateBytes else {
-                snapshotInvalid = true
+                structuralSnapshotFailure()
                 return
             }
-            for item in items {
-                guard let wireId = item["id"] as? String,
+            var page: [[String: Any]] = []
+            page.reserveCapacity(items.count)
+            for raw in items {
+                guard let item = raw as? [String: Any],
+                      let wireId = item["id"] as? String,
                       SyncIdentity.decodeCanonical32(wireId) != nil,
                       snapshotWireIds.insert(wireId).inserted else {
-                    snapshotInvalid = true; return
+                    structuralSnapshotFailure()
+                    return
                 }
+                page.append(item)
             }
-            snapshotRecords.append(contentsOf: items)
+            snapshotRecords.append(contentsOf: page)
             snapshotSawFinalPage = !more
         case "snapshot-end":
             snapshotAggregateBytes += frameBytes
-            if snapshotAggregateBytes > Self.maxSnapshotAggregateBytes { snapshotInvalid = true }
-            finishSnapshotV3(obj)
+            guard status == .snapshotting,
+                  let expectedSeq = snapshotSeq,
+                  let endSeq = strictNonNegativeInt64(obj["seq"]),
+                  endSeq == expectedSeq,
+                  snapshotSawFinalPage,
+                  snapshotAggregateBytes <= Self.maxSnapshotAggregateBytes else {
+                structuralSnapshotFailure()
+                return
+            }
+            finishSnapshotV3(seq: endSeq)
         case "hello":
             guard snapshotHasBeenAppliedV3 else { return }
             applyHelloV3(obj)
@@ -3435,10 +4948,10 @@ final class SyncManager: ObservableObject {
                 obj, activeSessions: activeSessions, ownActorId: myActorId) else { return }
             activeSessions.removeValue(forKey: departure.actorId)
             remotePresenceCandidateClusters.removeValue(forKey: departure.actorId)
-            onlineMembers = onlineMemberTracker.remove(
+            setOnlineMembers(onlineMemberTracker.remove(
                 clientId: departure.actorId,
                 sessionDomain: departure.sessionDomain
-            )
+            ))
             peers[departure.actorId] = presencePeerAfterV3Departure(
                 peers[departure.actorId],
                 departure: departure
@@ -3452,84 +4965,302 @@ final class SyncManager: ObservableObject {
         }
     }
 
-    private func finishSnapshotV3(_ obj: [String: Any]) {
-        guard status == .snapshotting,
-              let expectedSeq = snapshotSeq,
-              let endSeq = strictNonNegativeInt64(obj["seq"]),
-              endSeq == expectedSeq,
-              !snapshotInvalid,
-              snapshotSawFinalPage,
-              let rs = replayState else {
+    /// Fence violation (contract 2.4): nothing from this snapshot is
+    /// committed, say so (SECURITY, once per session), close and retry with
+    /// transient backoff. Three in a row without a hello-ack parks sync.
+    private func structuralSnapshotFailure() {
+        guard let socket = task else { return }
+        surface(.snapshotStructural, scope: .session)
+        snapshotRecords.removeAll()
+        snapshotWireIds.removeAll()
+        endSession(socket: socket, cause: .local(.structuralSnapshot), issueReported: true)
+    }
+
+    /// Classification context for live records, on main. Collision checks
+    /// and the reverse wire lookup are O(1) off the indexes, the layers are
+    /// the committed ones plus whatever earlier records of the current live
+    /// group adopted (same first-wins rule as a snapshot, S3-08).
+    private func liveRecordContext() -> SnapshotRecordContext? {
+        guard let keys = v3Keys, let roomKey, let rs = replayState else { return nil }
+        let index = ensureWireIndex(keys)
+        let model = modelIndex
+        return SnapshotRecordContext(
+            keys: keys,
+            roomKey: roomKey,
+            actorKeyIsAcceptable: { rs.actorKeyIsAcceptable($0, pubkey: $1) },
+            layers: liveGroupStaging?.layers ?? drawingStore.layers,
+            fallbackLayerID: fallbackLayerID,
+            isWaypointID: { model.waypoints[$0] != nil },
+            isDrawingID: { model.shapes[$0] != nil },
+            localIdForWireId: { [weak self] in self?.findLocalIdForWireId($0) },
+            wireIdForUUID: { index.wireId(for: $0) })
+    }
+
+    private var fallbackLayerID: UUID {
+        drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
+    }
+
+    @discardableResult
+    private func ensureWireIndex(_ keys: SyncCrypto.V3RoomKeys) -> SyncWireIdIndex {
+        if let wireIndex { return wireIndex }
+        rebuildWireIndex(metadataKey: keys.metadataKey)
+        return wireIndex!
+    }
+
+    /// snapshot-end (contract 19): per-record crypto, importer parse and the
+    /// expected hashes run off main, in item order against the staged layers.
+    /// Frames that arrive meanwhile wait in the inbound queue. Nothing is
+    /// committed until the validated result is back on main.
+    private func finishSnapshotV3(seq endSeq: Int64) {
+        guard replayState != nil, v3Keys != nil, roomKey != nil, let socket = task else {
             failClosedV3(Messages.syncSyncSnapshotAuthenticationFailedMessage())
             return
         }
+        // local validation and apply time never counts against the network
+        handshakeWatchdog.snapshotEnded(atMs: scheduler.nowMs)
+        armHandshakeTimer()
+        let records = snapshotRecords
+        snapshotRecords.removeAll()
+        snapshotWireIds.removeAll()
+        validateSnapshot(records, seq: endSeq, socket: socket, attempt: 0)
+    }
 
-        var validated: [ValidatedRecordV3] = []
-        validated.reserveCapacity(snapshotRecords.count)
-        for record in snapshotRecords {
-            let deleted = (record["deleted"] as? Bool) == true
-            guard let value = validateRecordV3(record, deleted: deleted) else {
-                failClosedV3(Messages.syncSyncSnapshotContainedAnUnauthenticatedRecordMessage())
-                return
-            }
-            validated.append(value)
+    private final class SnapshotValidationBox {
+        var result = SnapshotValidationResult()
+    }
+
+    private func validateSnapshot(_ records: [[String: Any]], seq: Int64, socket: SyncSocket, attempt: Int) {
+        guard let rs = replayState, let keys = v3Keys, let roomKey else {
+            failClosedV3(Messages.syncSyncSnapshotAuthenticationFailedMessage())
+            return
         }
-
-        let wasStale = rs.lastSnapshotSeq >= 0 && endSeq < rs.lastSnapshotSeq
-        do {
-            let remotes = validated.map {
-                SyncReplayState.RemoteMutation(
-                    mutation: $0.mutation,
-                    priorModelHash: modelContentHash(localId: $0.localId),
-                    localModelId: $0.localId,
-                    acceptedGeneration: modelRevisionJournal?.generation($0.localId) ?? 0,
-                    expectedModelHash: $0.expectedModelHash)
-            }
-            _ = try rs.commitRemoteSnapshot(remotes, seq: endSeq)
-            snapshotConfirmedLocalDeletes.removeAll()
-            if let actorId = myActorId {
-                for value in validated where value.parsed == nil && value.mutation.stamp.actorId == actorId {
-                    snapshotConfirmedLocalDeletes[value.mutation.wireObjectId] = value.mutation.stamp.encode()
-                }
-            }
-            resolvingPendingModel = true
-            defer { resolvingPendingModel = false }
-            for (index, value) in validated.enumerated() {
-                guard try resolvePendingModelApplication(value, currentHash: remotes[index].priorModelHash) else {
-                    failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-                    return
-                }
-            }
-            guard try resolveUnmatchedPendingModelApplications() else {
-                failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
+        let index = ensureWireIndex(keys)
+        let ids = modelIndex.allIds
+        let hashes = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+            modelIndex.export(id).map { (id.uuidString, $0.hash) }
+        })
+        let generations = Dictionary(uniqueKeysWithValues: ids.map {
+            ($0.uuidString, modelRevisionJournal?.generation($0.uuidString) ?? 0)
+        })
+        let input = SnapshotValidationInput(
+            records: records,
+            keys: keys,
+            roomKey: roomKey,
+            replay: rs.readView(),
+            committedLayers: drawingStore.layers,
+            fallbackLayerID: fallbackLayerID,
+            waypointIDs: Set(modelIndex.waypoints.keys),
+            modelHashes: hashes, modelGenerations: generations, modelEpoch: modelEpoch,
+            drawingIDs: Set(modelIndex.shapes.keys),
+            knownWireIds: index.forward,
+            hasher: index.hasher)
+        let generation = activeConnectionGeneration
+        let box = SnapshotValidationBox()
+        snapshotValidationInFlight = true
+        offMainExecutor.execute({
+            box.result = SnapshotValidator.validate(input)
+        }) { [weak self, weak socket] in
+            guard let self, let socket, self.task === socket,
+                  self.activeConnectionGeneration == generation else { return }
+            // The user edited a layer while we were validating: the staged
+            // layers and expected hashes describe an old model. Validate again
+            // against the current one rather than commit stale hashes (19).
+            if self.modelEpoch != input.modelEpoch || self.drawingStore.layers != input.committedLayers
+                || Set(self.modelIndex.waypoints.keys) != input.waypointIDs
+                || Set(self.modelIndex.shapes.keys) != input.drawingIDs {
+                self.validateSnapshot(records, seq: seq, socket: socket, attempt: attempt + 1)
                 return
             }
-        } catch let error as SyncRemoteModelMutationError {
+            self.commitValidatedSnapshot(box.result, seq: seq)
+        }
+    }
+
+    /// Back on main with every verdict (contract 19 + 1.3): re-resolve
+    /// tombstone local ids against the live index, take prior hashes and
+    /// journal generations now, then one commit write, one write per store,
+    /// hash verification, one marker-clear write, and the hello.
+    private func commitValidatedSnapshot(_ result: SnapshotValidationResult, seq endSeq: Int64) {
+        guard let rs = replayState else {
+            failClosedV3(Messages.syncSyncSnapshotAuthenticationFailedMessage())
+            return
+        }
+        handshakeWatchdog.progress(atMs: scheduler.nowMs)
+        let validated = result.validated.map { value -> ValidatedRecordV3 in
+            guard value.parsed == nil else { return value }
+            return ValidatedRecordV3(mutation: value.mutation, parsed: nil,
+                                     localId: findLocalIdForWireId(value.mutation.wireObjectId),
+                                     expectedModelHash: nil)
+        }
+        var unverified = result.unverified
+        var unsupported = result.unsupported
+        unverified.forEach { recordSkip($0, .unverified) }
+        unsupported.forEach { recordSkip($0, .unsupported) }
+
+        let remotes = validated.map {
+            SyncReplayState.RemoteMutation(
+                mutation: $0.mutation,
+                priorModelHash: modelContentHash(localId: $0.localId),
+                localModelId: $0.localId,
+                acceptedGeneration: modelRevisionJournal?.generation($0.localId) ?? 0,
+                expectedModelHash: $0.expectedModelHash)
+        }
+        rs.beginBatch()
+        do { _ = try rs.commitRemoteSnapshot(remotes, seq: endSeq) }
+        catch { snapshotPersistenceFailed(error); return }
+        let generation = activeConnectionGeneration
+        let token = joinToken
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do {
+                self.snapshotConfirmedLocalDeletes.removeAll()
+                if let actorId = self.myActorId {
+                    for value in validated where value.parsed == nil && value.mutation.stamp.actorId == actorId {
+                        self.snapshotConfirmedLocalDeletes[value.mutation.wireObjectId] = value.mutation.stamp.encode()
+                    }
+                }
+                // Read current hashes and generations after the seal. A local
+                // edit made while it ran must win over the pending remote record.
+                var outcome = try self.applyAcceptedRecords(validated.map {
+                    ($0, self.modelContentHash(localId: $0.localId))
+                })
+                unsupported.append(contentsOf: outcome.unsupported)
+                let resolved = Set(outcome.clears.map(\.wireObjectId))
+                for remote in rs.pendingRemoteMutations() where !resolved.contains(remote.mutation.wireObjectId) {
+                    if self.modelContentHash(localId: remote.localModelId) == remote.expectedModelHash {
+                        self.markCurrentModelBaseline(localId: remote.localModelId)
+                    } else if let localId = remote.localModelId { self.forcedLocalDiff.insert(localId) }
+                    outcome.clears.append(remote.mutation)
+                }
+                try rs.clearPendingModelApplications(outcome.clears)
+                rs.flushBatch(on: self.persistenceExecutor) { [weak self] error in
+                    guard let self, self.replayState === rs, self.joinToken == token,
+                          self.activeConnectionGeneration == generation, self.task != nil,
+                          self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+                    if let error { self.snapshotPersistenceFailed(error); return }
+                    do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+                    self.finishSnapshotCommit(seq: endSeq, unverified: unverified, unsupported: unsupported)
+                }
+            } catch { self.snapshotPersistenceFailed(error) }
+        }
+    }
+
+    private func snapshotPersistenceFailed(_ error: Error) {
+        if let error = error as? SyncRemoteModelMutationError {
             reportRemoteModelPersistenceFailure(error, remainsPending: true)
-            failClosedV3(pendingLastError ?? Messages.syncAPendingAuthenticatedSyncUpdateCouldNotBeSavedMessage())
-            return
-        } catch {
-            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-            return
         }
+        failClosedV3(pendingLastError ?? Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
+    }
 
+    private func finishSnapshotCommit(seq: Int64, unverified: [String], unsupported: [String]) {
+        snapshotValidationInFlight = false
         snapshotSeq = nil
         snapshotRecords.removeAll()
         snapshotInvalid = false
         snapshotSawFinalPage = false
         snapshotAggregateBytes = 0
         snapshotWireIds.removeAll()
-        if wasStale {
-            pendingLastError = issueLifecycle.report(
-                Messages.syncTheRelayServedAnOlderSnapshotNewerAuthenticatedLocalMessage(),
-                kind: .security,
-                generation: activeConnectionGeneration
-            )?.pendingMessage
-        }
+        let unverified = Array(Set(unverified))
+        if !unverified.isEmpty { surface(.skippedUnverified, scope: .join, count: unverified.count) }
+        if !unsupported.isEmpty { surface(.skippedUnsupported, scope: .join, count: Set(unsupported).count) }
+        snapshotVerifiedClean = unverified.isEmpty && !snapshotSeqRegressed
         awaitingHelloAck = true
         // Remain snapshotting (and therefore outbound-gated) until the relay
         // confirms it has verified/persisted hello and attached the actor tuple.
         sendHelloV3()
+        scheduleInboundDrain()
+    }
+
+    private enum RecordApplyError: Error {
+        /// the model after apply is not what the verified record said it would be
+        case hashMismatch
+    }
+
+    private struct RecordApplyOutcome {
+        var clears: [SyncReplayState.DurableMutation] = []
+        var unsupported: [String] = []
+    }
+
+    /// Shared by the snapshot and live batches: decide per record against its
+    /// pending marker, apply every incoming record to the stores in one write
+    /// per store, verify each expected hash, and return the markers that can
+    /// now be cleared (one write by the caller). Throws on a persistence error
+    /// or a hash mismatch, both fail closed with the markers still pending.
+    private func applyAcceptedRecords(_ items: [(ValidatedRecordV3, String?)]) throws -> RecordApplyOutcome {
+        guard let rs = replayState else { throw SyncReplayState.ReplayError.invalidState }
+        resolvingPendingModel = true
+        defer { resolvingPendingModel = false }
+        var outcome = RecordApplyOutcome()
+        var ops: [SyncRemoteModelApplier.BatchOp] = []
+        var opValues: [ValidatedRecordV3] = []
+        for (value, priorHash) in items {
+            let mutation = value.mutation
+            switch rs.pendingModelDecision(
+                mutation,
+                currentModelHash: priorHash,
+                currentGeneration: modelRevisionJournal?.generation(value.localId) ?? 0) {
+            case .applyIncoming:
+                if let parsed = value.parsed {
+                    ops.append(.upsert(parsed))
+                    opValues.append(value)
+                } else if let localId = value.localId {
+                    ops.append(.delete(localId))
+                    opValues.append(value)
+                } else {
+                    // tombstone for something we never had, nothing to remove
+                    outcome.clears.append(mutation)
+                }
+            case .alreadyApplied:
+                markModelBaseline(value)
+                outcome.clears.append(mutation)
+            case .localDiverged:
+                if let localId = value.localId { forcedLocalDiff.insert(localId) }
+                outcome.clears.append(mutation)
+            case .none:
+                if rs.isExactPersistedMutation(mutation) {
+                    if priorHash == value.expectedModelHash { markModelBaseline(value) }
+                    else if let localId = value.localId { forcedLocalDiff.insert(localId) }
+                }
+            }
+        }
+        guard !ops.isEmpty else { return outcome }
+        let applied = try SyncRemoteModelApplier.applyBatch(
+            ops, waypointStore: waypointStore, drawingStore: drawingStore)
+        var lastMessage: String?
+        for (index, value) in opValues.enumerated() {
+            if applied.refused[index] != nil {
+                // the classifier pre-checks both, this only catches a race with
+                // the local stores. Unsupported, not fatal.
+                outcome.unsupported.append(value.mutation.wireObjectId)
+                recordSkip(value.mutation.wireObjectId, .unsupported)
+                outcome.clears.append(value.mutation)
+                continue
+            }
+            guard modelContentHash(localId: value.localId) == value.expectedModelHash else {
+                throw RecordApplyError.hashMismatch
+            }
+            if let parsed = value.parsed, let localId = value.localId, let uuid = UUID(uuidString: localId) {
+                let isWaypoint = !parsed.waypoints.isEmpty
+                kindById[localId] = isWaypoint ? "waypoint" : "drawing"
+                lastContent[localId] = reexport(id: localId)
+                wireIndex?.wireId(for: uuid)
+                lastMessage = isWaypoint
+                    ? L10n.text("Waypoint updated by another device")
+                    : L10n.text("Drawing updated by another device")
+            } else {
+                if let localId = value.localId {
+                    lastContent[localId] = nil
+                    kindById[localId] = nil
+                }
+                lastMessage = L10n.text("Object removed by another device")
+            }
+            outcome.clears.append(value.mutation)
+        }
+        // one toast per batch, not one per record
+        if let lastMessage { remoteUpdateSubject.send(lastMessage) }
+        return outcome
     }
 
     private var snapshotHasBeenAppliedV3: Bool {
@@ -3547,19 +5278,24 @@ final class SyncManager: ObservableObject {
               SyncIdentity.helloAckMatches(actorId: actorId, sessionDomain: ownSession, expectedVersion: expectedVs,
                                            frameActorId: by, frameSessionDomain: sd, frameVersion: vs) else { return }
         awaitingHelloAck = false
-        v3HandshakeTimeoutItem?.cancel()
-        v3HandshakeTimeoutItem = nil
-        reconnectBackoff.reset()
+        cancelHandshakeWatchdog()
+        // hello-ack is not proof the session works, backoff only resets on the
+        // first op-ack or after 30 s connected (S3 verifier note 2)
+        reconnectBackoff.connected(atMs: scheduler.nowMs)
+        armStableSessionTimer()
+        closeClassifier.connectionSucceeded()
         status = .connected
         pendingLastError = issueLifecycle.connectionSucceeded(
             generation: activeConnectionGeneration,
-            verifiedCleanSnapshot: true
+            verifiedCleanSnapshot: snapshotVerifiedClean
         )?.pendingMessage
         V3HelloAckWorkSequencer.run {
             presenceCadence.startAuthenticatedSession()
+            presenceSendPolicy.startSession()
             startConnectionHealthChecks()
             sendPresence()
         } reconcileMissionState: {
+            guard !joinState.mutationsPaused else { return }
             replayState?.recoverableLocalDeletes(actorId: actorId, pubkey: myPublicKey).forEach {
                 if !shouldResendRecoverableDelete(
                     wireObjectId: $0.0,
@@ -3567,12 +5303,10 @@ final class SyncManager: ObservableObject {
                     confirmedSnapshotDeletes: snapshotConfirmedLocalDeletes
                 ) { return }
                 let localId = findLocalIdForWireId($0.0) ?? "wire:\($0.0)"
-                _ = sendDelV3(localId: localId, wireObjectId: $0.0, recoveryStamp: $0.1)
+                queueDelV3(localId: localId, wireObjectId: $0.0, stamp: $0.1)
             }
             snapshotConfirmedLocalDeletes.removeAll()
-            syncLocalStateV3(waypoints: waypointStore.waypoints,
-                             shapes: drawingStore.shapes,
-                             layers: drawingStore.layers)
+            syncLocalStateV3()
         }
         startChatSessionV3()
     }
@@ -3603,8 +5337,8 @@ final class SyncManager: ObservableObject {
                     : PresenceExpiryPolicy.markedStale(peer)
             }
             activeSessions[by] = V3ActiveSession(publicKey: pub, sessionDomain: sd)
-            onlineMembers = onlineMemberTracker.authenticatedHello(
-                clientId: by, sessionDomain: sd)
+            setOnlineMembers(onlineMemberTracker.authenticatedHello(
+                clientId: by, sessionDomain: sd))
             refreshChatRecipients()
         } catch {
             failClosedV3(Messages.syncActorRollbackProtectionStateCouldNotBeSavedMessage())
@@ -3718,6 +5452,10 @@ final class SyncManager: ObservableObject {
             case .accepted:
                 let label = opened.payload.kind == .report ? L10n.text("report") : L10n.text("message")
                 remoteUpdateSubject.send(L10n.text("New TacMap Chat %1$@ from %2$@.", label, senderName))
+            case .rejectedReplayFull:
+                // 256 live sessions, nothing superseded to prune: tell the
+                // user once per join instead of dropping chat silently
+                surface(.chatReplayFull, scope: .join)
             case .duplicate, .rejected:
                 break
             }
@@ -3788,63 +5526,93 @@ final class SyncManager: ObservableObject {
     }
 
     private func applyLiveRecordV3(_ rec: [String: Any], deleted: Bool) {
-        guard let rs = replayState,
-              let validated = validateRecordV3(rec, deleted: deleted) else { return }
+        guard let rs = replayState, let context = liveRecordContext() else { return }
+        let validated: ValidatedRecordV3
+        switch SnapshotRecordClassifier.classify(rec, deleted: deleted, context: context) {
+        case .valid(let value):
+            validated = value
+        case .skip(let category, _):
+            // same verdicts as the snapshot, a live skip is surfaced once per join
+            if let wireId = rec["id"] as? String, SyncIdentity.decodeCanonical32(wireId) != nil {
+                recordSkip(wireId, category)
+            }
+            surface(category == .unverified ? .skippedUnverified : .skippedUnsupported, scope: .join, count: 1)
+            return
+        }
+        switch rs.liveAcceptance(validated.mutation.wireObjectId, validated.mutation.stamp) {
+        case .notNewer:
+            return
+        case .outsideWindow:
+            // signed and newer, but past our own counter window: our baseline
+            // is stale (relay expiry/compaction), go get a fresh snapshot
+            liveWindowRejection()
+            return
+        case .accept:
+            break
+        }
+        let priorHash = modelContentHash(localId: validated.localId)
         do {
-            let priorHash = modelContentHash(localId: validated.localId)
-            guard try rs.commitRemote(.init(
+            // Joins the logical batch, made durable before any model apply.
+            // before anything touches the model
+            guard try rs.commitRemoteBatch([.init(
                 mutation: validated.mutation,
                 priorModelHash: priorHash,
                 localModelId: validated.localId,
                 acceptedGeneration: modelRevisionJournal?.generation(validated.localId) ?? 0,
-                expectedModelHash: validated.expectedModelHash)) else { return }
-            resolvingPendingModel = true
-            defer { resolvingPendingModel = false }
-            guard try resolvePendingModelApplication(validated, currentHash: priorHash) else {
-                failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-                return
-            }
-        } catch let error as SyncRemoteModelMutationError {
-            reportRemoteModelPersistenceFailure(error, remainsPending: true)
-            failClosedV3(pendingLastError ?? Messages.syncAPendingAuthenticatedSyncUpdateCouldNotBeSavedMessage())
-            return
+                expectedModelHash: validated.expectedModelHash)]).first == true else { return }
         } catch {
             failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
             return
         }
+        liveGroup.append(StagedLiveRecord(value: validated, priorHash: priorHash))
+        liveGroupWireIds.insert(validated.mutation.wireObjectId)
+        if let parsed = validated.parsed {
+            var staging = liveGroupStaging ?? SnapshotLayerStaging(committed: drawingStore.layers)
+            staging.adopt(parsed.newLayers)
+            liveGroupStaging = staging
+        }
+    }
+
+    // MARK: Live counter-window resync (contract section 4)
+
+    private func liveWindowRejection() {
+        if joinState.liveWindowResync.windowRejection(nowMs: scheduler.nowMs) {
+            triggerLiveWindowResync()
+        } else {
+            scheduleLiveWindowResyncTick()
+        }
+    }
+
+    private func scheduleLiveWindowResyncTick() {
+        guard liveWindowResyncTimer == nil, let at = joinState.liveWindowResync.nextEligibleMs() else { return }
+        liveWindowResyncTimer = scheduler.schedule(afterMs: max(0, at - scheduler.nowMs)) { [weak self] in
+            guard let self else { return }
+            self.liveWindowResyncTimer = nil
+            if self.joinState.liveWindowResync.tick(nowMs: self.scheduler.nowMs) {
+                self.triggerLiveWindowResync()
+            } else {
+                self.scheduleLiveWindowResyncTick()
+            }
+        }
+    }
+
+    private func triggerLiveWindowResync() {
+        guard let socket = task, status == .connected else { return }
+        endSession(socket: socket, cause: .local(.liveWindowResync), issueReported: true)
+    }
+
+    private func armStableSessionTimer() {
+        stableSessionTimer?.cancel()
+        stableSessionTimer = scheduler.schedule(afterMs: SyncBackoffPolicy.stableSessionMs) { [weak self] in
+            guard let self else { return }
+            self.stableSessionTimer = nil
+            self.reconnectBackoff.tick(nowMs: self.scheduler.nowMs)
+        }
     }
 
     private func modelContentHash(localId: String?) -> String? {
-        guard let localId else { return nil }
-        let content = reexport(id: localId)
-        guard !content.isEmpty else { return nil }
-        return SyncIdentity.bytesToHex(SyncIdentity.sha256(Data(content.utf8)))
-    }
-
-    private func resolvePendingModelApplication(_ value: ValidatedRecordV3, currentHash: String?) throws -> Bool {
-        guard let rs = replayState else { return false }
-        let mutation = value.mutation
-        switch rs.pendingModelDecision(
-            mutation,
-            currentModelHash: currentHash,
-            currentGeneration: modelRevisionJournal?.generation(value.localId) ?? 0) {
-        case .applyIncoming:
-            try applyValidatedRecordV3(value)
-            guard modelContentHash(localId: value.localId) == value.expectedModelHash else { return false }
-            return try rs.clearPendingModelApplication(mutation)
-        case .alreadyApplied:
-            markModelBaseline(value)
-            return try rs.clearPendingModelApplication(mutation)
-        case .localDiverged:
-            if let localId = value.localId { forcedLocalDiff.insert(localId) }
-            return try rs.clearPendingModelApplication(mutation)
-        case .none:
-            if rs.isExactPersistedMutation(mutation) {
-                if currentHash == value.expectedModelHash { markModelBaseline(value) }
-                else if let localId = value.localId { forcedLocalDiff.insert(localId) }
-            }
-            return true
-        }
+        guard let localId, let uuid = UUID(uuidString: localId) else { return nil }
+        return modelIndex.export(uuid)?.hash
     }
 
     private func markModelBaseline(_ value: ValidatedRecordV3) {
@@ -3861,23 +5629,6 @@ final class SyncManager: ObservableObject {
         forcedLocalDiff.remove(localId)
     }
 
-    /// If the relay omitted or contradicted pending work, the authenticated
-    /// ciphertext needed for repair is unavailable. Preserve the current model
-    /// and force it to win with a new local stamp after hello acknowledgement.
-    private func resolveUnmatchedPendingModelApplications() throws -> Bool {
-        guard let rs = replayState else { return false }
-        for remote in rs.pendingRemoteMutations() {
-            let current = modelContentHash(localId: remote.localModelId)
-            if current == remote.expectedModelHash {
-                markCurrentModelBaseline(localId: remote.localModelId)
-            } else if let localId = remote.localModelId {
-                forcedLocalDiff.insert(localId)
-            }
-            guard try rs.clearPendingModelApplication(remote.mutation) else { return false }
-        }
-        return true
-    }
-
     private func markCurrentModelBaseline(localId: String?) {
         guard let localId else { return }
         let content = reexport(id: localId)
@@ -3885,138 +5636,9 @@ final class SyncManager: ObservableObject {
             lastContent[localId] = nil; kindById[localId] = nil
         } else {
             lastContent[localId] = content
-            kindById[localId] = waypointStore.waypoints.contains { $0.id.uuidString == localId }
-                ? "waypoint" : "drawing"
+            kindById[localId] = UUID(uuidString: localId).flatMap(modelIndex.kind(of:))?.rawValue ?? "drawing"
         }
         forcedLocalDiff.remove(localId)
-    }
-
-    /// Authenticate and parse without changing replay or application state.
-    private func validateRecordV3(_ rec: [String: Any], deleted: Bool) -> ValidatedRecordV3? {
-        guard let wireId = rec["id"] as? String,
-              SyncIdentity.decodeCanonical32(wireId) != nil,
-              let vsString = rec["vs"] as? String,
-              let stamp = VersionStamp.parse(vsString),
-              let by = rec["by"] as? String, stamp.actorId == by,
-              let publicKey = rec["pub"] as? String,
-              let sessionString = rec["sd"] as? String,
-              let sessionRaw = SyncIdentity.decodeCanonical32(sessionString),
-              let kind = rec["kind"] as? String,
-              kind.count <= 32,
-              deleted ? kind == "del" : (kind == "waypoint" || kind == "drawing"),
-              let keys = v3Keys,
-              SyncIdentity.actorBindingIsValid(actorId: by, publicKey: publicKey, roomIdRaw: keys.roomIdRaw),
-              replayState?.actorKeyIsAcceptable(by, pubkey: publicKey) == true,
-              let key = roomKey,
-              let ctBase64 = rec["ct"] as? String,
-              ctBase64.utf8.count <= Self.maxBase64Bytes,
-              let blob = Data(base64Encoded: ctBase64), blob.base64EncodedString() == ctBase64,
-              let plain = SyncCrypto.open(key, blob, aad: SyncCrypto.aadV3(wireObjectId: wireId, vs: vsString, kind: kind)),
-              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
-              let signature = inner["sig"] as? String else { return nil }
-
-        let contentData: Data
-        let parsed: GeoJSONImporter.Result?
-        let domain: UInt8
-        let payloadHash: Data
-        let localId: String?
-        let expectedModelHash: String?
-        if deleted {
-            guard inner["c"] == nil else { return nil }
-            contentData = Data()
-            parsed = nil
-            domain = SyncIdentity.domainDelete
-            payloadHash = SyncIdentity.sha256(contentData)
-            localId = findLocalIdForWireId(wireId)
-            expectedModelHash = nil
-        } else {
-            guard let content = inner["c"] as? String,
-                  let bytes = content.data(using: .utf8) else { return nil }
-            contentData = bytes
-            let fallback = drawingStore.activeLayerID ?? drawingStore.layers.first?.id ?? DrawingLayer.legacyFallbackID
-            guard let imported = try? GeoJSONImporter.parse(bytes, existingLayers: drawingStore.layers,
-                                                             fallbackLayerID: fallback),
-                  imported.invalidSkipped == 0,
-                  (kind == "waypoint" ? (imported.waypoints.count == 1 && imported.drawings.isEmpty)
-                                      : (imported.drawings.count == 1 && imported.waypoints.isEmpty)) else { return nil }
-            let embeddedID = kind == "waypoint" ? imported.waypoints[0].id : imported.drawings[0].id
-            let computedWireID = SyncIdentity.wireObjectId(
-                metadataKey: keys.metadataKey,
-                localUuidBytes: SyncIdentity.uuidToBytes(embeddedID))
-            guard computedWireID == wireId else { return nil }
-            localId = embeddedID.uuidString
-            parsed = imported
-            expectedModelHash = receiverModelHash(parsed: imported, localId: embeddedID)
-            guard expectedModelHash != nil else { return nil }
-            domain = SyncIdentity.domainPut
-            payloadHash = SyncIdentity.sha256(contentData)
-        }
-
-        let preimage = SyncIdentity.buildPreimage(
-            domain: domain, roomIdRaw: keys.roomIdRaw, actorId: by,
-            sessionDomain: sessionRaw,
-            counterHex16: VersionStamp.counterHex16(stamp.counter),
-            objectId: wireId, kind: kind, payloadHash: payloadHash)
-        guard SyncSigning.verify(publicKey, preimage, signature) else { return nil }
-
-        let mutationKind: SyncReplayState.MutationKind = deleted
-            ? .delete
-            : .put(contentHash: SyncIdentity.bytesToHex(payloadHash))
-        return ValidatedRecordV3(
-            mutation: .init(wireObjectId: wireId, stamp: stamp,
-                            publicKey: publicKey, kind: mutationKind),
-            parsed: parsed, localId: localId, expectedModelHash: expectedModelHash)
-    }
-
-    /// Receiver-local fixed-point hash; the authenticated payload hash remains sender bytes.
-    private func receiverModelHash(parsed: GeoJSONImporter.Result, localId: UUID) -> String? {
-        var layers = drawingStore.layers
-        for layer in parsed.newLayers where !layers.contains(where: { $0.id == layer.id }) { layers.append(layer) }
-        let content: String?
-        if let waypoint = parsed.waypoints.first(where: { $0.id == localId }) {
-            content = try? GeoJSONExporter.export(waypoints: [waypoint], drawings: [], layers: layers)
-        } else if let drawing = parsed.drawings.first(where: { $0.id == localId }) {
-            content = try? GeoJSONExporter.export(waypoints: [], drawings: [drawing], layers: layers)
-        } else {
-            content = nil
-        }
-        guard let content else { return nil }
-        return SyncIdentity.bytesToHex(SyncIdentity.sha256(Data(content.utf8)))
-    }
-
-    private func applyValidatedRecordV3(_ value: ValidatedRecordV3) throws {
-        guard let parsed = value.parsed else {
-            if let localId = value.localId {
-                try SyncRemoteModelApplier.delete(
-                    localID: localId,
-                    waypointStore: waypointStore,
-                    drawingStore: drawingStore
-                )
-                lastContent[localId] = nil
-                kindById[localId] = nil
-            }
-            remoteUpdateSubject.send(L10n.text("Object removed by another device"))
-            refreshObservedModelBaseline(localId: value.localId)
-            return
-        }
-
-        try SyncRemoteModelApplier.apply(
-            parsed,
-            waypointStore: waypointStore,
-            drawingStore: drawingStore
-        )
-        if let waypoint = parsed.waypoints.first {
-            let id = waypoint.id.uuidString
-            kindById[id] = "waypoint"
-            lastContent[id] = reexport(id: id)
-            remoteUpdateSubject.send(L10n.text("Waypoint updated by another device"))
-        } else if let shape = parsed.drawings.first {
-            let id = shape.id.uuidString
-            kindById[id] = "drawing"
-            lastContent[id] = reexport(id: id)
-            remoteUpdateSubject.send(L10n.text("Drawing updated by another device"))
-        }
-        refreshObservedModelBaseline(localId: value.localId)
     }
 
     private func applyPresenceV3(_ obj: [String: Any]) {
@@ -4124,12 +5746,15 @@ final class SyncManager: ObservableObject {
             remotePresenceCandidateClusters.removeValue(forKey: actorId)
         }
         do {
+            // 17.1: writes (all counters, one write) only when this counter is
+            // 16+ past the persisted one, before the peer is shown
             guard try rs.acceptPresence(
                 actorId: actorId, sessionDomain: sdString, counter: stamp.counter) else { return }
         } catch {
             failClosedV3(Messages.syncPresenceReplayStateCouldNotBeSavedMessage())
             return
         }
+        schedulePresenceFlush()
 
         peers[actorId] = PresencePeer(
             clientId: actorId,
@@ -4152,7 +5777,7 @@ final class SyncManager: ObservableObject {
         let now = Date()
         _ = onlineMemberTracker.authenticatedActivity(
             clientId: actorId, sessionDomain: sdString, now: now)
-        onlineMembers = onlineMemberTracker.updatePresenceMetadata(
+        setOnlineMembers(onlineMemberTracker.updatePresenceMetadata(
             clientId: actorId,
             sessionDomain: sdString,
             callsign: presence.callsign,
@@ -4161,37 +5786,51 @@ final class SyncManager: ObservableObject {
             function: presence.function,
             isHQ: presence.isHQ,
             now: now
-        )
+        ))
         refreshChatRecipients()
+    }
+
+    /// 17.1: counters that are only in memory go to disk at most once per
+    /// 60 s, measured from the last replay write of any kind (every write
+    /// carries all counters).
+    private func schedulePresenceFlush() {
+        guard presenceFlushTimer == nil, replayState?.presenceCountersDirty == true else { return }
+        let busy = inboundPersistenceInFlight || snapshotValidationInFlight || outboundPersistenceInFlight
+        let due = max(busy ? 1_000 : 0, lastReplayDurableMs + PresenceFencePersistence.flushMs - scheduler.nowMs)
+        presenceFlushTimer = scheduler.schedule(afterMs: due) { [weak self] in
+            guard let self else { return }
+            self.presenceFlushTimer = nil
+            guard self.presenceCadence.foregroundReady, let rs = self.replayState,
+                  rs.presenceCountersDirty else { return }
+            if self.scheduler.nowMs - self.lastReplayDurableMs < PresenceFencePersistence.flushMs {
+                // something else wrote meanwhile and took the counters along
+                self.schedulePresenceFlush()
+                return
+            }
+            guard !self.inboundPersistenceInFlight, !self.snapshotValidationInFlight,
+                  !self.outboundPersistenceInFlight else { self.schedulePresenceFlush(); return }
+            self.inboundPersistenceInFlight = true
+            let generation = self.activeConnectionGeneration
+            rs.flushPresenceCounters(on: self.persistenceExecutor) { [weak self] error in
+                guard let self, self.replayState === rs, self.activeConnectionGeneration == generation else { return }
+                self.inboundPersistenceInFlight = false
+                if error != nil { self.failClosedV3(Messages.syncPresenceReplayStateCouldNotBeSavedMessage()) }
+                else { self.scheduleInboundDrain() }
+            }
+        }
     }
 
     private func strictNonNegativeInt64(_ value: Any?) -> Int64? {
         Self.strictJSONInteger(value, minimum: 0, maximum: Int64.max)
     }
 
-    /// Reverse-lookup: find the local UUID string that maps to a given wire object ID.
+    /// Reverse lookup through the room's wire-id index, O(1). A miss means no
+    /// local object, there is no fallback scan (contract 18, S5-02). Same
+    /// answer set as before: a current store object or one we still hold a
+    /// sync baseline for.
     private func findLocalIdForWireId(_ wireId: String) -> String? {
-        guard let keys = v3Keys else { return nil }
-        for id in lastContent.keys {
-            guard let uuid = UUID(uuidString: id) else { continue }
-            let computed = SyncIdentity.wireObjectId(
-                metadataKey: keys.metadataKey,
-                localUuidBytes: SyncIdentity.uuidToBytes(uuid))
-            if computed == wireId { return id }
-        }
-        // also check stores directly
-        for wp in waypointStore.waypoints {
-            let computed = SyncIdentity.wireObjectId(
-                metadataKey: keys.metadataKey,
-                localUuidBytes: SyncIdentity.uuidToBytes(wp.id))
-            if computed == wireId { return wp.id.uuidString }
-        }
-        for shape in drawingStore.shapes {
-            let computed = SyncIdentity.wireObjectId(
-                metadataKey: keys.metadataKey,
-                localUuidBytes: SyncIdentity.uuidToBytes(shape.id))
-            if computed == wireId { return shape.id.uuidString }
-        }
-        return nil
+        guard let uuid = wireIndex?.uuid(forWireId: wireId) else { return nil }
+        let id = uuid.uuidString
+        return modelIndex.contains(uuid) || lastContent[id] != nil ? id : nil
     }
 }

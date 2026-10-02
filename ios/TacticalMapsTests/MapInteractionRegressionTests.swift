@@ -412,6 +412,42 @@ final class MapInteractionRegressionTests: XCTestCase {
         wait(for: [moved], timeout: 1)
     }
 
+    @MainActor
+    func testCalibrationSuppressionSurvivesDirectPresenceUpdatesAndRestoresLatestPeer() async throws {
+        let camera = MapCamera(
+            center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            zoom: 10, headingDegrees: 0, viewportSize: CGSize(width: 400, height: 600))
+        let view = TileMapView(camera: camera)
+        let mapVM = MapViewModel()
+        let coordinator = TileMapContainer.Coordinator()
+        coordinator.attach(view: view, mapVM: mapVM)
+        let model = SyncPresenceModel()
+        var peer = PresencePeer(
+            clientId: "peer", callsign: "Unit", affiliation: "friend", echelon: "team",
+            function: "infantry", isHQ: false, lat: 0, lon: 0, heading: 0, speed: 0, ts: 0)
+        model.peers = [peer.clientId: peer]
+        coordinator.observePresence(model)
+        let overlay = try XCTUnwrap(coordinator.editing.presenceView)
+        XCTAssertEqual(overlay.peerID(at: CGPoint(x: 200, y: 300)), peer.clientId)
+
+        coordinator.syncPresenceVisibility(false)
+        XCTAssertTrue(overlay.subviews.isEmpty)
+        XCTAssertNil(overlay.peerID(at: CGPoint(x: 200, y: 300)))
+        peer.lon = 0.2
+        model.peers = [peer.clientId: peer]
+        let published = expectation(description: "presence publisher drained while calibrating")
+        RunLoop.main.perform { published.fulfill() }
+        await fulfillment(of: [published], timeout: 1)
+        XCTAssertTrue(overlay.subviews.isEmpty, "presence frames cannot restore calibration-hidden markers")
+
+        coordinator.syncPresenceVisibility(true)
+        let latest = camera.screenPoint(for: CLLocationCoordinate2D(latitude: peer.lat, longitude: peer.lon))
+        XCTAssertEqual(overlay.peerID(at: latest), peer.clientId)
+        XCTAssertNil(overlay.peerID(at: CGPoint(x: 200, y: 300)))
+        coordinator.observePresence(nil)
+        XCTAssertTrue(overlay.subviews.isEmpty)
+    }
+
     func testAppliedMGRSGridAddsExactlyOnePhysicalPixel() {
         let base = MGRSGridRenderer.lineWidth(for: .HUNDRED_KILOMETER)
         XCTAssertEqual(

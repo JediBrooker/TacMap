@@ -88,38 +88,28 @@ enum DataKeyLegacyRecovery {
 
 /// The at-rest data-encryption key (DEK) for mission data, and where it lives.
 ///
-/// Android wraps a DEK under a non-exportable Keystore KEK. On iOS the Keychain
-/// already gives us the same property, so the DEK just lives there directly as
-/// 32 bytes: hardware-encrypted, device-bound, and unwrapped by keys the Secure
-/// Enclave manages. Flipping [setAuthBound] re-adds that one item with different
-/// access control. Files are never re-encrypted either way.
+/// This app stores a raw 32-byte AES key as an iOS Keychain generic-password
+/// item. It does not create or hold that AES key through a Secure Enclave API
+/// or attest hardware enforcement. setAuthBound re-protects the same DEK with
+/// verified access-control rotation; mission files are not re-encrypted.
 ///
-/// A note on the Secure Enclave, since it's easy to overclaim: the SEP only
-/// holds NIST P-256 keys, so you cannot put a raw AES-256 key "in" it. What
-/// actually protects this item is the Keychain's class-key hierarchy, whose
-/// keys the SEP wraps and holds. That is a real hardware guarantee. It is not
-/// the same sentence as "the key is in the Secure Enclave", so we don't write
-/// that sentence.
+/// DEVICE requests AfterFirstUnlockThisDeviceOnly. The platform class permits
+/// app reads after first unlock without a prompt and restricts migration to a
+/// different device. It is not a defense against code running as this app on
+/// a compromised, live OS after first unlock.
 ///
-/// Two modes, and the difference is the whole point of THREAT_MODEL section 7:
+/// AUTH requests WhenUnlockedThisDeviceOnly plus SecAccessControl.userPresence.
+/// Reads depend on the platform's authentication/access-policy enforcement;
+/// this app makes no blanket jailbreak or secure-hardware guarantee. Process
+/// death loses the live key copy, so AUTH recovery needs authentication.
 ///
-///  - DEVICE mode (default). `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
-///    Readable by this app any time after the first unlock since boot, with no
-///    prompt. `ThisDeviceOnly` keeps it out of iCloud Keychain and prevents a
-///    protected backup from restoring the item onto a different device; Apple
-///    can restore it back to the same device. The class blocks ordinary
-///    cross-device backup migration, but it does NOT defeat a live jailbreak
-///    attacker with code execution as this app after first unlock.
-///
-///  - AUTH mode (opt-in). Adds a `SecAccessControl` with `.userPresence`, so
-///    reading the item makes the Secure Enclave demand Face ID / Touch ID /
-///    passcode. A jailbreak alone gets nothing. Cost is that after the process
-///    dies nothing can read or write mission data until the user authenticates,
-///    which includes background track recording.
-///
-/// We cache the DEK only while the app is active. AUTH mode prompts again after
-/// backgrounding or App Lock; an active track keeps a private, short-lived copy
-/// inside TrackRecorder so background fixes do not require this global cache.
+/// RootGate clears the general cache on inactive/App Lock in AUTH mode.
+/// DEVICE may retain its cache under the accepted ADR-002 lifecycle policy.
+/// An explicitly started TrackRecorder retains a private copy of this same
+/// general DEK for its already prepared log after the global cache is locked.
+/// That is ownership/lifetime scope, not a derived track-only key. Releasing
+/// Swift Data does not prove every backing copy was overwritten, and already
+/// decrypted mission objects can remain beneath the mounted lock overlay.
 enum DataKey {
     static let lockChanged = Notification.Name("DataKeyLockChanged")
 

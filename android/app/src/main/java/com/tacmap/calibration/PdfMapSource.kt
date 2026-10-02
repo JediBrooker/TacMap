@@ -2,104 +2,153 @@ package com.tacmap.calibration
 
 import android.net.Uri
 import java.util.UUID
-import kotlin.math.cos
+
+/** Why a PDF isn't georeferenced. The UI says it out loud, it's never a silent camera box. */
+sealed class PdfGeorefIssue {
+    /** plain PDF, nothing declared: calibrate it */
+    data object NoMetadata : PdfGeorefIssue()
+
+    /** declared a georef we can't trust (reason code is the shared fixture's) */
+    data class Rejected(val reason: GeorefRejectReason) : PdfGeorefIssue()
+
+    /** an old session that only ever had the made up camera-centred box */
+    data object LegacyPlacement : PdfGeorefIssue()
+
+    /** a stored calibration that can't be rebuilt under the new rules (collinear etc) */
+    data object CalibrationLost : PdfGeorefIssue()
+}
+
+/** a finished Generate Offline Tiles run, kept next to the PDF (never replaces it) */
+@kotlinx.serialization.Serializable
+data class PersistedPdfBake(
+    /** basename inside filesDir/offline_tiles */
+    val fileName: String,
+    val bakeKey: String,
+    val minZoom: Int,
+    val maxZoom: Int,
+    val tilePx: Int,
+    val bytes: Long,
+)
 
 /**
- * PDF-backed map source. [GeoPdfParser] resolves supported geospatial metadata;
- * otherwise the user supplies 3+ fiduciaries and the importer fits an affine.
- * Large pages are rendered through the app's bounded on-device tile pipeline.
+ * Render side identity of an imported PDF (WP2). [renderGuardToken] is a random
+ * uuid the crash guard keys on, never the file name. [contentKey] is the sha256
+ * the import worker already computed so nothing hashes on main later.
+ */
+data class PdfRenderMeta(
+    val renderGuardToken: String = UUID.randomUUID().toString(),
+    val contentKey: String? = null,
+    val bake: PersistedPdfBake? = null,
+    /** minted on this restore, not in the sealed session yet */
+    val tokenMinted: Boolean = false,
+)
+
+/**
+ * PDF-backed map source. [calibration] is the real georef (GeoPDF or fiduciary
+ * fit). Without one the page sits on a [provisional] placement that the UI labels
+ * uncalibrated and never passes off as a usable basemap, plan 02 s1.
  */
 class PdfMapSource(
     val uri: Uri,
     override val displayName: String,
     override val kind: MapSourceKind,
-    override val coverage: Wgs84Bounds?,
     override val calibration: Calibration?,
-    val pageInfo: PdfPageInfo? = null
+    val geometry: PdfPageGeometry,
+    val provisional: PdfGeoreference? = null,
+    val georefIssue: PdfGeorefIssue? = null,
+    /** fiduciaries left over from a calibration that couldn't be rebuilt, seeds the next attempt */
+    val pendingFiduciaries: List<Fiduciary> = emptyList(),
+    /** library entry this came from, null for the legacy session readers */
+    val entryId: String? = null,
+    /** 0-based page shown */
+    val pageIndex: Int = 0,
+    val contentKey: String? = null,
+    /** a calibration preview of a sheet with no georef yet, never durable (D2-06, D5-02) */
+    val isPreview: Boolean = false,
+    val render: PdfRenderMeta = PdfRenderMeta(contentKey = contentKey),
+    override val id: String = UUID.randomUUID().toString(),
 ) : MapSource {
-    override val id: String = UUID.randomUUID().toString()
 
-    fun calibrated(transform: AffineTransform2D, fiduciaries: List<Fiduciary>): PdfMapSource {
-        val info = pageInfo ?: return this
-        if (fiduciaries.size < 3 || fiduciaries.any { !it.isSafeAffineInput() } ||
-            !transform.hasFiniteCoefficients() || transform.inverted() == null
-        ) return this
-        val bounds = calibratedPdfBounds(transform, info) ?: return this
+    /** what's on screen right now */
+    val placement: PdfGeoreference? get() = calibration?.georef ?: provisional
+
+    val isGeoreferenced: Boolean get() = calibration != null
+
+    override val coverage: Wgs84Bounds? = placement?.wgs84Bounds()
+
+    /** raw-space crop a new calibration is fitted against: the visible page box */
+    val calibrationCrop: List<PagePoint> get() = geometry.visibleCrop()
+
+    fun calibrated(fiduciaries: List<Fiduciary>, georef: PdfGeoreference): PdfMapSource {
+        if (fiduciaries.size < 3 || !georef.isUsable() || georef.wgs84Bounds() == null) return this
         return PdfMapSource(
             uri = uri,
             displayName = displayName,
             kind = MapSourceKind.CALIBRATED_PDF,
-            coverage = bounds,
-            calibration = Calibration.Fiduciaries(fiduciaries, transform),
-            pageInfo = info
+            calibration = Calibration.Fiduciaries(fiduciaries, georef),
+            geometry = geometry,
+            entryId = entryId,
+            pageIndex = pageIndex,
+            contentKey = contentKey,
+            // a new georef makes any baked tiles wrong, reconcile reaps the file
+            render = render.copy(bake = null),
         )
     }
 
-    companion object {
-        /** Placeholder factory used by Import flow. */
-        fun placeholder(uri: Uri, name: String): PdfMapSource =
-            PdfMapSource(uri, name, MapSourceKind.CALIBRATED_PDF, null, null)
+    /** same map as far as the UI is concerned (same id), just new render bits (a bake landed, say) */
+    fun withRender(meta: PdfRenderMeta): PdfMapSource = PdfMapSource(
+        uri, displayName, kind, calibration, geometry, provisional, georefIssue, pendingFiduciaries,
+        entryId, pageIndex, contentKey, isPreview, meta, id,
+    )
 
-        fun imported(
+    /**
+     * the same sheet drawn on [georef] instead (calibration's displayed georef), no bake.
+     * the tile runtime keys on the placement so this gets its own tile source
+     */
+    fun drawnOn(georef: PdfGeoreference): PdfMapSource = PdfMapSource(
+        uri = uri,
+        displayName = displayName,
+        kind = kind,
+        calibration = null,
+        geometry = geometry,
+        provisional = georef,
+        georefIssue = georefIssue,
+        entryId = entryId,
+        pageIndex = pageIndex,
+        contentKey = contentKey,
+        isPreview = isPreview,
+        render = render.copy(bake = null),
+        id = id,
+    )
+
+    companion object {
+        fun geoPdf(
             uri: Uri,
             name: String,
-            center: Wgs84Coordinate,
-            pageInfo: PdfPageInfo
-        ): PdfMapSource =
-            PdfMapSource(
-                uri = uri,
-                displayName = name,
-                kind = MapSourceKind.CALIBRATED_PDF,
-                coverage = fallbackBounds(center, pageInfo.aspectRatio),
-                calibration = null,
-                pageInfo = pageInfo
-            )
+            georef: PdfGeoreference,
+            geometry: PdfPageGeometry,
+            render: PdfRenderMeta = PdfRenderMeta(),
+        ): PdfMapSource = PdfMapSource(uri, name, MapSourceKind.GEO_PDF, Calibration.Parsed(georef), geometry, render = render)
 
-        private fun fallbackBounds(
+        /** uncalibrated, drawn at the provisional 1:50k placement around [center] */
+        fun uncalibrated(
+            uri: Uri,
+            name: String,
+            geometry: PdfPageGeometry,
             center: Wgs84Coordinate,
-            aspectRatio: Double
-        ): Wgs84Bounds {
-            val halfHeightKm = 5.0
-            val halfWidthKm = halfHeightKm * aspectRatio.coerceIn(0.25, 4.0)
-            val latDelta = halfHeightKm / 111.32
-            val lonScale = (111.32 * cos(Math.toRadians(center.latitude))).coerceAtLeast(0.01)
-            val lonDelta = halfWidthKm / lonScale
-            return Wgs84Bounds(
-                southwest = Wgs84Coordinate(center.latitude - latDelta, center.longitude - lonDelta),
-                northeast = Wgs84Coordinate(center.latitude + latDelta, center.longitude + lonDelta)
-            )
-        }
+            issue: PdfGeorefIssue,
+            pendingFiduciaries: List<Fiduciary> = emptyList(),
+            render: PdfRenderMeta = PdfRenderMeta(),
+        ): PdfMapSource = PdfMapSource(
+            uri = uri,
+            displayName = name,
+            kind = MapSourceKind.CALIBRATED_PDF,
+            calibration = null,
+            geometry = geometry,
+            provisional = PdfGeoreference.provisional(center, geometry.visibleCrop(), geometry.rotation),
+            georefIssue = issue,
+            pendingFiduciaries = pendingFiduciaries,
+            render = render.copy(bake = null),
+        )
     }
-}
-
-/** Final fail-closed boundary before an affine becomes live map state. */
-internal fun calibratedPdfBounds(
-    transform: AffineTransform2D,
-    pageInfo: PdfPageInfo,
-): Wgs84Bounds? {
-    val width = pageInfo.pageWidth.toDouble()
-    val height = pageInfo.pageHeight.toDouble()
-    if (!width.isFinite() || !height.isFinite() ||
-        width <= 0.0 || height <= 0.0 ||
-        width > MAX_SAFE_PDF_COORDINATE || height > MAX_SAFE_PDF_COORDINATE ||
-        !transform.hasFiniteCoefficients() || transform.inverted() == null
-    ) return null
-    val corners = listOf(
-        transform.apply(0.0, 0.0),
-        transform.apply(width, 0.0),
-        transform.apply(width, height),
-        transform.apply(0.0, height),
-    )
-    if (corners.any { !it.isValidEarthCoordinate() }) return null
-    val lats = corners.map { it.latitude }
-    val lons = corners.map { it.longitude }
-    val minLat = lats.min()
-    val maxLat = lats.max()
-    val minLon = lons.min()
-    val maxLon = lons.max()
-    if (minLat >= maxLat || minLon >= maxLon) return null
-    return Wgs84Bounds(
-        southwest = Wgs84Coordinate(minLat, minLon),
-        northeast = Wgs84Coordinate(maxLat, maxLon),
-    )
 }

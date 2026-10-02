@@ -139,12 +139,16 @@ class RenderMathTest {
     }
 
     @Test fun zoomZeroSeesTheSingleWorldTile() {
+        // a 400 dp viewport is wider than the 256 dp world at z0, so the one tile shows up
+        // in the neighbouring unwrapped columns too (WP2: columns stay unwrapped, x wraps)
         val tiles = TileMath.visibleTiles(camera().copy(zoom = 0.0), 0)
-        assertEquals(listOf(TileIndex(0, 0, 0)), tiles)
+        assertEquals(setOf(TileIndex(0, 0, 0)), tiles.map { it.index }.toSet())
+        assertEquals(VisibleTile(TileIndex(0, 0, 0), 0, 0), tiles.first())
+        assertEquals(listOf(-1, 0, 1), tiles.map { it.col }.sorted())
     }
 
     @Test fun originAtZoomOneTouchesTheFourCentreTiles() {
-        val tiles = TileMath.visibleTiles(camera().copy(zoom = 1.0), 1).toSet()
+        val tiles = TileMath.visibleTiles(camera().copy(zoom = 1.0), 1).map { it.index }.toSet()
         assertEquals(
             setOf(TileIndex(1, 0, 0), TileIndex(1, 1, 0), TileIndex(1, 0, 1), TileIndex(1, 1, 1)),
             tiles
@@ -154,7 +158,7 @@ class RenderMathTest {
     @Test fun allVisibleTilesAreInRange() {
         for (z in 1..12) {
             val cam = camera().copy(centerLat = 37.0, centerLon = -122.0, zoom = z.toDouble())
-            val tiles = TileMath.visibleTiles(cam, z)
+            val tiles = TileMath.visibleTiles(cam, z).map { it.index }
             val n = 1 shl z
             assertTrue("z=$z saw no tiles", tiles.isNotEmpty())
             tiles.forEach {
@@ -173,9 +177,7 @@ class RenderMathTest {
 
     @Test fun tileFrameEdgeScalesWithFractionalZoom() {
         val cam = camera().copy(centerLat = 37.0, centerLon = -122.0, zoom = 10.0)
-        val tile = TileIndex(10, 163, 395)
-        assertEquals(256.0, TileMath.tileFrame(tile, cam).edge, eps)
-        assertEquals(256.0 * Math.sqrt(2.0),
-            TileMath.tileFrame(tile, cam.copy(zoom = 10.5)).edge, eps)
+        assertEquals(256.0, TileGrid(cam, 10).edge, eps)
+        assertEquals(256.0 * Math.sqrt(2.0), TileGrid(cam.copy(zoom = 10.5), 10).edge, eps)
     }
 }

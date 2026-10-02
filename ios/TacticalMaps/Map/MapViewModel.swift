@@ -9,95 +9,68 @@ struct MapSelectionPersistenceIssue: Identifiable, Equatable {
     var message: String { pendingMessage.text }
 }
 
-enum MapSelectionCommitFailure: Equatable {
-    case pdfSession
-    case selector
-    case pdfSessionRollback
+enum LibraryLoadStatus: Equatable {
+    /// restore hasn't run yet (or migration is still going)
+    case unknown
+    case loaded
+    case locked
+    case corrupt
 }
 
-enum MapSelectionCommitResult: Equatable {
-    case succeeded
-    case failed(MapSelectionCommitFailure)
-}
+/// Everything the map selection touches outside memory, injectable for tests.
+struct LibraryDependencies {
+    var load: () -> SafeStore.Load<LibraryState>
+    var write: (LibraryState) throws -> Void
+    var reconcile: (LibraryState) -> Bool
+    var legacyPresent: () -> Bool
+    var clearLegacy: () -> Void
+    var fileStatus: (ImportedMapEntry) -> ImportedMapFileStatus
+    var fileURL: (ImportedMapEntry) -> URL?
+    /// SHA-256 the file on a utility queue, true when it still matches contentKey
+    var verify: (URL, String, @escaping (Bool) -> Void) -> Void
+    var unlink: (URL) -> Void
+    var drafts: CalibrationDraftStoring
+    var sweepBackup: () -> Void
+    var recoverInterruptedImport: () -> Bool
+    /// R3-2 bake only sweep, keeping these names. Only ever handed the names of
+    /// an authoritative library read
+    var sweepBakes: (Set<String>) -> Bool = { _ in false }
+    /// Remove Offline Tiles / Delete: the bake file + sidecars, R3-5 names only
+    var removeBakeFile: (PDFBakeRecord) -> Void = { _ in }
+    /// S2: the candidate library rebuilt from the files on disk (slow, off main)
+    var rebuild: (Set<URL>) -> LibraryState = { ImportedMapLibraryRecovery.rebuild(inFlight: $0) }
+    /// S2: the rebuild's one write, never on top of unread bytes
+    var writeRebuilt: (LibraryState) throws -> Void = ImportedMapLibrary.writeRebuilt
+    /// where the slow rebuild runs, tests make it synchronous
+    var background: (@escaping () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) }
+    var foreground: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
 
-/// Single persist-before-publication boundary for every active-map change.
-/// Generic source values keep the ordering contract independently testable
-/// without replacing production MapSource implementations with test doubles.
-final class ActiveMapSelectionCommitCoordinator<Source> {
-    private let persistSelection: (Source, Bool) -> Bool
-    private let publish: (Source) -> Void
-
-    init(persistSelection: @escaping (Source, Bool) -> Bool,
-         publish: @escaping (Source) -> Void) {
-        self.persistSelection = persistSelection
-        self.publish = publish
-    }
-
-    func select(_ source: Source,
-                clearRetained: Bool = false) -> MapSelectionCommitResult {
-        guard persistSelection(source, clearRetained) else {
-            return .failed(.selector)
+    static let live = LibraryDependencies(
+        load: ImportedMapLibrary.load,
+        write: ImportedMapLibrary.write,
+        reconcile: { ImportedMapLibrary.reconcile($0) },
+        legacyPresent: { ImportedMapLibraryMigration.legacyPresent },
+        clearLegacy: ImportedMapLibraryMigration.clearLegacy,
+        fileStatus: ImportedMapLibrary.fileStatus,
+        fileURL: ImportedMapLibrary.fileURL,
+        verify: { url, key, done in
+            DispatchQueue.global(qos: .utility).async {
+                let ok = PDFSessionStore.contentKey(for: url) == key
+                DispatchQueue.main.async { done(ok) }
+            }
+        },
+        unlink: { ImportedMapStorage.unlink($0) },
+        drafts: CalibrationDraftStore.shared,
+        sweepBackup: { DispatchQueue.global(qos: .utility).async { ImportedMapStorage.sweepBackupExclusion() } },
+        recoverInterruptedImport: MapImportPipeline.recoverInterruptedImport,
+        sweepBakes: { names in
+            ManagedImportedMapFileLifecycle.sweepUnreferencedBakes(in: ImportedMapLibrary.offlineTilesDirectory,
+                                                                   keepingNames: names)
+        },
+        removeBakeFile: { record in
+            ManagedImportedMapFileLifecycle.removeGeneratedBake(record, in: ImportedMapLibrary.offlineTilesDirectory)
         }
-        publish(source)
-        return .succeeded
-    }
-
-    func activatePDF(_ source: Source,
-                     persistSession: () -> Bool,
-                     rollbackSession: () -> Bool) -> MapSelectionCommitResult {
-        // PDF metadata and the active/retained selector live in separate sealed
-        // stores. Session-first prevents a durable `.pdf` selector from ever
-        // pointing at missing metadata; an in-process selector failure restores
-        // the exact prior encrypted session. A process kill between these two
-        // writes is the bounded crash window: no uncommitted source reaches the
-        // running UI, but v2's generic `.pdf` selector cannot distinguish two
-        // PDF sessions if the previous active source was also a PDF. The test
-        // below locks this ordering down; closing that process-death-only window
-        // fully would require a future journaled schema shared by both stores.
-        guard persistSession() else {
-            return .failed(rollbackSession() ? .pdfSession : .pdfSessionRollback)
-        }
-        guard persistSelection(source, false) else {
-            return .failed(rollbackSession() ? .selector : .pdfSessionRollback)
-        }
-        publish(source)
-        return .succeeded
-    }
-
-    /// Cold restore publishes a source only after the persistence adapter has
-    /// authenticated and resolved its already-durable descriptor.
-    func publishRestored(_ source: Source) {
-        publish(source)
-    }
-}
-
-struct MapSelectionDependencies {
-    var persistSelection: (MapSource, Bool) -> Bool
-    var restoreActive: () -> ActiveMapSelectionStore.RestoreResult
-    var restoreRetained: () -> ActiveMapSelectionStore.RetainedRestoreResult
-    var removeRetained: (Bool) throws -> Void
-    var snapshotPDFSession: () -> PDFSessionStore.ActiveSessionSnapshot
-    var persistPDFSession: (PDFMapSource) -> Bool
-    var restorePDFSession: (PDFSessionStore.ActiveSessionSnapshot) -> Bool
-    var reconcileManagedMapFiles: () -> Bool = { false }
-
-    static let live = MapSelectionDependencies(
-        persistSelection: { ActiveMapSelectionStore.save($0, clearRetained: $1) },
-        restoreActive: ActiveMapSelectionStore.restore,
-        restoreRetained: ActiveMapSelectionStore.restoreRetained,
-        removeRetained: ActiveMapSelectionStore.removeRetainedMap,
-        snapshotPDFSession: PDFSessionStore.snapshotActiveSession,
-        persistPDFSession: PDFSessionStore.save,
-        restorePDFSession: PDFSessionStore.restoreActiveSession,
-        reconcileManagedMapFiles: ActiveMapSelectionStore.reconcileManagedImportedMapFiles
     )
-}
-
-private enum PendingMapSelectionTransition {
-    case activate(MapSource, pdfSessionAlreadyPersisted: Bool)
-    case restoreActive
-    case deleteImported(MapSource, OnlineRasterBasemapSource)
-    case removeUnavailableRetainedEntry
 }
 
 /// Owns map camera state, browse-mode toggle, MGRS readout, compass heading,
@@ -183,23 +156,60 @@ final class MapViewModel: ObservableObject {
     let cameraRequests     = PassthroughSubject<MKCoordinateRegion, Never>()
     let resetNorthRequests = PassthroughSubject<Void, Never>()
     let headingRequests    = PassthroughSubject<CLLocationDirection, Never>()
+    /// exact centre/zoom/heading, for the debug camera hook (zoom still clamped by the view)
+    let exactCameraRequests = PassthroughSubject<(center: CLLocationCoordinate2D, zoom: Double, heading: Double), Never>()
+
+    // MARK: - Imported PDF rendering (WP2)
+
+    /// live PDF tile source + render status for the header
+    let pdfRuntime = PDFMapRuntime()
+
+    /// launch decided not to auto-draw this map (it was being drawn when the
+    /// app died). The durable selection still points at it.
+    @Published var pdfCrashSuspect: PDFMapSource?
+
+    /// one shot launch notices from the crash guard. An interrupted import and
+    /// an interrupted bake can both fire on one launch (K1), they queue and show
+    /// one after the other, after the crash suspect alert if there is one
+    enum PDFLaunchNotice: Equatable { case importInterrupted, bakeInterrupted }
+    @Published private(set) var pdfLaunchNotice: PDFLaunchNotice?
+    private(set) var queuedLaunchNotices: [PDFLaunchNotice] = []
+
+    /// last online style actually shown this launch, H1 prefers it
+    private var lastOnlineStyle: BasemapStyle?
+
+    /// the guard decides once per launch, on the first restore that knows
+    /// what map (if any) it restored
+    private var pdfGuardDecided = false
+    var pdfRenderGuard: PDFRenderGuard = .shared
+    /// whose estimate / bake gets cancelled when its map is deleted. tests swap it
+    var bakeController: PDFBakeController = .shared
+    private var pdfRuntimeSink: AnyCancellable?
 
     // MARK: - Dependencies
 
     private let elevationService = ElevationService()
     private var elevationCancellable: AnyCancellable?
     private var elevationTask: Task<Void, Never>?
-    private let mapSelectionDependencies: MapSelectionDependencies
-    private var pendingMapSelectionTransition: PendingMapSelectionTransition?
-    private lazy var mapSelectionCoordinator = ActiveMapSelectionCommitCoordinator<MapSource>(
-        persistSelection: mapSelectionDependencies.persistSelection,
-        publish: { [weak self] source in self?.publishMapSource(source) }
-    )
+    private let libraryDependencies: LibraryDependencies
 
-    init(mapSelectionDependencies: MapSelectionDependencies = .live,
+    init(libraryDependencies: LibraryDependencies = .live,
          initialMapSource: MapSource = OnlineRasterBasemapSource.makeDefault()) {
-        self.mapSelectionDependencies = mapSelectionDependencies
+        self.libraryDependencies = libraryDependencies
         self.mapSource = initialMapSource
+        if let online = initialMapSource as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
+        // header label + the map container follow the PDF render status
+        pdfRuntimeSink = pdfRuntime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        // OD-F4: Try Again found the right bytes again (or didnt), the row follows
+        pdfRuntime.onStoredFileVerdict = { [weak self] pdf, ok in
+            guard let self, let id = pdf.entryID else { return }
+            if ok {
+                self.tamperedEntryIDs.remove(id)
+                self.refreshFileStamp(id, url: pdf.url)
+            } else if pdf.contentKey != nil {
+                self.tamperedEntryIDs.insert(id)
+            }
+        }
         // Debounce camera-centre changes, only hit the DEM once user
         // stops panning for 400ms. Skips no-op changes (<0.0001deg ~ 11m).
         let settledCamera = $cameraCentre
@@ -223,190 +233,718 @@ final class MapViewModel: ObservableObject {
             }
     }
 
-    // MARK: - Durable map selection
+    // MARK: - Imported map library (the ONE authority for the active map, s8.2)
 
-    /// Select/import a source. PDF metadata and the selector are committed as
-    /// one publication transaction; MBTiles sandbox validation remains inside
-    /// ActiveMapSelectionStore before its descriptor can become active.
-    @discardableResult
-    func selectMapSource(_ source: MapSource) -> Bool {
-        executeMapSelectionTransition(
-            .activate(source, pdfSessionAlreadyPersisted: false)
-        )
+    /// Loaded library, nil until restore ran (or while locked/corrupt).
+    @Published private(set) var library: LibraryState?
+    @Published private(set) var libraryStatus: LibraryLoadStatus = .unknown
+    /// entries whose bytes stopped matching their content key this launch
+    @Published private(set) var tamperedEntryIDs: Set<UUID> = []
+    /// bumped whenever drafts change so Layers re-reads the subtitles
+    @Published private(set) var draftsEpoch = 0
+
+    /// Shown while a calibration runs (s2.3): it ignores the first fix and
+    /// keeps the header on the crosshair.
+    @Published var calibrationActive = false {
+        didSet { if calibrationActive { isBrowsing = true } }
+    }
+    /// What "Add point" reads, wired by the map container (live camera, no debounce).
+    var calibrationCapture: (() -> CalibrationCapture?)?
+    let zoomStepRequests = PassthroughSubject<Double, Never>()
+    let centreRequests = PassthroughSubject<CLLocationCoordinate2D, Never>()
+
+    /// where to go back to after a non-durable calibration display
+    private var calibrationReturn: MapSource?
+    /// C3: the durable selection when that display went up. A restore that
+    /// reads the same one back leaves the calibration alone
+    private var calibrationDurableSelection: MapSelection?
+    private var pendingRetry: (() -> Bool)?
+    /// S7: an import copy whose library write failed, kept (in flight) for Retry.
+    /// Not Now drops it
+    private var pendingImportCopy: URL?
+    private var rebuildInFlight = false
+
+    /// F3: Retry on a locked library re-runs the migration + restore, which
+    /// ContentView owns (it's slow). Nil = just restore again
+    var reloadRequested: (() -> Void)?
+    var resumeCalibrationRequested: ((UUID) -> Void)?
+
+    /// M10: E3 auto-resume waits while any crash suspect is pending, the
+    /// durable one held back or a preview's (C8)
+    var crashSuspectPending: Bool { pdfCrashSuspect != nil || pdfRenderGuard.suspect != nil }
+
+    var drafts: CalibrationDraftStoring { libraryDependencies.drafts }
+
+    func entry(_ id: UUID) -> ImportedMapEntry? { library?.entry(id) }
+
+    func fileStatus(_ e: ImportedMapEntry) -> ImportedMapFileStatus {
+        tamperedEntryIDs.contains(e.id) ? .sizeOrMtimeMismatch : libraryDependencies.fileStatus(e)
+    }
+
+    func fileURL(_ e: ImportedMapEntry) -> URL? { libraryDependencies.fileURL(e) }
+
+    /// the source that shows an entry at its effective georef, nil when it can't.
+    /// allowUnavailable (OD-F4, PDFs only): a missing / changed file still gets
+    /// a source, flagged, so the renderer fails it as cannotOpen and Try Again
+    /// can recover once the exact bytes are back. Never draws other bytes
+    func source(for e: ImportedMapEntry, georef: PdfGeoreference? = nil, allowUnavailable: Bool = false) -> MapSource? {
+        let status = fileStatus(e)
+        guard let url = libraryDependencies.fileURL(e) else { return nil }
+        switch e.kind {
+        case .pdf:
+            guard status == .ok || (allowUnavailable && e.contentKey != nil) else { return nil }
+            guard let g = georef ?? e.pdf?.effectiveGeoref else { return nil }
+            // a bake only ever belongs to the effective georef, a calibration
+            // display draws live (its own key wouldnt match anyway)
+            let bake = (georef == nil || georef == e.pdf?.effectiveGeoref) ? e.pdf?.validBake : nil
+            let src = PDFMapSource(url: url, georef: g, contentKey: e.contentKey, entryID: e.id,
+                                   displayName: e.displayName, renderGuardToken: e.renderGuardToken, bake: bake)
+            src.storedFileUnavailable = status != .ok
+            return src
+        case .mbtiles:
+            guard status == .ok else { return nil }
+            return OfflineTileMapSource(url: url, entryID: e.id, displayName: e.displayName)
+        }
+    }
+
+    var activeEntryID: UUID? {
+        (mapSource as? PDFMapSource)?.entryID ?? (mapSource as? OfflineTileMapSource)?.entryID
     }
 
     @discardableResult
     func selectOnlineBasemap(_ style: BasemapStyle) -> Bool {
-        selectMapSource(OnlineRasterBasemapSource(style))
-    }
-
-    @discardableResult
-    func restoreRetainedMap(_ source: MapSource) -> Bool {
-        executeMapSelectionTransition(
-            .activate(source, pdfSessionAlreadyPersisted: source is PDFMapSource)
-        )
-    }
-
-    /// Authenticates/resolves the durable active descriptor before publication.
-    /// Locked or corrupt storage leaves the known-good in-memory default visible
-    /// and exposes the same retry transition used by write failures.
-    @discardableResult
-    func restoreActiveMapSelection() -> MapSource? {
-        switch mapSelectionDependencies.restoreActive() {
-        case .restored(let source):
-            mapSelectionCoordinator.publishRestored(source)
-            pendingMapSelectionTransition = nil
-            mapSelectionPersistenceIssue = nil
-            _ = mapSelectionDependencies.reconcileManagedMapFiles()
-            return source
-        case .noSelection:
-            pendingMapSelectionTransition = nil
-            _ = mapSelectionDependencies.reconcileManagedMapFiles()
-            return nil
-        case .unavailable:
-            reportMapSelectionIssue(
-                transition: .restoreActive,
-                message: Messages.displayTheSavedBasemapIsLockedOrUnreadableUnlockMissionMessage()
-            )
-            return nil
+        execute(.selectOnline(style)) { _, _ in
+            // C4: a calibration display has nothing to go back to now
+            self.clearCalibrationReturn()
+            self.publishMapSource(OnlineRasterBasemapSource(style))
         }
     }
 
-    func restoreRetainedMapSelection() -> ActiveMapSelectionStore.RetainedRestoreResult {
-        let result = mapSelectionDependencies.restoreRetained()
-        _ = mapSelectionDependencies.reconcileManagedMapFiles()
-        return result
-    }
-
-    /// Switches to an online source durably before releasing an active MBTiles
-    /// SQLite handle. Only then may the store validate and delete its managed
-    /// backing file.
     @discardableResult
-    func deleteRetainedImportedMap(_ retainedSource: MapSource,
-                                   returningTo style: BasemapStyle = OnlineRasterBasemapSource.defaultStyle) -> Bool {
-        executeMapSelectionTransition(
-            .deleteImported(retainedSource, OnlineRasterBasemapSource(style))
-        )
-    }
-
-    @discardableResult
-    func removeUnavailableRetainedMapEntry() -> Bool {
-        executeMapSelectionTransition(.removeUnavailableRetainedEntry)
-    }
-
-    @discardableResult
-    func retryMapSelectionPersistence() -> Bool {
-        guard let pendingMapSelectionTransition else { return false }
-        return executeMapSelectionTransition(pendingMapSelectionTransition)
-    }
-
-    func dismissMapSelectionPersistenceIssue() {
-        mapSelectionPersistenceIssue = nil
-    }
-
-    private func executeMapSelectionTransition(_ transition: PendingMapSelectionTransition) -> Bool {
-        let outcome: MapSelectionCommitResult
-        switch transition {
-        case .activate(let source, let pdfSessionAlreadyPersisted):
-            if let pdf = source as? PDFMapSource, !pdfSessionAlreadyPersisted {
-                let snapshot = mapSelectionDependencies.snapshotPDFSession()
-                outcome = mapSelectionCoordinator.activatePDF(
-                    source,
-                    persistSession: { self.mapSelectionDependencies.persistPDFSession(pdf) },
-                    rollbackSession: {
-                        self.mapSelectionDependencies.restorePDFSession(snapshot)
-                    }
-                )
-            } else {
-                outcome = mapSelectionCoordinator.select(source)
+    func activateLibraryEntry(_ id: UUID, reframe: Bool = true) -> Bool {
+        guard let e = library?.entry(id), let source = source(for: e) else { return false }
+        return execute(.activateEntry(id)) { _, _ in
+            self.clearCalibrationReturn()
+            // picking the held back map by hand is Open Anyway (same as Android)
+            if let suspect = self.pdfCrashSuspect, suspect.entryID == id {
+                self.pdfRenderGuard.resolveSuspect(.openAnyway)
+                self.pdfCrashSuspect = nil
+                self.showNextLaunchNotice(after: 0.35)
             }
+            self.publishMapSource(source, reframe: reframe)
+        }
+    }
 
-        case .restoreActive:
-            return restoreActiveMapSelection() != nil
+    /// import commit: one write adds the entry (+ makes it active). ownsCopy =
+    /// the in-flight copy behind it: released once it's in the library, kept for
+    /// the Retry when the write fails, dropped on Not Now (S7)
+    @discardableResult
+    func addImportedEntry(_ e: ImportedMapEntry, activate: Bool, ownsCopy copy: URL? = nil) -> Bool {
+        let shown = activate ? source(for: e) : nil
+        let ok = execute(.addEntry(e, activate: activate && shown != nil)) { _, _ in
+            if let copy {
+                InFlightImportFiles.unregister(copy)
+                if self.pendingImportCopy == copy { self.pendingImportCopy = nil }
+            }
+            if let shown { self.publishMapSource(shown) }
+        }
+        if !ok, let copy {
+            // a refused transition (library full etc) has no Retry, the copy goes now
+            if mapSelectionPersistenceIssue == nil { ImportedMapStorage.unlink(copy); InFlightImportFiles.unregister(copy) } else { pendingImportCopy = copy }
+        }
+        return ok
+    }
 
-        case .deleteImported(let retainedSource, let onlineSource):
-            // If the imported source is visible, commit and publish online first
-            // so its renderer releases the SQLite/PDF resource before deletion.
-            if mapSource is PDFMapSource || mapSource is OfflineTileMapSource {
-                let switchOutcome = mapSelectionCoordinator.select(onlineSource)
-                guard switchOutcome == .succeeded else {
-                    reportMapSelectionFailure(switchOutcome, transition: transition)
-                    return false
+    /// E9: a re-import of an unavailable entry brought its exact bytes back.
+    /// One write points the entry at the new copy, the old file goes with the
+    /// reconcile after it, calibration and bake record stay
+    @discardableResult
+    func relinkLibraryEntry(_ id: UUID, to copy: URL, byteCount: Int64, modifiedAtMs: Int64) -> Bool {
+        guard let rel = ImportedMapStorage.relativePath(for: copy) else { return false }
+        let ok = execute(.relink(id, fileName: rel, byteCount: byteCount, modifiedAtMs: modifiedAtMs)) { _, _ in
+            InFlightImportFiles.unregister(copy)
+            if self.pendingImportCopy == copy { self.pendingImportCopy = nil }
+            self.tamperedEntryIDs.remove(id)
+        }
+        if !ok {
+            if mapSelectionPersistenceIssue == nil { ImportedMapStorage.unlink(copy); InFlightImportFiles.unregister(copy) } else { pendingImportCopy = copy }
+        }
+        return ok
+    }
+
+    /// Finish: manual calibration + active = entry in one write, then show it
+    /// without moving the camera (s2.6)
+    @discardableResult
+    func commitCalibration(entryID: UUID, manual: ManualCalibration, contentKey: String, pageIndex: Int) -> Bool {
+        // the session shows its own save-failed alert with Retry, no second one here
+        execute(.commitCalibration(entryID, manual, contentKey: contentKey, pageIndex: pageIndex),
+                reportFailure: false) { next, _ in
+            self.clearCalibrationReturn()
+            if let e = next.entry(entryID), let src = self.source(for: e) {
+                self.publishMapSource(src, reframe: false)
+            }
+        }
+    }
+
+    @discardableResult
+    func revertToEmbedded(_ id: UUID) -> Bool {
+        execute(.revertToEmbedded(id)) { next, _ in
+            guard self.activeEntryID == id else { return }
+            if let e = next.entry(id), let src = self.source(for: e) {
+                self.publishMapSource(src, reframe: false)
+            } else {
+                self.publishMapSource(OnlineRasterBasemapSource(next.preferredStyle))
+            }
+        }
+    }
+
+    /// P1 change page: new page + its own georef, the calibration and its drafts go
+    @discardableResult
+    func changePage(_ id: UUID, pageIndex: Int, rotate: Int, pageBox: [PdfPagePoint],
+                    embedded: PdfGeoreference?, embeddedIssue: String?) -> Bool {
+        let old = library?.entry(id)
+        return execute(.changePage(id, pageIndex: pageIndex, rotate: rotate, pageBox: pageBox,
+                                   embedded: embedded, embeddedIssue: embeddedIssue)) { next, _ in
+            if let key = old?.contentKey, let oldPage = old?.pdf?.pageIndex {
+                self.libraryDependencies.drafts.delete(contentKey: key, pageIndex: oldPage)
+                self.draftsEpoch &+= 1
+            }
+            guard self.activeEntryID == id else { return }
+            if let e = next.entry(id), let src = self.source(for: e) {
+                self.publishMapSource(src)
+            } else {
+                self.publishMapSource(OnlineRasterBasemapSource(next.preferredStyle))
+            }
+        }
+    }
+
+    // MARK: - WP2 bake records (on the PDF entry, M1-M6)
+
+    /// S1 publish step of a bake: the record lands on the entry only if it's
+    /// still the bytes + token + georef the bake was made from. One write,
+    /// the active map doesn't change. Main thread, same as the publish
+    func attachBake(_ record: PDFBakeRecord, for pdf: PDFMapSource) -> PDFBakeController.AttachOutcome {
+        // R6: a library we cant write is a write problem, not another map
+        guard libraryStatus == .loaded, let current = library else { return .writeFailed }
+        guard let id = pdf.entryID else { return .sourceChanged }
+        let next: LibraryState
+        do {
+            next = try LibraryReducer.apply(.attachBake(id, record, contentKey: pdf.contentKey,
+                                                        renderGuardToken: pdf.renderGuardToken), to: current).state
+        } catch LibraryTransitionError.invalidBake {
+            return .writeFailed
+        } catch {
+            return .sourceChanged
+        }
+        do {
+            try libraryDependencies.write(next)
+        } catch {
+            return .writeFailed
+        }
+        removeKnownSupersededBakes(from: current, to: next)
+        library = next
+        // a previous bake of this map is unreferenced now, this reaps it
+        if next.permitsCleanup { _ = libraryDependencies.reconcile(next) }
+        return .attached
+    }
+
+    /// Remove Offline Tiles step 1: clear the record (one write). false = nothing
+    /// changed and the usual Retry is up, the caller then deletes nothing
+    func detachBake(_ record: PDFBakeRecord, from pdf: PDFMapSource) -> Bool {
+        guard let id = pdf.entryID else { return false }
+        return execute(.removeBake(id, record)) { _, _ in }
+    }
+
+    /// the runtime hashed the file back to its content key (OD-F4 recovery): a
+    /// stale size/mtime in the entry would keep the row unavailable, take the
+    /// new one. Nothing to do when the stamp still matches
+    private func refreshFileStamp(_ id: UUID, url: URL) {
+        guard let e = library?.entry(id), libraryDependencies.fileStatus(e) == .sizeOrMtimeMismatch,
+              let v = try? url.resourceValues(forKeys: [.fileSizeKey]), let size = v.fileSize else { return }
+        _ = execute(.refreshFileStamp(id, byteCount: Int64(size), modifiedAtMs: ImportedMapStorage.modifiedAtMs(url)),
+                    reportFailure: false) { _, _ in }
+    }
+
+    /// what the R3-2 sweep may keep, nil when the library can't be trusted right now
+    func bakeNamesForSweep() -> Set<String>? {
+        guard libraryStatus == .loaded, let s = library, s.permitsCleanup else { return nil }
+        return ImportedMapLibrary.bakeFileNames(s)
+    }
+
+    /// hooks the shared bake controller up to the library (ContentView does
+    /// this once). Until then the controller fails closed
+    func bindBakeController(_ c: PDFBakeController) {
+        c.attachRecord = { [weak self] record, pdf, _ in self?.attachBake(record, for: pdf) ?? .writeFailed }
+        c.detachRecord = { [weak self] record, pdf in self?.detachBake(record, from: pdf) ?? false }
+        c.storedBake = { [weak self] in self?.bakeNamesForSweep() }
+    }
+
+    /// s8.2 delete: one write, publish online if it was showing, close SQLite,
+    /// drop the drafts, unlink the files (+ sidecars) and their bakes, reconcile.
+    /// WP2 F7: an estimate / bake for that PDF stops first. One write is the
+    /// commit point, a failed one deletes nothing and offers Retry
+    @discardableResult
+    func deleteLibraryEntry(_ id: UUID) -> Bool {
+        let showing = activeEntryID
+        if let e = library?.entry(id), e.kind == .pdf,
+           let pdf = source(for: e, allowUnavailable: true) as? PDFMapSource {
+            bakeController.cancel(for: pdf)
+        }
+        return execute(.deleteEntry(id)) { next, removed in
+            let ids = Set(removed.map(\.id))
+            if let showing, ids.contains(showing) {
+                self.clearCalibrationReturn()
+                self.publishMapSource(OnlineRasterBasemapSource(next.preferredStyle))
+            }
+            // F4: the suspect went (from the crash alert, or its Retry after a
+            // failed write): the guard hears deleted, the alert comes down
+            if let suspect = self.pdfRenderGuard.suspect, removed.contains(where: { $0.renderGuardToken == suspect }) {
+                self.pdfRenderGuard.resolveSuspect(.deleted)
+                if self.pdfCrashSuspect != nil {
+                    self.pdfCrashSuspect = nil
+                    self.showNextLaunchNotice(after: 0.35)
                 }
             }
-            (retainedSource as? OfflineTileMapSource)?.closeForDeletion()
-            do {
-                try mapSelectionDependencies.removeRetained(true)
-                _ = mapSelectionDependencies.reconcileManagedMapFiles()
-                pendingMapSelectionTransition = nil
-                mapSelectionPersistenceIssue = nil
-                return true
-            } catch {
-                reportMapSelectionIssue(
-                    transition: transition,
-                    message: Messages.displayTheImportedMapCouldNotBeDeletedSecurelyTheMessage("").withArgument(0, error.displayMessage)
-                )
-                return false
+            for e in removed {
+                if let key = e.contentKey, e.kind == .pdf { self.libraryDependencies.drafts.deleteAll(contentKey: key) }
+                if let url = self.libraryDependencies.fileURL(e) { self.libraryDependencies.unlink(url) }
+                // its baked tiles go straight away, not on some later reconcile
+                if let bake = e.pdf?.validBake { self.libraryDependencies.removeBakeFile(bake) }
             }
-
-        case .removeUnavailableRetainedEntry:
-            do {
-                try mapSelectionDependencies.removeRetained(false)
-                _ = mapSelectionDependencies.reconcileManagedMapFiles()
-                pendingMapSelectionTransition = nil
-                mapSelectionPersistenceIssue = nil
-                return true
-            } catch {
-                reportMapSelectionIssue(
-                    transition: transition,
-                    message: Messages.displayTheUnavailableSavedMapEntryCouldNotBeRemovedMessage("").withArgument(0, error.displayMessage)
-                )
-                return false
-            }
+            if let suspect = self.pdfCrashSuspect?.entryID, ids.contains(suspect) { self.pdfCrashSuspect = nil }
+            // R3-2: anything a failed unlink left behind goes too (same as Android)
+            if next.permitsCleanup { _ = self.libraryDependencies.sweepBakes(ImportedMapLibrary.bakeFileNames(next)) }
+            self.tamperedEntryIDs.subtract(ids)
+            self.draftsEpoch &+= 1
         }
+    }
 
-        guard outcome == .succeeded else {
-            reportMapSelectionFailure(outcome, transition: transition)
-            return false
+    /// Show an entry at a calibration georef WITHOUT a library write: the
+    /// provisional preview of an uncalibrated PDF, or the page-box display of a
+    /// georeferenced one. Never makes an uncalibrated PDF a durable basemap.
+    @discardableResult
+    func beginCalibrationDisplay(entry e: ImportedMapEntry, georef: PdfGeoreference, reframe: Bool) -> Bool {
+        guard let src = source(for: e, georef: georef) else { return false }
+        if calibrationReturn == nil {
+            calibrationReturn = mapSource
+            calibrationDurableSelection = library?.active
         }
-        pendingMapSelectionTransition = nil
-        mapSelectionPersistenceIssue = nil
-        _ = mapSelectionDependencies.reconcileManagedMapFiles()
+        publishMapSource(src, reframe: false)
+        // frame the whole page, not 1.5 km round the user. the provisional
+        // page is centred on the camera so the user is nearly always "inside" it
+        if reframe { frameCamera(for: src, userLocation: nil) }
         return true
     }
 
-    private func reportMapSelectionFailure(_ outcome: MapSelectionCommitResult,
-                                           transition: PendingMapSelectionTransition) {
-        guard case .failed(let reason) = outcome else { return }
-        let message: LocalizedMessage
-        switch reason {
-        case .pdfSession:
-            message = Messages.displayThePdfMapCouldNotBeSavedForRelaunchMessage()
-        case .selector:
-            message = Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage()
-        case .pdfSessionRollback:
-            message = Messages.displayMapStorageRecoveryDidNotCompleteKeepTheAppMessage()
+    /// leave/suspend: back to what was showing, camera untouched
+    func endCalibrationDisplay() {
+        guard let back = calibrationReturn else { return }
+        clearCalibrationReturn()
+        // the durable entry may have been re-activated, rebuild it from the library
+        if let id = (back as? PDFMapSource)?.entryID ?? (back as? OfflineTileMapSource)?.entryID,
+           let e = library?.entry(id), let fresh = source(for: e) {
+            publishMapSource(fresh, reframe: false)
+        } else {
+            publishMapSource(back, reframe: false)
         }
-        reportMapSelectionIssue(transition: transition, message: message)
     }
 
-    private func reportMapSelectionIssue(transition: PendingMapSelectionTransition,
-                                         message: LocalizedMessage) {
-        pendingMapSelectionTransition = transition
-        mapSelectionPersistenceIssue = MapSelectionPersistenceIssue(
-            id: UUID(),
-            pendingMessage: message
-        )
+    var inCalibrationDisplay: Bool { calibrationReturn != nil }
+
+    /// C4: suspend, a durable change or Use Online Map: nothing to go back to
+    func clearCalibrationReturn() {
+        calibrationReturn = nil
+        calibrationDurableSelection = nil
     }
 
-    private func publishMapSource(_ source: MapSource) {
+    /// C2: starting calibration on the pending crash suspect is the user's
+    /// Open Anyway, same as picking it in Layers. Any other entry leaves it be
+    func resolveSuspectForCalibration(_ id: UUID) {
+        guard let e = library?.entry(id), let suspect = pdfRenderGuard.suspect,
+              suspect == e.renderGuardToken else { return }
+        pdfRenderGuard.resolveSuspect(.openAnyway)
+        if pdfCrashSuspect?.entryID == id {
+            pdfCrashSuspect = nil
+            showNextLaunchNotice(after: 0.35)
+        }
+    }
+
+    /// the entry E3 would reopen right now: the active draft's, if it's still in the library
+    func autoResumeEntry(in s: LibraryState? = nil) -> ImportedMapEntry? {
+        guard let s = s ?? library, let d = drafts.activeDraft() else { return nil }
+        return s.entries.first { $0.contentKey == d.contentKey && $0.pdf?.pageIndex == d.pageIndex }
+    }
+
+    func noteDraftsChanged() { draftsEpoch &+= 1 }
+
+    // MARK: - restore
+
+    enum RestoreOutcome: Equatable {
+        case restored
+        case nothing
+        case locked
+        case corrupt
+    }
+
+    /// Launch / unlock restore (s8.2): load, publish the active entry from a
+    /// size+mtime check only, reconcile, prune drafts, then hash the active file
+    /// once on a utility queue. Migration must have run already (it's slow).
+    @discardableResult
+    func restoreActiveMapSelection() -> RestoreOutcome {
+        let load = libraryDependencies.load()
+        // R3-2: bake only sweep on every restore (launch, unlock, Retry). Only on an
+        // authoritative read, locked / corrupt / migration pending deletes nothing.
+        // It doesn't need the PDF to be there
+        if case .read(let names) = ImportedMapLibrary.bakeAuthority(load, legacyPresent: libraryDependencies.legacyPresent()) {
+            _ = libraryDependencies.sweepBakes(names)
+        }
+        switch load {
+        case .empty where libraryDependencies.legacyPresent():
+            // the old stores still hold maps the migration couldn't move yet (key
+            // locked, unreadable or quarantined): no writes until it has, or a
+            // fresh library would orphan them
+            libraryStatus = .locked
+            library = nil
+            reportLockedIssue()
+            return .locked
+        case .empty:
+            // load() only says empty when no library was ever written here (S1),
+            // so this one is a real first launch and safe to reconcile from
+            library = LibraryState()
+            libraryStatus = .loaded
+            mapSelectionPersistenceIssue = nil
+            pendingRetry = nil
+            _ = decideLaunchGuard(restoredToken: nil)
+            afterRestore(LibraryState())
+            showNextLaunchNotice()
+            return .nothing
+        case .loaded(let s):
+            library = s
+            libraryStatus = .loaded
+            mapSelectionPersistenceIssue = nil
+            pendingRetry = nil
+            // D8: a crash after the migration write left the old stores behind
+            if libraryDependencies.legacyPresent() { libraryDependencies.clearLegacy() }
+            // C3: an unlock / Retry that reads back the selection a calibration
+            // display started from isnt a map change, leave the display up
+            let calibrationUntouched = calibrationReturn != nil && s.active == calibrationDurableSelection
+            switch calibrationUntouched ? nil : s.active {
+            case .online(let style)?:
+                _ = decideLaunchGuard(restoredToken: nil)
+                if !(mapSource is OnlineRasterBasemapSource) || (mapSource as? OnlineRasterBasemapSource)?.style != style {
+                    publishMapSource(OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable
+                                                               ? OnlineRasterBasemapSource.defaultStyle : style))
+                }
+            case .entry(let id)?:
+                if let e = s.entry(id), e.kind == .pdf,
+                   let pdf = source(for: e, allowUnavailable: true) as? PDFMapSource {
+                    if decideLaunchGuard(restoredToken: pdf.renderGuardToken) {
+                        // crash loop breaker: online map in memory only, the durable
+                        // selection and the PDF stay exactly as they are
+                        pdfCrashSuspect = pdf
+                        publishMapSource(preferredOnlineBasemap(), reframe: false)
+                    } else if activeEntryID != id {
+                        // OD-F4: a missing / changed file keeps the selection and
+                        // fails as cannotOpen until the exact bytes are back
+                        publishMapSource(pdf)
+                        if !pdf.storedFileUnavailable { verifyInBackground(e) }
+                    }
+                } else {
+                    _ = decideLaunchGuard(restoredToken: nil)
+                    if activeEntryID != id {
+                        if let e = s.entry(id), let src = source(for: e) {
+                            publishMapSource(src)
+                            verifyInBackground(e)
+                        } else {
+                            publishMapSource(OnlineRasterBasemapSource(s.preferredStyle))
+                        }
+                    }
+                }
+            case nil:
+                _ = decideLaunchGuard(restoredToken: nil)
+            }
+            afterRestore(s)
+            showNextLaunchNotice()
+            return .restored
+        case .locked:
+            libraryStatus = .locked
+            library = nil
+            reportLockedIssue()
+            return .locked
+        case .corrupt:
+            // S1: nothing reconciled, swept or pruned from here. Retry rebuilds (S2)
+            libraryStatus = .corrupt
+            library = nil
+            reportCorruptIssue()
+            return .corrupt
+        }
+    }
+
+    /// F3: Retry re-runs the migration + restore (ContentView's), same as an unlock
+    private func reportLockedIssue() {
+        reportIssue(Messages.displayTheSavedBasemapIsLockedOrUnreadableUnlockMissionMessage()) { [weak self] in
+            guard let self else { return false }
+            if let reload = self.reloadRequested {
+                reload()
+                return true
+            }
+            return self.restoreActiveMapSelection() == .restored
+        }
+    }
+
+    private func reportCorruptIssue() {
+        reportIssue(Messages.mapLibraryCorruptMessageMessage()) { [weak self] in
+            self?.rebuildCorruptLibrary()
+            return true
+        }
+    }
+
+    /// S2 Retry on a corrupt library: rebuild the list from the files on disk
+    /// (off main), ONE write, then the normal restore of what was written. A
+    /// failed write changes nothing and the alert comes back. No user file or
+    /// draft or bake is deleted. The sealed recovery flag also protects later launches.
+    func rebuildCorruptLibrary(completion: ((Bool) -> Void)? = nil) {
+        guard libraryStatus == .corrupt, !rebuildInFlight else { completion?(false); return }
+        rebuildInFlight = true
+        let deps = libraryDependencies
+        let inFlight = InFlightImportFiles.snapshot
+        deps.background { [weak self] in
+            let rebuilt = deps.rebuild(inFlight)
+            deps.foreground {
+                guard let self else { return }
+                self.rebuildInFlight = false
+                // something else already loaded it meanwhile (unlock, a second Retry)
+                guard self.libraryStatus == .corrupt else { completion?(false); return }
+                do {
+                    try deps.writeRebuilt(rebuilt)
+                } catch {
+                    NSLog("[MapVM] library rebuild write failed")
+                    self.reportCorruptIssue()
+                    completion?(false)
+                    return
+                }
+                let restored = self.restoreActiveMapSelection() == .restored
+                completion?(restored)
+            }
+        }
+    }
+
+    private func afterRestore(_ s: LibraryState) {
+        if s.permitsCleanup {
+            _ = libraryDependencies.reconcile(s)
+            libraryDependencies.drafts.prune(keepingContentKeys: Set(s.entries.compactMap(\.contentKey)))
+        }
+        libraryDependencies.sweepBackup()
+        draftsEpoch &+= 1
+    }
+
+    /// a file that kept its size + mtime but changed its bytes gets marked
+    /// unavailable and the map goes back online (s8.2 restore step 4)
+    private func verifyInBackground(_ e: ImportedMapEntry) {
+        guard let key = e.contentKey, let url = libraryDependencies.fileURL(e) else { return }
+        libraryDependencies.verify(url, key) { [weak self] ok in
+            guard let self, !ok else { return }
+            self.tamperedEntryIDs.insert(e.id)
+            guard self.activeEntryID == e.id else { return }
+            if let pdf = self.mapSource as? PDFMapSource {
+                // OD-F4: same as a restore that found it changed, the selection
+                // stays and the map fails as cannotOpen (Try Again re-checks)
+                self.pdfRuntime.storedFileChanged(for: pdf)
+            } else {
+                _ = self.selectOnlineBasemap(self.library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle)
+            }
+        }
+    }
+
+    // MARK: - crash guard (WP2 s.I)
+
+    /// true = suppress the restored PDF
+    private func decideLaunchGuard(restoredToken: String?) -> Bool {
+        guard !pdfGuardDecided else {
+            // a later restore in the same launch (unlock, retry) still honours a standing suspect
+            return restoredToken != nil && pdfRenderGuard.suspect == restoredToken && pdfCrashSuspect != nil
+        }
+        pdfGuardDecided = true
+        // C8: the app died drawing the calibration preview of the draft E3 would
+        // reopen now, that map isnt the durable one. Decide on its token so it
+        // becomes the suspect, then E3 skips it instead of crashing again
+        var token = restoredToken
+        let previewEntry = autoResumeEntry()
+        let snapshot = pdfRenderGuard.snapshot
+        if let previewToken = previewEntry?.renderGuardToken, previewToken != restoredToken,
+           snapshot.suspect == previewToken || ((snapshot.inProgress?.kind == .base || snapshot.inProgress?.kind == .vector)
+                                               && snapshot.inProgress?.token == previewToken) {
+            token = previewToken
+        }
+        let outcome = pdfRenderGuard.launchDecision(restoredToken: token)
+        guard token == restoredToken else {
+            if outcome.decision == .suppress, let entry = previewEntry, let info = entry.pdf,
+               let key = entry.contentKey {
+                let target = CalibrationTarget(entryID: entry.id, contentKey: key, pageIndex: info.pageIndex,
+                                               pageBox: info.pageBox, rotate: info.rotate)
+                let preview = PdfGeoreference.provisional(pageBox: target.pageRect, rotation: info.rotate,
+                                                          centredOn: cameraCentre)
+                pdfCrashSuspect = source(for: entry, georef: preview, allowUnavailable: true) as? PDFMapSource
+            }
+            if case .importInterrupted = outcome.decision { queuedLaunchNotices.append(.importInterrupted) }
+            if outcome.bakeInterrupted {
+                PDFBakeController.cleanWorkDirectory()
+                queuedLaunchNotices.append(.bakeInterrupted)
+            }
+            return false
+        }
+        // the decision's alert goes first, then "Offline tiles not finished"
+        if case .importInterrupted = outcome.decision { queuedLaunchNotices.append(.importInterrupted) }
+        if outcome.bakeInterrupted {
+            PDFBakeController.cleanWorkDirectory()
+            queuedLaunchNotices.append(.bakeInterrupted)
+        }
+        return outcome.decision == .suppress
+    }
+
+    /// next queued notice, once nothing else is up. SwiftUI drops an alert
+    /// presented in the same turn another one went away, hence the delay
+    private func showNextLaunchNotice(after delay: Double = 0) {
+        guard delay <= 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.showNextLaunchNotice() }
+            return
+        }
+        guard pdfLaunchNotice == nil, pdfCrashSuspect == nil, !queuedLaunchNotices.isEmpty else { return }
+        pdfLaunchNotice = queuedLaunchNotices.removeFirst()
+    }
+
+    /// OK on a launch notice
+    func dismissLaunchNotice() {
+        guard pdfLaunchNotice != nil else { return }
+        pdfLaunchNotice = nil
+        showNextLaunchNotice(after: 0.35)
+    }
+
+    /// H1: the user's own online style (the library keeps it), in memory only
+    func preferredOnlineBasemap() -> OnlineRasterBasemapSource {
+        let style = lastOnlineStyle ?? library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle
+        return OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable ? OnlineRasterBasemapSource.defaultStyle : style)
+    }
+
+    /// failure alert "Use Online Map": a real, durable selection of that style (H1)
+    @discardableResult
+    func useOnlineMapAfterFailure() -> Bool {
+        selectOnlineBasemap(preferredOnlineBasemap().style)
+    }
+
+    /// crash recovery alert: Open Anyway
+    func openCrashSuspectAnyway() {
+        guard let pdf = pdfCrashSuspect else { return }
+        pdfRenderGuard.resolveSuspect(.openAnyway)
+        pdfCrashSuspect = nil
+        if let entry = autoResumeEntry(), entry.id == pdf.entryID, let resume = resumeCalibrationRequested {
+            resume(entry.id)
+        } else {
+            publishMapSource(pdf)
+        }
+        if let id = pdf.entryID, let e = library?.entry(id), !pdf.storedFileUnavailable { verifyInBackground(e) }
+        showNextLaunchNotice(after: 0.35)
+    }
+
+    /// crash recovery alert: Not Now. the suspect stays so next launch asks again
+    func dismissCrashSuspect() {
+        pdfRenderGuard.resolveSuspect(.notNow)
+        pdfCrashSuspect = nil
+        showNextLaunchNotice(after: 0.35)
+    }
+
+    /// crash recovery alert: Delete Map, through the normal (one write) delete
+    @discardableResult
+    func deleteCrashSuspect() -> Bool {
+        guard let id = pdfCrashSuspect?.entryID else { return false }
+        guard deleteLibraryEntry(id) else { return false }
+        pdfRenderGuard.resolveSuspect(.deleted)
+        pdfCrashSuspect = nil
+        showNextLaunchNotice(after: 0.35)
+        return true
+    }
+
+    /// check for an import the app died inside of. true = say so once
+    func recoverInterruptedImport() -> Bool { libraryDependencies.recoverInterruptedImport() }
+
+    @discardableResult
+    func retryMapSelectionPersistence() -> Bool {
+        guard let retry = pendingRetry else { return false }
+        return retry()
+    }
+
+    func dismissMapSelectionPersistenceIssue() {
+        pendingRetry = nil
+        mapSelectionPersistenceIssue = nil
+        // S7: Not Now on a failed import commit, its copy isn't coming back
+        if let copy = pendingImportCopy {
+            pendingImportCopy = nil
+            ImportedMapStorage.unlink(copy)
+            InFlightImportFiles.unregister(copy)
+        }
+    }
+
+    /// Build the candidate state, write it (the single commit point), then
+    /// publish. A failed write publishes nothing and offers Retry.
+    private func execute(_ t: LibraryTransition, reportFailure: Bool = true,
+                         publish: @escaping (LibraryState, [ImportedMapEntry]) -> Void) -> Bool {
+        guard libraryStatus == .loaded, let current = library else {
+            reportIssue(Messages.displayTheSavedBasemapIsLockedOrUnreadableUnlockMissionMessage()) { [weak self] in
+                guard let self, self.restoreActiveMapSelection() == .restored else { return false }
+                return self.execute(t, publish: publish)
+            }
+            return false
+        }
+        let next: LibraryState, removed: [ImportedMapEntry]
+        do {
+            (next, removed) = try LibraryReducer.apply(t, to: current)
+        } catch {
+            NSLog("[MapVM] library transition refused: \(error)")
+            return false
+        }
+        do {
+            try libraryDependencies.write(next)
+        } catch {
+            guard reportFailure else { return false }
+            reportIssue(Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage()) { [weak self] in
+                self?.execute(t, publish: publish) ?? false
+            }
+            return false
+        }
+        removeKnownSupersededBakes(from: current, to: next)
+        library = next
+        pendingRetry = nil
+        mapSelectionPersistenceIssue = nil
+        publish(next, removed)
+        if next.permitsCleanup { _ = libraryDependencies.reconcile(next) }
+        return true
+    }
+
+    private func removeKnownSupersededBakes(from previous: LibraryState, to next: LibraryState) {
+        guard !next.permitsCleanup else { return }
+        let kept = ImportedMapLibrary.bakeFileNames(next)
+        for entry in previous.entries {
+            if let bake = entry.pdf?.validBake, !kept.contains(bake.fileName) {
+                libraryDependencies.removeBakeFile(bake)
+            }
+        }
+    }
+
+    private func reportIssue(_ message: LocalizedMessage, retry: @escaping () -> Bool) {
+        pendingRetry = retry
+        mapSelectionPersistenceIssue = MapSelectionPersistenceIssue(id: UUID(), pendingMessage: message)
+    }
+
+    private func publishMapSource(_ source: MapSource, reframe: Bool = true) {
         NSLog("[MapVM] map source changed -> kind=\(source.kind)")
         let previousSource = mapSource
         mapSource = source
+        if let online = source as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
+        if !(source is PDFMapSource) { pdfRuntime.reset() }
         if previousSource !== source {
             (previousSource as? OfflineTileMapSource)?.closeForDeletion()
         }
-        frameCamera(for: source, userLocation: lastUserCoordinate)
+        if reframe { frameCamera(for: source, userLocation: lastUserCoordinate) }
     }
 
     private static func isApproximatelyEqual(_ a: CLLocationCoordinate2D,
@@ -463,6 +1001,12 @@ final class MapViewModel: ObservableObject {
 
     func userLocationDidUpdate(_ location: CLLocation, resetOrientation: Bool = true) {
         lastUserCoordinate = location.coordinate
+        // calibrating: the first fix must not yank the camera off the sheet. it
+        // counts as used, else the next fix after Finish would do the yank instead
+        if !hasInitialFix && calibrationActive {
+            hasInitialFix = true
+            return
+        }
         if !hasInitialFix {
             hasInitialFix = true
             // Centre on user on first fix, but if a bounded PDF is active

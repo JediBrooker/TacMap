@@ -2,7 +2,33 @@ import Foundation
 
 /// A redirect must never move Unit Sync away from the origin and path that were
 /// approved by `RelayEndpointPolicy`.
-final class SyncWebSocketSessionDelegate: NSObject, URLSessionTaskDelegate {
+final class SyncWebSocketSessionDelegate: NSObject, URLSessionWebSocketDelegate {
+    // taskIdentifier -> open callback. Delegate callbacks land on the session
+    // queue so guard the map with a lock.
+    private let lock = NSLock()
+    private var openHandlers: [Int: () -> Void] = [:]
+
+    func register(taskIdentifier: Int, onOpen: @escaping () -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        openHandlers[taskIdentifier] = onOpen
+    }
+
+    func unregister(taskIdentifier: Int) {
+        lock.lock(); defer { lock.unlock() }
+        openHandlers.removeValue(forKey: taskIdentifier)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        lock.lock()
+        let handler = openHandlers[webSocketTask.taskIdentifier]
+        lock.unlock()
+        handler?()
+    }
+
     func permittedRedirectRequest(_ request: URLRequest) -> URLRequest? {
         nil
     }
@@ -94,60 +120,6 @@ final class SyncInboundFrameCloseGate {
     func claimClose(generation: Int64) -> Bool {
         guard closedGeneration != generation else { return false }
         closedGeneration = generation
-        return true
-    }
-}
-
-/// Generation-scoped aggregate receive budget for complete string/data
-/// messages delivered by URLSessionWebSocketTask. The native API consumes
-/// RFC 6455 control frames internally, so those frames cannot be counted here.
-/// The transition from the bounded initial snapshot allowance to live mode
-/// resets into a smaller rolling window.
-final class SyncLiveReceiveBudget {
-    enum Phase: Equatable { case initial, live }
-
-    static let maxInitialFrames = 10_000
-    static let maxInitialBytes = 54_525_952
-    static let maxFrames = 200
-    static let maxBytes = 4 * 1_048_576
-    static let windowSeconds: TimeInterval = 10
-
-    private var generation: Int64?
-    private var phase: Phase?
-    private var windowStart: TimeInterval = 0
-    private var frames = 0
-    private var bytes = 0
-
-    func admit(
-        generation newGeneration: Int64,
-        byteCount: Int,
-        phase newPhase: Phase,
-        now: TimeInterval = ProcessInfo.processInfo.systemUptime
-    ) -> Bool {
-        guard byteCount >= 0 else { return false }
-        if generation != newGeneration || phase != newPhase {
-            generation = newGeneration
-            phase = newPhase
-            windowStart = now
-            frames = 0
-            bytes = 0
-        }
-        if newPhase == .initial {
-            guard frames < Self.maxInitialFrames,
-                  byteCount <= Self.maxInitialBytes - bytes else { return false }
-            frames += 1
-            bytes += byteCount
-            return true
-        }
-        if now < windowStart || now - windowStart >= Self.windowSeconds {
-            windowStart = now
-            frames = 0
-            bytes = 0
-        }
-        guard frames < Self.maxFrames,
-              byteCount <= Self.maxBytes - bytes else { return false }
-        frames += 1
-        bytes += byteCount
         return true
     }
 }

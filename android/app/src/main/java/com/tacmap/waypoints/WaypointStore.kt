@@ -12,6 +12,7 @@ import com.tacmap.util.MissionStorePersistence
 import com.tacmap.models.MissionUndoHistory
 import com.tacmap.models.ModelMutationEvent
 import com.tacmap.models.ModelMutationOrigin
+import com.tacmap.models.RemoteChangeFold
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -100,6 +101,41 @@ class WaypointStore private constructor(
         )
     }
 
+    /**
+     * Unit Sync apply: every remote upsert and delete of one snapshot or live
+     * batch as one persisted write (plans/04 section 17). No undo entry, a
+     * remote change isn't something the user did here.
+     */
+    @Synchronized
+    fun applyRemoteBatch(
+        upserts: List<Waypoint>,
+        removals: Set<String>,
+        origin: ModelMutationOrigin = ModelMutationOrigin.REMOTE_SYNC,
+    ): Boolean {
+        if (upserts.isEmpty() && removals.isEmpty()) return true
+        val before = stableState()
+        val replacements = LinkedHashMap<String, Waypoint>()
+        for (wp in upserts) replacements[wp.id] = wp
+        val candidate = ArrayList<Waypoint>(before.size + replacements.size)
+        val changed = HashSet<String>()
+        for (wp in before) {
+            if (wp.id in removals) {
+                changed += wp.id
+                continue
+            }
+            val replacement = replacements.remove(wp.id)
+            if (replacement != null && replacement != wp) changed += wp.id
+            candidate += replacement ?: wp
+        }
+        for (wp in replacements.values) {
+            if (wp.id in removals) continue
+            candidate += wp
+            changed += wp.id
+        }
+        if (changed.isEmpty()) return true
+        return commit(before, candidate, changed, origin, recordUndo = false)
+    }
+
     @Synchronized
     fun remove(wp: Waypoint, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
         val before = stableState()
@@ -180,7 +216,8 @@ class WaypointStore private constructor(
             _waypoints.value = before
             return false
         }
-        pushUndo(before)
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else pushUndo(before)
         _committedWaypoints.value = candidate
         _waypoints.value = candidate
         emit(setOf(wp.id), origin)
@@ -287,12 +324,22 @@ class WaypointStore private constructor(
         recordUndo: Boolean,
     ): Boolean {
         if (!persistCandidate(candidate)) return false
-        if (recordUndo) pushUndo(before)
+        // peer edits arent ours to undo, see RemoteChangeFold
+        if (origin == ModelMutationOrigin.REMOTE_SYNC) foldRemoteIntoHistory(before, candidate)
+        else if (recordUndo) pushUndo(before)
         _committedWaypoints.value = candidate
         _waypoints.value = candidate
         emit(changed, origin)
         committedChangeListener?.invoke(before, candidate, origin)
         return true
+    }
+
+    private fun foldRemoteIntoHistory(before: List<Waypoint>, after: List<Waypoint>) {
+        if (undoStack.isEmpty() && redoStack.isEmpty()) return
+        val fold = RemoteChangeFold(before, after, Waypoint::id)
+        if (fold.isEmpty) return
+        for (i in undoStack.indices) undoStack[i] = fold.applyTo(undoStack[i])
+        for (i in redoStack.indices) redoStack[i] = fold.applyTo(redoStack[i])
     }
 
     private fun stableState(): List<Waypoint> {

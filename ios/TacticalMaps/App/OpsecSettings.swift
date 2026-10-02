@@ -197,14 +197,14 @@ final class OpsecSettings: ObservableObject {
         nightModeBrightness = Self.clampedNightBrightness(
             defaults.object(forKey: Keys.nightModeBrightness) as? Double ?? Self.defaultNightModeBrightness
         )
-        // Night-mode screenshot test: turn it on without persisting anything.
+#if DEBUG
+        // Screenshot overrides are transient Debug harness inputs. Release
+        // reads only the saved/default OPSEC choices, even with launch env.
         if environment["TACMAP_UITEST_NIGHT_MODE"] == "1" {
             nightMode = true
         }
         // Marketing-screenshot mode: the store XCUITest sets this env var so the
         // shots explicitly request online tiles/lookups regardless of saved state.
-        // Never set in production (env vars can't be injected into a
-        // shipped app), so this is inert outside the screenshot harness.
         if environment["TACMAP_UITEST_ONLINE"] == "1" {
             onlineBasemaps = true
             onlineLookups = true
@@ -213,6 +213,7 @@ final class OpsecSettings: ObservableObject {
             // value a prior run persisted) so the imported PDF sheet is what shows.
             onlineBasemaps = false
         }
+#endif
         if relayResolution.needsRepair,
            !persist(relayResolution.endpoint, key: Keys.relay, verify: {
                self.defaults.string(forKey: Keys.relay) == relayResolution.endpoint

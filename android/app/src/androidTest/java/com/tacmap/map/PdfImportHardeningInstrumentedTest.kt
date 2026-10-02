@@ -5,18 +5,29 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.tacmap.calibration.AffineFitter
-import com.tacmap.calibration.AffineTransform2D
-import com.tacmap.calibration.GeoPdfParser
-import com.tacmap.calibration.Fiduciary
-import com.tacmap.calibration.LgiCoordinateConverter
-import com.tacmap.calibration.LgiDatum
-import com.tacmap.calibration.LgiProjectionFactory
+import com.tacmap.calibration.Calibration
+import com.tacmap.calibration.GeoCrs
+import com.tacmap.calibration.GeoDatums
+import com.tacmap.calibration.GeoPdfGeorefResult
+import com.tacmap.calibration.GeorefOrigin
+import com.tacmap.calibration.GeorefRejectReason
+import com.tacmap.calibration.ImportError
+import com.tacmap.calibration.InspectionResult
+import com.tacmap.calibration.MapSourceKind
+import com.tacmap.calibration.PagePoint
+import com.tacmap.calibration.PdfBox
+import com.tacmap.calibration.PdfDocumentInspector
+import com.tacmap.calibration.PdfGeoreference
+import com.tacmap.calibration.PdfInspection
+import com.tacmap.calibration.PdfInspector
 import com.tacmap.calibration.PdfMapSource
-import com.tacmap.calibration.PdfPageInfo
+import com.tacmap.calibration.PdfPageGeometry
 import com.tacmap.calibration.PdfPageRenderer
-import com.tacmap.calibration.PdfTiler
-import com.tacmap.calibration.Wgs84Coordinate
+import com.tacmap.calibration.PdfBaker
+import com.tacmap.calibration.PdfBakeException
+import com.tacmap.calibration.PdfSessionStore
+import com.tacmap.calibration.canonicalJson
+import com.tacmap.calibration.PlaneAffine
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSArray
 import com.tom_roush.pdfbox.cos.COSDictionary
@@ -44,30 +55,55 @@ import kotlinx.coroutines.runBlocking
 class PdfImportHardeningInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    /** WP5: the import reads the PDF once through PdfInspector (the old preflight is gone) */
+    private fun inspected(file: File): PdfInspection {
+        val r = PdfInspector.inspect(context, file)
+        assertTrue("inspect failed: $r", r is InspectionResult.Ok)
+        return (r as InspectionResult.Ok).inspection
+    }
+
+    private fun rendererSize(file: File): Pair<Int, Int> {
+        val g = requireNotNull(inspected(file).pages[0].geometry) { "no pdfium frame" }
+        return g.rendererWidth to g.rendererHeight
+    }
+
+    @org.junit.Before
+    fun foregroundPdfThread() {
+        // a previous activity test's onStop parks visible pdf work (WP2 contract E)
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = true
+    }
+
     @Test
-    fun plainPdfPreflightsAndPreviewDoesNotUpscale() {
+    fun plainPdfPreflightsAndRendersThroughThePdfThread() {
         val file = createPdf("plain.pdf")
-        val info = preflightPdfImport(context, file)
-        val rendered = PdfPageRenderer.renderFirstPage(context, Uri.fromFile(file))
+        val (width, height) = rendererSize(file)
+        val geometry = PdfDocumentInspector.inspect(context, file).geometry
+        // the old whole page preview is gone (WP2), a raw window through the page frame stands in
+        val rendered = PdfPageRenderer.renderRawRegion(
+            context, Uri.fromFile(file), geometry, 0.0, 0.0, 100.0, 100.0, 200, 200,
+        )
         try {
-            assertTrue(info.pageWidth > 0 && info.pageHeight > 0)
-            assertTrue(rendered.bitmap.width <= info.pageWidth)
-            assertTrue(rendered.bitmap.height <= info.pageHeight)
-            assertTrue(rendered.bitmap.allocationByteCount <= 32 * 1024 * 1024)
+            assertTrue(width > 0 && height > 0)
+            assertEquals(200, rendered.width)
+            assertEquals(GeoPdfGeorefResult.NoGeoreference, PdfDocumentInspector.inspect(context, file).georeference())
         } finally {
-            rendered.bitmap.recycle()
+            rendered.recycle()
         }
     }
 
     @Test
-    fun rotatedPagesAreRejectedBeforeCalibrationOrRendering() {
+    fun rotatedPagesImportWithTheirRotationInsteadOfBeingRejected() {
+        // plan 02 s1: georefs live in raw user space and the renderer maps through
+        // /Rotate, so a turned page is supported (it used to be refused here)
         listOf(90, 180, 270).forEach { rotation ->
-            val result = runCatching {
-                preflightPdfImport(context, createPdf("rotated-$rotation.pdf", rotation))
-            }
-            val failure = result.exceptionOrNull()
-            assertTrue(failure is PdfImportRejectedException)
-            assertTrue(failure!!.message!!.contains("$rotation°"))
+            val file = createPdf("rotated-$rotation.pdf", rotation)
+            val (width, height) = rendererSize(file)
+            assertEquals(rotation, inspected(file).pages[0].rotate)
+            // pdfium reports the displayed (turned) size
+            if (rotation % 180 == 0) assertEquals(600 to 400, width to height) else assertEquals(400 to 600, width to height)
+            val geometry = PdfDocumentInspector.inspect(context, file).geometry
+            assertEquals(rotation, geometry.rotation)
+            assertEquals(PdfBox(0.0, 0.0, 600.0, 400.0), geometry.mediaBox)
         }
     }
 
@@ -78,109 +114,136 @@ class PdfImportHardeningInstrumentedTest {
         }
         val protected = createPdf("protected.pdf", password = "secret")
 
-        listOf(invalid, protected).forEach { file ->
-            val result = runCatching { preflightPdfImport(context, file) }
-            assertTrue(result.exceptionOrNull() is PdfImportRejectedException)
-            assertTrue(result.exceptionOrNull()!!.message!!.contains("password-protected"))
+        // typed shared errors now (D5-20), the same message keys as iOS
+        mapOf(invalid to ImportError.INVALID_PDF, protected to ImportError.PASSWORD).forEach { (file, want) ->
+            val result = PdfInspector.inspect(context, file)
+            assertTrue("${file.name}: $result", result is InspectionResult.Failed)
+            assertEquals(want, (result as InspectionResult.Failed).failure.error)
         }
     }
 
     @Test
-    fun adobeViewportAndLegacyLgiDictBothProduceUsableAffineControlPoints() {
-        val adobe = createPdf("adobe-vp.pdf", metadata = MetadataKind.ADOBE_VIEWPORT)
-        val legacy = createPdf("legacy-lgi.pdf", metadata = MetadataKind.LGI_DICT)
-
-        listOf(adobe, legacy).forEach { file ->
-            val parsed = GeoPdfParser.parse(context, Uri.fromFile(file))
-            assertNotNull(parsed)
-            assertTrue(parsed!!.correspondences.size >= 3)
-            val fit = AffineFitter.fit(parsed.correspondences.map { it.toFiduciary() })
-            assertTrue(fit.transform.a.isFinite())
-            assertTrue(fit.transform.e.isFinite())
+    fun anInheritedCropBoxPastTheScannedPagesIsChecked() {
+        // E12: pages 51+ used to look only at their own dict, so a CropBox they inherit from
+        // the page tree slipped past the page size check
+        val file = File(context.cacheDir, "${System.nanoTime()}-inherited-crop.pdf")
+        PDDocument().use { document ->
+            repeat(55) { i ->
+                document.addPage(PDPage(PDRectangle(600f, 400f)).apply {
+                    // the scanned pages carry their own (fine) CropBox
+                    if (i < 50) cropBox = PDRectangle(600f, 400f)
+                })
+            }
+            // 10 x 10 pt is under the 36 pt minimum, only pages 50-54 inherit it
+            document.pages.cosObject.setItem(COSName.CROP_BOX, PDRectangle(10f, 10f).cosArray)
+            document.save(file)
         }
+        val r = PdfInspector.inspect(context, file)
+        assertTrue("$r", r is InspectionResult.Failed)
+        assertEquals(ImportError.PAGE_SIZE, (r as InspectionResult.Failed).failure.error)
+
+        // and an inherited CropBox that's fine comes through on page 52 as that page's box
+        val ok = File(context.cacheDir, "${System.nanoTime()}-inherited-crop-ok.pdf")
+        PDDocument().use { document ->
+            repeat(55) { document.addPage(PDPage(PDRectangle(600f, 400f))) }
+            document.pages.cosObject.setItem(COSName.CROP_BOX, PDRectangle(500f, 300f).cosArray)
+            document.save(ok)
+        }
+        assertEquals(listOf(0.0, 0.0, 500.0, 300.0), inspected(ok).pages[51].cropBox)
+    }
+
+    private fun georef(file: File): GeoPdfGeorefResult = PdfDocumentInspector.inspect(context, file).georeference()
+
+    @Test
+    fun adobeViewportAndLegacyLgiDictBothGeoreference() {
+        val adobe = georef(createPdf("adobe-vp.pdf", metadata = MetadataKind.ADOBE_VIEWPORT))
+        val legacy = georef(createPdf("legacy-lgi.pdf", metadata = MetadataKind.LGI_DICT))
+
+        // no /GCS: local TM fallback on the GPTS, datum assumed; and the biggest viewport wins over the inset
+        val a = adobe as GeoPdfGeorefResult.Georeferenced
+        assertEquals(GeorefOrigin.ADOBE_VP, a.georef.origin)
+        assertEquals(1, a.selection.index)
+        assertTrue(a.georef.datumAssumed)
+        // a 1 deg lon/lat box isn't affine in any plane, the local TM fit leaves a few
+        // hundred metres at the corners, still under the RMS gate for a 145 km sheet
+        val corner = requireNotNull(a.georef.toWGS84(600.0, 400.0))
+        assertEquals(-33.0, corner.latitude, 5e-3)
+        assertEquals(151.0, corner.longitude, 5e-3)
+        val l = legacy as GeoPdfGeorefResult.Georeferenced
+        assertEquals(GeorefOrigin.LGI_DICT, l.georef.origin)
+        assertEquals(GeoCrs.Geographic, l.georef.crs)
     }
 
     @Test
-    fun malformedAdobeViewportFallsBackToManualCalibration() {
+    fun offEarthAdobeViewportIsALoudRejection() {
         val malformed = createPdf("invalid-adobe-vp.pdf", metadata = MetadataKind.INVALID_ADOBE_VIEWPORT)
 
-        assertNull(GeoPdfParser.parse(context, Uri.fromFile(malformed)))
+        assertEquals(GeoPdfGeorefResult.Rejected(GeorefRejectReason.GPTS_OFF_EARTH), georef(malformed))
     }
 
     @Test
-    fun largerMalformedDeclaredAdobeViewportDoesNotPublishValidInset() {
-        val malformed = createPdf(
-            "dominant-invalid-adobe-vp.pdf",
-            metadata = MetadataKind.ADOBE_MALFORMED_LARGER_VIEWPORT,
-        )
-
-        assertNull(GeoPdfParser.parse(context, Uri.fromFile(malformed)))
+    fun brokenMainViewportFallsBackToTheLargestValidOneAsThePlanSays() {
+        // LPTS 1.1 is fine now (D1-01) but this body's GPTS don't fit an affine, so it
+        // fails the RMS gate and plan s1's "largest valid viewport" picks the inset.
+        // used to be a hard reject, the shared fixture flags this rule for review
+        val result = georef(createPdf("dominant-invalid-adobe-vp.pdf", metadata = MetadataKind.ADOBE_MALFORMED_LARGER_VIEWPORT))
+        val ok = result as GeoPdfGeorefResult.Georeferenced
+        assertEquals(0, ok.selection.index)
     }
 
     @Test
-    fun oversizedEmbeddedGeospatialMetadataFallsBackToManualCalibration() {
+    fun oversizedEmbeddedGeospatialMetadataIsRejected() {
         listOf(
             MetadataKind.OVERSIZED_ADOBE_VIEWPORTS,
             MetadataKind.OVERSIZED_LGI_ENTRIES,
         ).forEach { metadata ->
             val file = createPdf("oversized-${metadata.name}.pdf", metadata = metadata)
-            assertNull(GeoPdfParser.parse(context, Uri.fromFile(file)))
+            assertEquals(metadata.name, GeoPdfGeorefResult.Rejected(GeorefRejectReason.MALFORMED), georef(file))
         }
     }
 
     @Test
     fun projectedLgiRegistrationUtmProducesRealWgs84ControlPoints() {
-        val file = createPdf("lgi-utm.pdf", metadata = MetadataKind.LGI_UTM_REGISTRATION)
-        val parsed = GeoPdfParser.parse(context, Uri.fromFile(file))
-
-        assertNotNull(parsed)
-        assertProjected56South(parsed!!.correspondences, projectedGridPoints())
+        val result = georef(createPdf("lgi-utm.pdf", metadata = MetadataKind.LGI_UTM_REGISTRATION))
+        val g = (result as GeoPdfGeorefResult.Georeferenced).georef
+        assertEquals(56, (g.crs as GeoCrs.TransverseMercator).utmZone)
+        assertProjected56South(g, projectedGridPoints())
     }
 
     @Test
     fun projectedLgiCtmTransverseMercatorProducesRealWgs84ControlPoints() {
-        val file = createPdf("lgi-tc.pdf", metadata = MetadataKind.LGI_TC_CTM)
-        val parsed = GeoPdfParser.parse(context, Uri.fromFile(file))
-
-        assertNotNull(parsed)
-        assertProjected56South(parsed!!.correspondences, projectedGridPoints())
+        val result = georef(createPdf("lgi-tc.pdf", metadata = MetadataKind.LGI_TC_CTM))
+        val g = (result as GeoPdfGeorefResult.Georeferenced).georef
+        assertEquals("ctm", result.selection.source)
+        assertProjected56South(g, projectedGridPoints())
     }
 
     @Test
     fun pureUtmAndTransverseMercatorInverseAgreeOnWgs84() {
-        val datum = requireNotNull(LgiDatum.fromCode("WE"))
-        val utm = requireNotNull(LgiProjectionFactory.utm(56, true, datum.ellipsoid))
-        val tc = requireNotNull(
-            LgiProjectionFactory.transverseMercator(
-                centralMeridian = 153.0,
-                originLatitude = 0.0,
-                falseEasting = 500_000.0,
-                falseNorthing = 10_000_000.0,
-                scaleFactor = 0.9996,
-                ellipsoid = datum.ellipsoid,
-            )
-        )
+        val datum = requireNotNull(GeoDatums.forLgiCode("WE"))
+        val utm = GeoCrs.utm(56, true)
+        val tc = GeoCrs.TransverseMercator(lat0 = 0.0, lon0 = 153.0, k0 = 0.9996, fe = 500_000.0, fn = 10_000_000.0)
         val easting = 334_368.6336
         val northing = 6_250_945.575
-        val a = requireNotNull(LgiCoordinateConverter(utm, datum).toWgs84(easting, northing))
-        val b = requireNotNull(LgiCoordinateConverter(tc, datum).toWgs84(easting, northing))
+        val a = requireNotNull(utm.inverse(easting, northing, datum.ellipsoid))
+        val b = requireNotNull(tc.inverse(easting, northing, datum.ellipsoid))
         // Cross-checked with NGA UTM 2.1.3's independent inverse.
-        assertEquals(-33.8688251, a.first, 1e-6)
-        assertEquals(151.2092995, a.second, 1e-6)
-        assertEquals(a.first, b.first, 1e-10)
-        assertEquals(a.second, b.second, 1e-10)
+        assertEquals(-33.8688251, a.latitude, 1e-6)
+        assertEquals(151.2092995, a.longitude, 1e-6)
+        assertEquals(a.latitude, b.latitude, 1e-10)
+        assertEquals(a.longitude, b.longitude, 1e-10)
     }
 
     @Test
-    fun unsupportedOrInsufficientProjectedLgiMetadataFailsClosed() {
-        listOf(
-            MetadataKind.LGI_PROJECTED_WITHOUT_PROJECTION,
-            MetadataKind.LGI_UNSUPPORTED_PROJECTION,
-            MetadataKind.LGI_UTM_WITHOUT_DATUM,
-            MetadataKind.LGI_TC_INCOMPLETE,
-        ).forEach { metadata ->
+    fun unsupportedOrInsufficientProjectedLgiMetadataFailsClosedWithAReason() {
+        mapOf(
+            MetadataKind.LGI_PROJECTED_WITHOUT_PROJECTION to GeorefRejectReason.MALFORMED,
+            MetadataKind.LGI_UNSUPPORTED_PROJECTION to GeorefRejectReason.UNSUPPORTED_PROJECTION,
+            MetadataKind.LGI_UTM_WITHOUT_DATUM to GeorefRejectReason.UNKNOWN_DATUM,
+            MetadataKind.LGI_TC_INCOMPLETE to GeorefRejectReason.MALFORMED,
+        ).forEach { (metadata, reason) ->
             val file = createPdf("rejected-$metadata.pdf", metadata = metadata)
-            assertNull(metadata.name, GeoPdfParser.parse(context, Uri.fromFile(file)))
+            assertEquals(metadata.name, GeoPdfGeorefResult.Rejected(reason), georef(file))
         }
     }
 
@@ -188,46 +251,89 @@ class PdfImportHardeningInstrumentedTest {
     fun malformedNamedLayersEntryNeverFallsBackToGeoreferencedInset() {
         val file = createPdf("lgi-malformed-layers.pdf", metadata = MetadataKind.LGI_MALFORMED_LAYERS)
 
-        assertNull(GeoPdfParser.parse(context, Uri.fromFile(file)))
+        assertTrue(georef(file) is GeoPdfGeorefResult.Rejected)
     }
 
     @Test
-    fun generatedMbtilesContainsEveryExpectedOnPageTile() = runBlocking {
-        val source = calibratedSource(createPdf("tiler-success.pdf"))
-        var finalProgress: PdfTiler.Progress? = null
-
-        val output = PdfTiler.generate(context, source) { finalProgress = it }
-
-        val path = requireNotNull(output)
-        try {
-            val db = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
-            val tileCount = try {
-                db.rawQuery("SELECT COUNT(*) FROM tiles", null).use { cursor ->
-                    assertTrue(cursor.moveToFirst())
-                    cursor.getInt(0)
+    fun bakeWritesEveryIntersectingTileAndAttachesToItsEntry() = runBlocking<Unit> {
+        // WP2: PdfBaker replaced PdfTiler. It publishes onto the PDF's library entry (the
+        // merge moved the record off the old session), the recorder stands in for the VM
+        val recorder = com.tacmap.calibration.RecordingBakeRecorder()
+        val pdfDir = File(context.filesDir, "pdf_maps").apply { mkdirs() }
+        // an empty page is now refused as blank (WP2 contract G), so give it some ink
+        val file = File(pdfDir, "bake-test-${System.nanoTime()}.pdf")
+        PDDocument().use { document ->
+            val page = PDPage(PDRectangle(600f, 400f))
+            document.addPage(page)
+            com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page).use { ink ->
+                ink.setStrokingColor(0f, 0f, 0f)
+                ink.setLineWidth(2f)
+                for (k in 0..6) {
+                    ink.moveTo(k * 100f, 0f); ink.lineTo(k * 100f, 400f)
+                    ink.moveTo(0f, k * 66f); ink.lineTo(600f, k * 66f)
                 }
-            } finally {
-                db.close()
+                ink.stroke()
             }
-            val progress = requireNotNull(finalProgress)
-            assertEquals(progress.total, progress.done)
-            assertEquals(progress.total, tileCount)
-            assertTrue(tileCount > 0)
+            document.save(file)
+        }
+        val source = calibratedSource(file)
+        val bakeDir = File(context.filesDir, "offline_tiles")
+        try {
+            val tile = com.tacmap.map.createPdfTileSource(context.applicationContext as android.app.Application, source, 256, "test", null, { true }, forBake = true)
+            try {
+                val georefJson = source.placement!!.canonicalJson()
+                val key = com.tacmap.map.render.pdf.PdfBakePlan.bakeKey(georefJson, 256)
+                var last = 0 to 0
+                val bake = PdfBaker.bake(context, tile, source, 6, key, recorder) { d, t -> last = d to t }
+                val out = File(bakeDir, bake.fileName)
+                assertTrue(out.isFile)
+                assertEquals(last.second, last.first)
+                val expected = (0..6).sumOf { tile.footprint.count(it) }
+                assertEquals(expected, last.second)
+                val db = SQLiteDatabase.openDatabase(out.path, null, SQLiteDatabase.OPEN_READONLY)
+                try {
+                    db.rawQuery("SELECT COUNT(*) FROM tiles", null).use { c -> assertTrue(c.moveToFirst()); assertEquals(expected, c.getInt(0)) }
+                    db.rawQuery("SELECT value FROM metadata WHERE name='tacmap_bake_key'", null).use { c ->
+                        assertTrue(c.moveToFirst()); assertEquals(key, c.getString(0))
+                    }
+                    db.rawQuery("SELECT value FROM metadata WHERE name='format'", null).use { c ->
+                        assertTrue(c.moveToFirst()); assertEquals("webp", c.getString(0))
+                    }
+                } finally {
+                    db.close()
+                }
+                // the PDF is kept, its entry got the bake, nothing left in the work dir
+                assertTrue(file.isFile)
+                assertEquals(bake, recorder.attached)
+                assertTrue(File(context.filesDir, PdfBaker.WORK_DIR).list().isNullOrEmpty())
+                out.delete()
+            } finally {
+                com.tacmap.map.disposePdfTileSource(tile)
+            }
         } finally {
-            File(path).delete()
+            file.delete()
         }
     }
 
     @Test
-    fun tileRenderFailurePublishesNoMbtilesArtifact() = runBlocking {
+    fun bakeForAMissingPdfPublishesNothing() = runBlocking<Unit> {
         val offlineDirectory = File(context.filesDir, "offline_tiles").apply { mkdirs() }
         val before = offlineDirectory.list()?.toSet().orEmpty()
         val missing = File(context.cacheDir, "missing-${System.nanoTime()}.pdf")
-
-        val output = PdfTiler.generate(context, calibratedSource(missing)) { }
-
-        assertNull(output)
+        val source = calibratedSource(missing)
+        val tile = com.tacmap.map.createPdfTileSource(context.applicationContext as android.app.Application, source, 256, "test", null, { true }, forBake = true)
+        try {
+            val georefJson = source.placement!!.canonicalJson()
+            val key = com.tacmap.map.render.pdf.PdfBakePlan.bakeKey(georefJson, 256)
+            val recorder = com.tacmap.calibration.RecordingBakeRecorder()
+            val error = runCatching { PdfBaker.bake(context, tile, source, 4, key, recorder) { _, _ -> } }.exceptionOrNull()
+            assertEquals(null, recorder.attached)
+            assertTrue("$error", error is PdfBakeException)
+        } finally {
+            com.tacmap.map.disposePdfTileSource(tile)
+        }
         assertEquals(before, offlineDirectory.list()?.toSet().orEmpty())
+        assertTrue(File(context.filesDir, PdfBaker.WORK_DIR).list().isNullOrEmpty())
     }
 
     private enum class MetadataKind {
@@ -502,12 +608,13 @@ class PdfImportHardeningInstrumentedTest {
     }
 
     private fun assertProjected56South(
-        correspondences: List<com.tacmap.calibration.GeoCorrespondence>,
+        georef: PdfGeoreference,
         projected: List<DoubleArray>,
     ) {
-        assertEquals(projected.size, correspondences.size)
-        correspondences.zip(projected).forEach { (actual, mapPoint) ->
+        val page = listOf(0.0 to 0.0, 600.0 to 0.0, 600.0 to 400.0, 0.0 to 400.0)
+        page.zip(projected).forEach { (p, mapPoint) ->
             val expected = UTM.create(56, Hemisphere.SOUTH, mapPoint[0], mapPoint[1]).toPoint()
+            val actual = requireNotNull(georef.toWGS84(p.first, p.second))
             assertEquals(expected.latitude, actual.latitude, 2e-5)
             assertEquals(expected.longitude, actual.longitude, 2e-5)
         }
@@ -522,27 +629,21 @@ class PdfImportHardeningInstrumentedTest {
     }
 
     private fun calibratedSource(file: File): PdfMapSource {
-        val info = PdfPageInfo(pageWidth = 600, pageHeight = 400)
-        val transform = AffineTransform2D(
-            a = 1.0 / info.pageWidth,
-            b = 0.0,
-            c = 150.0,
-            d = 0.0,
-            e = 1.0 / info.pageHeight,
-            f = -34.0,
+        // 600 x 400 pt page laid on a 1 x 1 deg lon/lat box
+        val georef = PdfGeoreference(
+            page = 0,
+            crs = GeoCrs.Geographic,
+            datum = GeoDatums.WGS84,
+            affine = PlaneAffine(1.0 / 600.0, 0.0, 150.0, 0.0, 1.0 / 400.0, -34.0),
+            crop = listOf(PagePoint(0.0, 0.0), PagePoint(600.0, 0.0), PagePoint(600.0, 400.0), PagePoint(0.0, 400.0)),
+            origin = GeorefOrigin.FIDUCIARIES,
         )
-        return PdfMapSource.imported(
+        return PdfMapSource(
             uri = Uri.fromFile(file),
-            name = file.nameWithoutExtension,
-            center = Wgs84Coordinate(-33.5, 150.5),
-            pageInfo = info,
-        ).calibrated(
-            transform,
-            listOf(
-                Fiduciary(pdfX = 0.0, pdfY = 0.0, mgrs = "a", latitude = -34.0, longitude = 150.0),
-                Fiduciary(pdfX = 600.0, pdfY = 0.0, mgrs = "b", latitude = -34.0, longitude = 151.0),
-                Fiduciary(pdfX = 0.0, pdfY = 400.0, mgrs = "c", latitude = -33.0, longitude = 150.0),
-            ),
+            displayName = file.nameWithoutExtension,
+            kind = MapSourceKind.CALIBRATED_PDF,
+            calibration = Calibration.Parsed(georef),
+            geometry = PdfPageGeometry(PdfBox(0.0, 0.0, 600.0, 400.0), null, 0, 600, 400),
         )
     }
 

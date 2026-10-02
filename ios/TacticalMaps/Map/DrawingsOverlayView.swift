@@ -3,7 +3,7 @@ import MapKit
 
 /// Single vector shape (drawing, in-progress sketch, or measure line)
 /// to redraw above the imported PDF.
-struct PDFVectorShape {
+struct PDFVectorShape: Equatable {
     /// Durable drawing identity. Nil for transient drawing/measure sessions.
     let sourceID: UUID?
     let coords: [CLLocationCoordinate2D]
@@ -25,6 +25,16 @@ struct PDFVectorShape {
         self.style = style
         self.isSelected = isSelected
         self.inProgress = inProgress
+    }
+
+    static func == (lhs: PDFVectorShape, rhs: PDFVectorShape) -> Bool {
+        lhs.sourceID == rhs.sourceID && lhs.isPolygon == rhs.isPolygon
+            && lhs.isSelected == rhs.isSelected && lhs.inProgress == rhs.inProgress
+            && lhs.style == rhs.style
+            && lhs.coords.count == rhs.coords.count
+            && zip(lhs.coords, rhs.coords).allSatisfy {
+                $0.latitude == $1.latitude && $0.longitude == $1.longitude
+            }
     }
 }
 
@@ -64,7 +74,11 @@ final class DrawingsOverlayView: UIView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
+    /// Redraw only when the geometry or style actually changed. SwiftUI calls
+    /// this on every container update, which used to mean a full Core Graphics
+    /// redraw of every drawing per presence frame (S5-12).
     func update(shapes: [PDFVectorShape]) {
+        guard shapes != self.shapes else { return }
         self.shapes = shapes
         setNeedsDisplay()
     }
@@ -79,6 +93,9 @@ final class DrawingsOverlayView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
+        #if DEBUG
+        SyncCostCounters.bump(SyncCostCounters.drawingsOverlayDisplay)
+        #endif
         guard let project, let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.setLineCap(.round); ctx.setLineJoin(.round)
         for shape in shapes where shape.coords.count >= 2 {

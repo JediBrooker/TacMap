@@ -1,0 +1,258 @@
+{
+  "fixture": "cbr50k_iso",
+  "sourceSHA256": "ac05c01ff4c8691a099f3033b54de8ff0497a76cf63a230f45dbd5db14af2001",
+  "reference": "Original printed source construction coordinates through independent PROJ; actual same-cell native bitmaps. No expected overlay/image generated.",
+  "job": [
+    15,
+    29954,
+    19823,
+    1,
+    1
+  ],
+  "tilePx": 768,
+  "cellCount": 4,
+  "timingMs": {
+    "staged": 9.006977081298828,
+    "vector": 1.613020896911621
+  },
+  "stagedWidth": 990,
+  "stagedHeight": 986,
+  "stagedPixels": 976140,
+  "stagedPixelCap": 1179648,
+  "results": [
+    {
+      "path": "vector",
+      "estimator": "edges",
+      "physicalScale": 32,
+      "pixelCenterConvention": "array index i maps to physical bitmap coordinate i+0.5",
+      "fixedPlaneGrid": {
+        "x": 690000.0,
+        "y": 6090000.0
+      },
+      "crossbarExcludedBitmapPx": 48,
+      "centroidPaddingPx": 2,
+      "axes": {
+        "x": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 3.7836612642131513,
+          "medianPhysicalPx": 0.5172924044727552,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 3.812683019979886,
+          "worstCrossSection": {
+            "alongBitmapPx": 420.5,
+            "expectedIndependentPx": 386.19798703305423,
+            "idealNativeCellPx": 386.198011230219,
+            "measuredPrintedPx": 386.3162264475609,
+            "printedMinusTruthCanonicalPx": 0.11823941450666098,
+            "printedMinusIdealCellCanonicalPx": 0.11821521734191265,
+            "printedMinusTruthPhysicalPx": 3.7836612642131513,
+            "page": [
+              638.9291338587345,
+              650.6920690797392
+            ]
+          }
+        },
+        "y": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 5.020082904447918,
+          "medianPhysicalPx": 1.1431049387501844,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 4.975706175915548,
+          "worstCrossSection": {
+            "alongBitmapPx": 697.5,
+            "expectedIndependentPx": 574.1369565585628,
+            "idealNativeCellPx": 574.1383433313295,
+            "measuredPrintedPx": 574.2938341493268,
+            "printedMinusTruthCanonicalPx": 0.15687759076399743,
+            "printedMinusIdealCellCanonicalPx": 0.15549081799736086,
+            "printedMinusTruthPhysicalPx": 5.020082904447918,
+            "page": [
+              661.6455625087546,
+              638.9291338545182
+            ]
+          }
+        }
+      }
+    },
+    {
+      "path": "vector",
+      "estimator": "centroid",
+      "physicalScale": 32,
+      "pixelCenterConvention": "array index i maps to physical bitmap coordinate i+0.5",
+      "fixedPlaneGrid": {
+        "x": 690000.0,
+        "y": 6090000.0
+      },
+      "crossbarExcludedBitmapPx": 48,
+      "centroidPaddingPx": 2,
+      "axes": {
+        "x": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 1.2448558411488193,
+          "medianPhysicalPx": 0.46966936601438647,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 1.2448648416248034,
+          "worstCrossSection": {
+            "alongBitmapPx": 385.5,
+            "expectedIndependentPx": 385.4629639266059,
+            "idealNativeCellPx": 385.462963645341,
+            "measuredPrintedPx": 385.5018656716418,
+            "printedMinusTruthCanonicalPx": 0.0389017450359006,
+            "printedMinusIdealCellCanonicalPx": 0.038902026300775105,
+            "printedMinusTruthPhysicalPx": 1.2448558411488193,
+            "page": [
+              638.9291338587345,
+              653.2625252392497
+            ]
+          }
+        },
+        "y": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 2.579155757692206,
+          "medianPhysicalPx": 1.1667241901159286,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 2.509414873453352,
+          "worstCrossSection": {
+            "alongBitmapPx": 734.5,
+            "expectedIndependentPx": 573.3511307677254,
+            "idealNativeCellPx": 573.3533101703579,
+            "measuredPrintedPx": 573.4317293851533,
+            "printedMinusTruthCanonicalPx": 0.08059861742788144,
+            "printedMinusIdealCellCanonicalPx": 0.07841921479541725,
+            "printedMinusTruthPhysicalPx": 2.579155757692206,
+            "page": [
+              664.3750374758132,
+              638.9291338545182
+            ]
+          }
+        }
+      }
+    },
+    {
+      "path": "staged",
+      "estimator": "edges",
+      "physicalScale": 32,
+      "pixelCenterConvention": "array index i maps to physical bitmap coordinate i+0.5",
+      "fixedPlaneGrid": {
+        "x": 690000.0,
+        "y": 6090000.0
+      },
+      "crossbarExcludedBitmapPx": 48,
+      "centroidPaddingPx": 2,
+      "axes": {
+        "x": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 8.272010472424881,
+          "medianPhysicalPx": 0.04868576868375385,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 8.486722080120671,
+          "worstCrossSection": {
+            "alongBitmapPx": 124.5,
+            "expectedIndependentPx": 379.98214267753065,
+            "idealNativeCellPx": 379.97543293979015,
+            "measuredPrintedPx": 380.2406430047939,
+            "printedMinusTruthCanonicalPx": 0.25850032726327754,
+            "printedMinusIdealCellCanonicalPx": 0.265210065003771,
+            "printedMinusTruthPhysicalPx": 8.272010472424881,
+            "page": [
+              638.9291338587345,
+              672.431187421244
+            ]
+          }
+        },
+        "y": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 8.521016741688072,
+          "medianPhysicalPx": -0.9317214479524409,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 8.547271625422582,
+          "worstCrossSection": {
+            "alongBitmapPx": 473.5,
+            "expectedIndependentPx": 578.890148486942,
+            "idealNativeCellPx": 578.8909689520588,
+            "measuredPrintedPx": 578.6238667137643,
+            "printedMinusTruthCanonicalPx": -0.26628177317775226,
+            "printedMinusIdealCellCanonicalPx": -0.2671022382944557,
+            "printedMinusTruthPhysicalPx": -8.521016741688072,
+            "page": [
+              645.1211998391522,
+              638.9291338545182
+            ]
+          }
+        }
+      }
+    },
+    {
+      "path": "staged",
+      "estimator": "centroid",
+      "physicalScale": 32,
+      "pixelCenterConvention": "array index i maps to physical bitmap coordinate i+0.5",
+      "fixedPlaneGrid": {
+        "x": 690000.0,
+        "y": 6090000.0
+      },
+      "crossbarExcludedBitmapPx": 48,
+      "centroidPaddingPx": 2,
+      "axes": {
+        "x": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 6.227802027600774,
+          "medianPhysicalPx": -0.31761889507561136,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 6.068963306435762,
+          "worstCrossSection": {
+            "alongBitmapPx": 308.5,
+            "expectedIndependentPx": 383.84595228452235,
+            "idealNativeCellPx": 383.82899492404886,
+            "measuredPrintedPx": 383.65133347115983,
+            "printedMinusTruthCanonicalPx": -0.19461881336252418,
+            "printedMinusIdealCellCanonicalPx": -0.17766145288902635,
+            "printedMinusTruthPhysicalPx": -6.227802027600774,
+            "page": [
+              638.9291338587345,
+              658.9175738212095
+            ]
+          }
+        },
+        "y": {
+          "samples": 608,
+          "rejected": {
+            "independentlyLocatedCrossbarMargin48px": 96
+          },
+          "maxAbsPhysicalPx": 7.237840362991847,
+          "medianPhysicalPx": -1.4306045220946544,
+          "maxAbsSamplingMinusIdealCellPhysicalPx": 7.259074582303583,
+          "worstCrossSection": {
+            "alongBitmapPx": 101.5,
+            "expectedIndependentPx": 586.7677634088323,
+            "idealNativeCellPx": 586.7684269781857,
+            "measuredPrintedPx": 586.5415808974888,
+            "printedMinusTruthCanonicalPx": -0.2261825113434952,
+            "printedMinusIdealCellCanonicalPx": -0.22684608069698697,
+            "printedMinusTruthPhysicalPx": -7.237840362991847,
+            "page": [
+              617.6790543497088,
+              638.9291338545182
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "state": "Intermediate renderer2 same-four-cell explicit native paths; demonstrated iOS staged resampling regression. Final automatic <=4 vector amendment under native verification.",
+  "sourceOnlyEstimatorLimits": "Centroid analytic pixel-area validation270cases; edge midpoint can bias2.745physicalpx at32x, so edge maxima diagnostic only. Neither method guarantees whole native raster <=1px."
+}
