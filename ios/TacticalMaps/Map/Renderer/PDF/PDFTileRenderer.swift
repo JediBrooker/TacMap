@@ -129,7 +129,10 @@ enum PDFTileRenderer {
 
     /// open + unlock + page lookup with the shared failure reasons
     static func openPage(url: URL, pageIndex: Int) throws -> (CGPDFDocument, CGPDFPage) {
-        guard let doc = CGPDFDocument(url as CFURL) else { throw PDFRenderFailure.cannotOpen }
+        // OCMD-gated content (USGS orthoimage etc) hidden the way every other reader hides it
+        guard let doc = PDFOptionalContent.document(url: url) ?? CGPDFDocument(url as CFURL) else {
+            throw PDFRenderFailure.cannotOpen
+        }
         if doc.isEncrypted && !doc.isUnlocked {
             _ = doc.unlockWithPassword("")
             guard doc.isUnlocked else { throw PDFRenderFailure.passwordProtected }

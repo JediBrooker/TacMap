@@ -1,0 +1,155 @@
+{
+ "description": "Red square at page centre (50,50 of a 100x100 page) wrapped in /OC /MC0; visible per ISO 32000 8.11 default config",
+ "cases": [
+  {
+   "file": "ocg_on.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocg_on_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocg_off.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocg_off_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_single_off.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_single_off_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_single_on.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_single_on_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_allon_on_off.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_allon_on_off_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_anyon_on_off.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_anyon_on_off_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_default_p.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_default_p_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_anyoff_on.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_anyoff_on_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_alloff_off.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_alloff_off_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_ve_and.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_ve_and_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_ve_or_not.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_ve_or_not_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocmd_ve_not_off.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocmd_ve_not_off_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "base_off_unlisted.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "base_off_unlisted_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  },
+  {
+   "file": "base_on_unlisted.pdf",
+   "visible": true,
+   "layout": "xref-table"
+  },
+  {
+   "file": "base_on_unlisted_objstm.pdf",
+   "visible": true,
+   "layout": "object-stream"
+  },
+  {
+   "file": "ocprops_indirect.pdf",
+   "visible": false,
+   "layout": "xref-table"
+  },
+  {
+   "file": "ocprops_indirect_objstm.pdf",
+   "visible": false,
+   "layout": "object-stream"
+  }
+ ]
+}
