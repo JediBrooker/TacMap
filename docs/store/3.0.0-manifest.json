@@ -1,0 +1,372 @@
+{
+  "version": "3.0.0 (73)",
+  "source_commit": "4e406f5",
+  "created": "2026-10-02",
+  "screenshots": [
+    {
+      "path": "ios/iphone-6.9/10-pdfmap.png",
+      "bytes": 3380990,
+      "sha256": "50736fac89623cb073839a351a50afb1d883002b5683b2d68d22c7e65c002420",
+      "width": 1320,
+      "height": 2868,
+      "alt_text": "TacMap displays an offline GeoPDF with a live MGRS grid."
+    },
+    {
+      "path": "ios/iphone-6.9/11-calibration.png",
+      "bytes": 2466897,
+      "sha256": "1ea9e222f3fbf93d5a3c726b0513949a6aa0fb7e28864f4da418c1b4749f42a3",
+      "width": 1320,
+      "height": 2868,
+      "alt_text": "Four known control points calibrate a PDF; TacMap reports the fit residual."
+    },
+    {
+      "path": "ios/iphone-6.9/12-calibration-entry.png",
+      "bytes": 2305807,
+      "sha256": "a4e979669a8d4c19391f884ea8211dbfa12224dd45c38f56628010766e0644a7",
+      "width": 1320,
+      "height": 2868,
+      "alt_text": "A known MGRS reference is entered in the datum printed on the map."
+    },
+    {
+      "path": "ios/iphone-6.9/13-map-library.png",
+      "bytes": 554512,
+      "sha256": "7addd6907f806ea430cbe654318085e16f81f82fb0c0e38fa4f50d85c4059d87",
+      "width": 1320,
+      "height": 2868,
+      "alt_text": "Imported maps and retained calibrations appear in the saved-map library."
+    },
+    {
+      "path": "ios/iphone-6.9/07-import-export.png",
+      "bytes": 363319,
+      "sha256": "9cdc00d5917bfde7bae0bbfa45d3352dbefe7c6998e0953049c52873742ebc7f",
+      "width": 1320,
+      "height": 2868,
+      "alt_text": "TacMap imports PDF maps and offline tiles and exports mission objects and GPX tracks."
+    },
+    {
+      "path": "ios/ipad-13/10-pdfmap.png",
+      "bytes": 4193800,
+      "sha256": "10a7229cdc708161bbe740999e54aa658c241e2c8a577d4cedaa279a0cde0a49",
+      "width": 2064,
+      "height": 2752,
+      "alt_text": "TacMap displays an offline GeoPDF with a live MGRS grid."
+    },
+    {
+      "path": "ios/ipad-13/11-calibration.png",
+      "bytes": 1834436,
+      "sha256": "ae8c3e4b7e7f37dfd94c672a8d65ce66d55003ff884c3ceb9de7feb37c98e4be",
+      "width": 2064,
+      "height": 2752,
+      "alt_text": "Four known control points calibrate a PDF; TacMap reports the fit residual."
+    },
+    {
+      "path": "ios/ipad-13/12-calibration-entry.png",
+      "bytes": 3988573,
+      "sha256": "cfe9248d2c62686124dd3b09cfb2907b0e49c0f4b261cadc4d9844a4db822ceb",
+      "width": 2064,
+      "height": 2752,
+      "alt_text": "A known MGRS reference is entered in the datum printed on the map."
+    },
+    {
+      "path": "ios/ipad-13/13-map-library.png",
+      "bytes": 534011,
+      "sha256": "f9d1a661226eee21f7ec2cd86a5c3b485e8f6ba35d2514efbf71db4d4924d572",
+      "width": 2064,
+      "height": 2752,
+      "alt_text": "Imported maps and retained calibrations appear in the saved-map library."
+    },
+    {
+      "path": "ios/ipad-13/07-import-export.png",
+      "bytes": 710588,
+      "sha256": "9fdb05d94e77c3f10ed396c4e3b05feefca8ffaea608e5985477fc673a5e2f7c",
+      "width": 2064,
+      "height": 2752,
+      "alt_text": "TacMap imports PDF maps and offline tiles and exports mission objects and GPX tracks."
+    },
+    {
+      "path": "android/phone/10-pdfmap.png",
+      "bytes": 1247490,
+      "sha256": "816b24047759145185753be0204b758c0d1fa408169a2ff8b0c32839368494ef",
+      "width": 1080,
+      "height": 1920,
+      "alt_text": "TacMap displays an offline GeoPDF with a live MGRS grid."
+    },
+    {
+      "path": "android/phone/11-calibration.png",
+      "bytes": 927583,
+      "sha256": "7be5621277bde27e1a1f149f563aa1cb353aaa52427c675a53c911de9747e012",
+      "width": 1080,
+      "height": 1920,
+      "alt_text": "Four known control points calibrate a PDF; TacMap reports the fit residual."
+    },
+    {
+      "path": "android/phone/12-calibration-entry.png",
+      "bytes": 426162,
+      "sha256": "aebbb1b22ee75282e0b83546ad8439413d4891bc0af067ffcd496da29d5c0782",
+      "width": 1080,
+      "height": 1920,
+      "alt_text": "A known MGRS reference is entered in the datum printed on the map."
+    },
+    {
+      "path": "android/phone/13-map-library.png",
+      "bytes": 268017,
+      "sha256": "d7492c42b60c491936858703ff9b429915da9e1a338cb53638ed38e818f0465f",
+      "width": 1080,
+      "height": 1920,
+      "alt_text": "Imported maps and retained calibrations appear in the saved-map library."
+    },
+    {
+      "path": "android/phone/07-import-export.png",
+      "bytes": 617996,
+      "sha256": "9f641b11fa3c1ea01fe2069d6817ee63e250c0160faaaec6bb654e6e1e78a96a",
+      "width": 1080,
+      "height": 1920,
+      "alt_text": "TacMap imports PDF maps and offline tiles and exports mission objects and GPX tracks."
+    },
+    {
+      "path": "android/tablet/10-pdfmap.png",
+      "bytes": 2039631,
+      "sha256": "4b16762ab97684bf9cfcc5df713298953aa2269d659a3d238bf8c1ea2a9a8dee",
+      "width": 1440,
+      "height": 2560,
+      "alt_text": "TacMap displays an offline GeoPDF with a live MGRS grid."
+    },
+    {
+      "path": "android/tablet/11-calibration.png",
+      "bytes": 1075014,
+      "sha256": "dc2b17deffe2efbb14cce7d87ecbc5891a144f9649089ef6ccf994e4a12d2fb7",
+      "width": 1440,
+      "height": 2560,
+      "alt_text": "Four known control points calibrate a PDF; TacMap reports the fit residual."
+    },
+    {
+      "path": "android/tablet/12-calibration-entry.png",
+      "bytes": 1429050,
+      "sha256": "4ea81a78428dc75332c77ae45790e88d8205dc7dba4796782474d1e51243be4d",
+      "width": 1440,
+      "height": 2560,
+      "alt_text": "A known MGRS reference is entered in the datum printed on the map."
+    },
+    {
+      "path": "android/tablet/13-map-library.png",
+      "bytes": 467012,
+      "sha256": "870670d641a62fed8c7d1d0de2357aabb64b322f4a595c3045841f6ea3355b68",
+      "width": 1440,
+      "height": 2560,
+      "alt_text": "Imported maps and retained calibrations appear in the saved-map library."
+    },
+    {
+      "path": "android/tablet/07-import-export.png",
+      "bytes": 1431867,
+      "sha256": "e75ff2406b1365412a8b729aca760881def8155111b593078e611f37eaae7fbb",
+      "width": 1440,
+      "height": 2560,
+      "alt_text": "TacMap imports PDF maps and offline tiles and exports mission objects and GPX tracks."
+    }
+  ],
+  "videos": [
+    {
+      "path": "ios/previews/ipad-13/03-navigation.mp4",
+      "bytes": 39881037,
+      "sha256": "2fa29a88584b967e184c004b47162133d56d3171b979c46e277fce05232d1329",
+      "width": 1200,
+      "height": 1600,
+      "seconds": 30.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.0,
+      "video_bitrate": 10369918,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256147,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.7,
+        "true_peak_dbtp": -2.99,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4483.555296525292,
+      "scene_count": 10,
+      "max_render_error": 2.286865234375,
+      "publication": "App Store Connect upload required"
+    },
+    {
+      "path": "ios/previews/ipad-13/02-offline-maps.mp4",
+      "bytes": 40058262,
+      "sha256": "b80887cf502fb71aa6f72e7bcf58a8a12d36ea7fb14dbc71e7b1c66686ba91a1",
+      "width": 1200,
+      "height": 1600,
+      "seconds": 30.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.0,
+      "video_bitrate": 10417143,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256147,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.3,
+        "true_peak_dbtp": -2.7,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4460.811015555355,
+      "scene_count": 9,
+      "max_render_error": 2.025390625,
+      "publication": "App Store Connect upload required"
+    },
+    {
+      "path": "ios/previews/ipad-13/01-tactical-sync.mp4",
+      "bytes": 38814210,
+      "sha256": "e0b48ebc6cd1989a097c16cfc878e6c46759b6815264b242519a97a0d2e62ca9",
+      "width": 1200,
+      "height": 1600,
+      "seconds": 30.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.0,
+      "video_bitrate": 10085464,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256147,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.07,
+        "true_peak_dbtp": -2.48,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4518.1542082635915,
+      "scene_count": 13,
+      "max_render_error": 2.238525390625,
+      "publication": "App Store Connect upload required"
+    },
+    {
+      "path": "ios/previews/iphone-6.9/03-navigation.mp4",
+      "bytes": 39908980,
+      "sha256": "6785a6cfe54b4500d59b303219d6947783b7e42f218c67f1ae495464ae4201cc",
+      "width": 886,
+      "height": 1920,
+      "seconds": 30.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.0,
+      "video_bitrate": 10377331,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256147,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.7,
+        "true_peak_dbtp": -2.99,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4483.555296525292,
+      "scene_count": 10,
+      "max_render_error": 3.6492919921875,
+      "publication": "App Store Connect upload required"
+    },
+    {
+      "path": "ios/previews/iphone-6.9/02-offline-maps.mp4",
+      "bytes": 40061954,
+      "sha256": "e66397d007f998f2a91c5dbd01c28d2498fd69f888b1a535ce8d8a74b41a92ca",
+      "width": 886,
+      "height": 1920,
+      "seconds": 30.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.0,
+      "video_bitrate": 10418123,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256147,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.3,
+        "true_peak_dbtp": -2.7,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4460.811015555355,
+      "scene_count": 9,
+      "max_render_error": 4.060302734375,
+      "publication": "App Store Connect upload required"
+    },
+    {
+      "path": "ios/previews/iphone-6.9/01-tactical-sync.mp4",
+      "bytes": 38699065,
+      "sha256": "4b41009311fc09c80e140fbaa1dba8be47ada82e183dbbcd8c2c40f77870acd4",
+      "width": 886,
+      "height": 1920,
+      "seconds": 30.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.0,
+      "video_bitrate": 10054714,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256147,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.07,
+        "true_peak_dbtp": -2.48,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4518.1542082635915,
+      "scene_count": 13,
+      "max_render_error": 3.6514892578125,
+      "publication": "App Store Connect upload required"
+    },
+    {
+      "path": "android/video/tacmap-features-3.0.mp4",
+      "bytes": 146802110,
+      "sha256": "7f3200058c2bcac1968997c735e64e022a07911faa6b81f6ef0605f448a8d1aa",
+      "width": 1920,
+      "height": 1080,
+      "seconds": 120.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.2,
+      "video_bitrate": 9521996,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256036,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.12,
+        "true_peak_dbtp": -2.47,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4460.811015555355,
+      "scene_count": 33,
+      "max_render_error": 2.9521484375,
+      "publication": "YouTube upload required for Google Play"
+    },
+    {
+      "path": "ios/marketing/tacmap-features-3.0.mp4",
+      "bytes": 107929948,
+      "sha256": "b35eb5024f56f686c1cd3f3476d57ffa20c3a05452b13e957cebe4b00fa5b18f",
+      "width": 1920,
+      "height": 1080,
+      "seconds": 90.0,
+      "fps": 30,
+      "video_codec": "H.264 High",
+      "level": 4.2,
+      "video_bitrate": 9328984,
+      "audio_codec": "AAC stereo CBR",
+      "audio_bitrate": 256072,
+      "sample_rate": 48000,
+      "audio_quality": {
+        "integrated_lufs": -16.2,
+        "true_peak_dbtp": -2.47,
+        "measurement": "EBU R128 / ffmpeg loudnorm"
+      },
+      "audio_rms_first_5s": 4460.811015555355,
+      "scene_count": 32,
+      "max_render_error": 4.060302734375,
+      "publication": "External marketing master; use the three 30-second previews for App Store Connect"
+    }
+  ],
+  "verification": "Dimensions, RGB, exact duration, codec, progressive scan, frame rate, bitrate, audible audio, native scene matching and visual contact sheets checked.",
+  "guide": "FEATURE_VIDEO.md",
+  "music": {
+    "path": "marketing/tacmap-original-score.flac",
+    "bytes": 10129085,
+    "sha256": "531191b27bf62fde5932e59c718f604a850f154ad14d53e77a60a3c900bf085d",
+    "title": "TacMap \u2014 Ground / Move",
+    "composition": "Original synthesizer composition without third-party samples",
+    "seconds": 120,
+    "bpm": 120
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "size": [
+    1200,
+    1600
+  ],
+  "output": "docs/store/ios/previews/ipad-13/03-navigation.mp4",
+  "beats": [
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/navigation-hud.png",
+      "duration": 3,
+      "caption": "Live coordinates + elevation",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/heading-up.png",
+      "duration": 3,
+      "caption": "Grid + north-reference compass",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/search.png",
+      "duration": 3,
+      "caption": "Search coordinates + places",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/measure-line.png",
+      "duration": 3,
+      "caption": "Distance + bearing",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-details.mp4",
+      "shot": "ios/build/store-captures/ipad-13/measure-area.png",
+      "duration": 3,
+      "caption": "Measure areas",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/line-of-sight.png",
+      "duration": 3,
+      "caption": "Elevation + line of sight",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-tools.mp4",
+      "shot": "ios/build/store-captures/ipad-13/recording-gps.png",
+      "duration": 3,
+      "caption": "Record routes to GPX",
+      "caption_y": 0.2
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/weather.png",
+      "duration": 3,
+      "caption": "Weather + UAV advice",
+      "caption_y": 0.9
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/sun-moon.png",
+      "duration": 3,
+      "caption": "Offline Sun + Moon",
+      "caption_y": 0.9
+    },
+    {
+      "video": "ios/build/store-captures/ipad-navigation.mp4",
+      "shot": "ios/build/store-captures/ipad-13/night-mode.png",
+      "duration": 3,
+      "caption": "Night mode",
+      "caption_y": 0.2
+    }
+  ],
+  "source_commit": "4e406f5",
+  "version": "3.0.0 (73)"
+}

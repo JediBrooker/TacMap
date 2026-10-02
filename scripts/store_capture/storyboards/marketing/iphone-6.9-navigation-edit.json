@@ -1,0 +1,242 @@
+{
+  "name": "iphone-6.9-navigation-edit",
+  "format": "portrait",
+  "native_size": [
+    886,
+    1920
+  ],
+  "size": [
+    886,
+    1920
+  ],
+  "output": "docs/store/ios/previews/iphone-6.9/03-navigation.mp4",
+  "duration": 30,
+  "music_offset": 30,
+  "beats": [
+    {
+      "scene": "navigation-hud",
+      "source": "ios/build/store-captures/iphone-navigation.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/navigation-hud.png",
+      "matched_frame": 17.5,
+      "match_error": 3.6680908203125,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Read the\nterrain.",
+      "support": "Coordinates and elevation, at a glance.",
+      "feature": "MGRS + elevation",
+      "short": "Read the terrain",
+      "focus": 0.07,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5,
+      "hero": true,
+      "capture_start": 17.0,
+      "render_error": 3.610107421875
+    },
+    {
+      "scene": "heading-up",
+      "source": "ios/build/store-captures/iphone-navigation.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/heading-up.png",
+      "matched_frame": 17.5,
+      "match_error": 3.6680908203125,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Find your\nreference.",
+      "support": "MGRS grid and north-reference compass.",
+      "feature": "Grid + compass",
+      "short": "Find your reference",
+      "focus": 0.08,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "search",
+      "source": "ios/build/store-captures/iphone-navigation.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/search.png",
+      "matched_frame": 39.0,
+      "match_error": 2.7855224609375,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Find the\nnext point.",
+      "support": "Search coordinates or a place.",
+      "feature": "Coordinate + place search",
+      "short": "Find the next point",
+      "focus": 0.23,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "measure-line",
+      "source": "ios/build/store-captures/iphone-navigation.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/measure-line.png",
+      "matched_frame": 56.0,
+      "match_error": 3.6885986328125,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Know the\ndistance.",
+      "support": "Measure range and bearing.",
+      "feature": "Distance + bearing",
+      "short": "Know the distance",
+      "focus": 0.33,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "measure-area",
+      "source": "ios/build/store-captures/iphone-details.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/measure-area.png",
+      "matched_frame": 43.5,
+      "match_error": 3.3193359375,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Measure the\nwhole area.",
+      "support": "Trace a boundary. Read its area.",
+      "feature": "Area measurement",
+      "short": "Measure the area",
+      "focus": 0.36,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "line-of-sight",
+      "source": "ios/build/store-captures/iphone-navigation.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/line-of-sight.png",
+      "matched_frame": 71.0,
+      "match_error": 2.7679443359375,
+      "duration": 3,
+      "caption_y": 0.88,
+      "headline": "Look beyond\nthe map.",
+      "support": "Elevation profiles and line of sight.",
+      "feature": "Elevation + line of sight",
+      "short": "Look beyond the map",
+      "focus": 0.3,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5,
+      "capture_start": 70.5,
+      "render_error": 2.7579345703125
+    },
+    {
+      "scene": "recording-gps",
+      "source": "ios/build/store-captures/iphone-tools.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/recording-gps.png",
+      "matched_frame": 29.5,
+      "match_error": 3.13037109375,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Keep a record\nof the move.",
+      "support": "Record GPS routes. Export GPX.",
+      "feature": "GPS route recording",
+      "short": "Record the move",
+      "focus": 0.06,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "weather",
+      "source": "ios/build/store-captures/iphone-field.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/weather.png",
+      "matched_frame": 191.0,
+      "match_error": 2.83935546875,
+      "duration": 3,
+      "caption_y": 0.9,
+      "headline": "Check the\nconditions.",
+      "support": "Weather and UAV advice in the field.",
+      "feature": "Weather + UAV advice",
+      "short": "Check the conditions",
+      "focus": 0.19,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "sun-moon",
+      "source": "ios/build/store-captures/iphone-field.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/sun-moon.png",
+      "matched_frame": 191.0,
+      "match_error": 2.83935546875,
+      "duration": 3,
+      "caption_y": 0.9,
+      "headline": "Work with\nthe daylight.",
+      "support": "Sun and Moon times calculated offline.",
+      "feature": "Offline Sun + Moon",
+      "short": "Plan with daylight",
+      "focus": 0.52,
+      "chapter": 1,
+      "accent": [
+        79,
+        168,
+        255
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "night-mode",
+      "source": "ios/build/store-captures/iphone-field.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/night-mode.png",
+      "matched_frame": 216.0,
+      "match_error": 1.4039306640625,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Your map.\nYour mission.",
+      "support": "TacMap \u2014 ready after dark.",
+      "feature": "Night mode",
+      "short": "Ready after dark",
+      "focus": 0.24,
+      "chapter": 4,
+      "accent": [
+        116,
+        227,
+        138
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    }
+  ]
+}

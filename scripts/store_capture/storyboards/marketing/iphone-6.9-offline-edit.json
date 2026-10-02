@@ -1,0 +1,220 @@
+{
+  "name": "iphone-6.9-offline-edit",
+  "format": "portrait",
+  "native_size": [
+    886,
+    1920
+  ],
+  "size": [
+    886,
+    1920
+  ],
+  "output": "docs/store/ios/previews/iphone-6.9/02-offline-maps.mp4",
+  "duration": 30,
+  "music_offset": 0,
+  "beats": [
+    {
+      "scene": "pdf-hero",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/pdf-hero.png",
+      "matched_frame": 464.0,
+      "match_error": 3.7025146484375,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Know your\nground.",
+      "support": "Offline GeoPDF. Live MGRS.",
+      "feature": "Offline GeoPDF",
+      "short": "Your ground. Offline.",
+      "focus": 0.07,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5,
+      "hero": true,
+      "capture_start": 463.5,
+      "render_error": 3.6680908203125
+    },
+    {
+      "scene": "import-export",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/import-export.png",
+      "matched_frame": 478.0,
+      "match_error": 2.802001953125,
+      "duration": 2,
+      "caption_y": 0.17,
+      "headline": "Bring your\nown maps.",
+      "support": "Import PDF maps and offline MBTiles.",
+      "feature": "PDF + MBTiles import",
+      "short": "Bring your own maps",
+      "focus": 0.21,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "calibration-datum",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/calibration-datum.png",
+      "matched_frame": 499.0,
+      "match_error": 2.695556640625,
+      "duration": 3,
+      "caption_y": 0.3,
+      "headline": "Start with\nthe datum.",
+      "support": "Match the reference printed on the sheet.",
+      "feature": "Map datum",
+      "short": "Match the map datum",
+      "focus": 0.28,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "calibration-entry",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/calibration-entry.png",
+      "matched_frame": 530.0,
+      "match_error": 3.6435546875,
+      "duration": 4,
+      "caption_y": 0.34,
+      "headline": "Put paper\nin position.",
+      "support": "Calibrate with known MGRS control points.",
+      "feature": "Manual calibration",
+      "short": "Put paper in position",
+      "focus": 0.2,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5,
+      "capture_start": 529.5,
+      "render_error": 3.5980224609375
+    },
+    {
+      "scene": "calibration-fit",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/calibration-fit.png",
+      "matched_frame": 580.5,
+      "match_error": 3.6007080078125,
+      "duration": 4,
+      "caption_y": 0.2,
+      "headline": "See the fit.\nCheck the detail.",
+      "support": "Review the residual before you save.",
+      "feature": "Calibration fit",
+      "short": "See the fit",
+      "focus": 0.31,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "calibration-points",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/calibration-points.png",
+      "matched_frame": 594.0,
+      "match_error": 4.1307373046875,
+      "duration": 3,
+      "caption_y": 0.16,
+      "headline": "Every point\ncounts.",
+      "support": "Review each control point and its residual.",
+      "feature": "Control-point review",
+      "short": "Check every point",
+      "focus": 0.28,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "map-library",
+      "source": "ios/build/store-captures/iphone-6.9/offline-raw.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/map-library.png",
+      "matched_frame": 628.0,
+      "match_error": 2.68310546875,
+      "duration": 4,
+      "caption_y": 0.18,
+      "headline": "Keep the maps.\nKeep the setup.",
+      "support": "Saved maps retain their calibration.",
+      "feature": "Saved-map library",
+      "short": "Keep your maps ready",
+      "focus": 0.29,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "page-chooser",
+      "source": "ios/build/store-captures/iphone-pages.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/page-chooser.png",
+      "matched_frame": 31.0,
+      "match_error": 2.8194580078125,
+      "duration": 3,
+      "caption_y": 0.2,
+      "headline": "Every sheet.\nOne map.",
+      "support": "Choose the page you need.",
+      "feature": "Multi-page PDF",
+      "short": "Choose your sheet",
+      "focus": 0.34,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    },
+    {
+      "scene": "bake-options",
+      "source": "ios/build/store-captures/iphone-more.mp4",
+      "shot": "ios/build/store-captures/iphone-6.9/bake-options.png",
+      "matched_frame": 58.0,
+      "match_error": 2.3858642578125,
+      "duration": 4,
+      "caption_y": 0.2,
+      "headline": "Take the map\nwith you.",
+      "support": "Generate offline tiles for your area.",
+      "feature": "Offline tiles",
+      "short": "Take the map with you",
+      "focus": 0.29,
+      "chapter": 0,
+      "accent": [
+        244,
+        161,
+        42
+      ],
+      "platform": "iOS",
+      "preroll": 0.5
+    }
+  ]
+}

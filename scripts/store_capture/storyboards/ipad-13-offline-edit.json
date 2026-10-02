@@ -1,0 +1,119 @@
+{
+  "size": [
+    1200,
+    1600
+  ],
+  "output": "docs/store/ios/previews/ipad-13/02-offline-maps.mp4",
+  "beats": [
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/pdf-hero.png",
+      "duration": 3,
+      "caption": "GeoPDF maps, offline",
+      "caption_y": 0.2,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/import-export.png",
+      "duration": 2,
+      "caption": "PDFs + offline tiles",
+      "caption_y": 0.17,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/calibration-datum.png",
+      "duration": 3,
+      "caption": "Choose the sheet datum",
+      "caption_y": 0.3,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/calibration-entry.png",
+      "duration": 4,
+      "caption": "Enter known MGRS points",
+      "caption_y": 0.25,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/calibration-fit.png",
+      "duration": 4,
+      "caption": "Review the live fit",
+      "caption_y": 0.2,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/calibration-points.png",
+      "duration": 3,
+      "caption": "Check point residuals",
+      "caption_y": 0.16,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "video": "ios/build/store-captures/ipad-offline2.mp4",
+      "shot": "ios/build/store-captures/ipad-13/map-library.png",
+      "duration": 4,
+      "caption": "Keep imported maps ready",
+      "caption_y": 0.18,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/ipad-13/page-chooser.png",
+      "video": "ios/build/store-captures/ipad-pages.mp4",
+      "caption": "Choose a PDF page",
+      "duration": 3,
+      "caption_y": 0.2,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    },
+    {
+      "shot": "ios/build/store-captures/ipad-13/bake-options.png",
+      "video": "ios/build/store-captures/ipad-team.mp4",
+      "caption": "Generate offline tiles",
+      "duration": 4,
+      "caption_y": 0.2,
+      "accent": [
+        244,
+        161,
+        42
+      ]
+    }
+  ],
+  "source_commit": "4e406f5",
+  "version": "3.0.0 (73)"
+}

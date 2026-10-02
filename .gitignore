@@ -60,3 +60,6 @@ site/.wrangler/
 
 # Opt-in marker for staged WP4 simulator acceptance checks.
 .wp4-device-audit
+
+# marketing/preview video masters live outside git (too big, Play one is on YouTube)
+docs/store/**/*.mp4
