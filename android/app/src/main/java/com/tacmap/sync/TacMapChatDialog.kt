@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -46,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,6 +57,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.ui.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import java.util.Date
 
 @Composable
@@ -128,11 +133,10 @@ fun TacMapChatDialog(
     }
     val canSend = sessionReady && blockReason == null && body.isNotBlank()
 
-    // Open on, and follow, the newest message in the visible thread.
+    // Follow effects live inside the Dialog below, see followNewestChatRow
     val historyState = rememberLazyListState()
-    LaunchedEffect(roomScope, selectedSnapshot?.actorId, visibleMessages.lastOrNull()?.id) {
-        if (visibleMessages.isNotEmpty()) historyState.scrollToItem(visibleMessages.lastIndex)
-    }
+    val newestIndex = visibleMessages.lastIndex
+    val newestId = visibleMessages.lastOrNull()?.id
     // At the largest text sizes the header and composer would squeeze the
     // history out, so the whole dialog scrolls and the history keeps a height.
     val largeText = LocalDensity.current.fontScale >= LARGE_TEXT_FONT_SCALE
@@ -273,6 +277,29 @@ fun TacMapChatDialog(
                             .fillMaxWidth()
                             .then(if (largeText) Modifier.height(LARGE_TEXT_HISTORY_HEIGHT_DP.dp) else Modifier.weight(1f)),
                     ) {
+                        // Open on, and follow, the newest message. Has to sit in the Dialog's own
+                        // composition (same one as the LazyColumn) so the list already has the new
+                        // row when this runs. From the outer composition it raced the list.
+                        LaunchedEffect(roomScope, selectedSnapshot?.actorId, newestId) {
+                            followNewestChatRow(
+                                newestKey = newestId,
+                                newestIndex = newestIndex,
+                                lastFullyVisibleKey = snapshotFlow { historyState.layoutInfo }
+                                    .map { it.lastFullyVisibleKey() },
+                            ) { historyState.scrollToItem(it) }
+                        }
+                        // Keyboard up/down resizes the history. Stay on the newest msg if thats
+                        // where the user was, leave them alone if theyd scrolled back to read.
+                        LaunchedEffect(historyState) {
+                            val pin = ChatBottomPin()
+                            snapshotFlow { historyState.layoutInfo }.collect { info ->
+                                val newest = info.totalItemsCount - 1
+                                val newestShown = info.lastFullyVisibleIndex() == newest
+                                if (pin.onLayout(info.viewportSize.height, newestShown) && newest >= 0) {
+                                    historyState.scrollToItem(newest)
+                                }
+                            }
+                        }
                         if (visibleMessages.isEmpty()) {
                             Column(
                                 modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -375,6 +402,57 @@ internal const val TACMAP_CHAT_OUTER_MARGIN_DP = 12
 /** Font scale from which the chat scrolls as a whole (Android's largest text sizes). */
 private const val LARGE_TEXT_FONT_SCALE = 1.5f
 private const val LARGE_TEXT_HISTORY_HEIGHT_DP = 320
+
+/**
+ * Scroll history until the newest message is actually on screen. This used to run from the outer
+ * composition while the LazyColumn lives in the Dialog's own one, so it could fire before the list
+ * had the new row. The scroll got clamped to the old last row, the list anchored on it, and the new
+ * msg sat just below the fold untill the next one arrived. Looked exactly like chat lagging a
+ * message behind. Now its called from inside the Dialog, and this double checks by row key (not
+ * row count, at the 500 msg cap the count never changes). Bounded so a row taller than the
+ * viewport cant spin forever.
+ */
+internal suspend fun followNewestChatRow(
+    newestKey: Any?,
+    newestIndex: Int,
+    lastFullyVisibleKey: Flow<Any?>,
+    scrollTo: suspend (Int) -> Unit,
+) {
+    if (newestKey == null || newestIndex < 0) return
+    var attempts = 0
+    lastFullyVisibleKey.first { key ->
+        if (key == newestKey || attempts >= MAX_FOLLOW_ATTEMPTS) return@first true
+        attempts += 1
+        scrollTo(newestIndex)
+        false
+    }
+}
+
+private const val MAX_FOLLOW_ATTEMPTS = 8
+
+/** True = viewport just resized (keyboard) while the user was on the newest row, scroll back to it. */
+internal class ChatBottomPin {
+    private var viewportHeight = -1
+    private var atBottom = true
+
+    fun onLayout(viewportHeight: Int, newestFullyVisible: Boolean): Boolean {
+        val resized = this.viewportHeight >= 0 && viewportHeight != this.viewportHeight
+        this.viewportHeight = viewportHeight
+        // a resize says nothing about where the user wants to be, only scrolls / new rows do
+        if (!resized) {
+            atBottom = newestFullyVisible
+            return false
+        }
+        return atBottom && !newestFullyVisible
+    }
+}
+
+private fun LazyListLayoutInfo.lastFullyVisible() =
+    visibleItemsInfo.lastOrNull { it.offset + it.size <= viewportEndOffset }
+
+private fun LazyListLayoutInfo.lastFullyVisibleKey(): Any? = lastFullyVisible()?.key
+
+private fun LazyListLayoutInfo.lastFullyVisibleIndex(): Int = lastFullyVisible()?.index ?: -1
 
 /**
  * Keep encrypted historical direct threads readable after their sender leaves.

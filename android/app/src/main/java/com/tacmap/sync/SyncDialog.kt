@@ -587,6 +587,7 @@ private fun PresenceDropdown(
             onDismissRequest = { expanded = false }
         ) {
             com.tacmap.ui.NightWindowFilter() // menus draw in their own window
+            com.tacmap.ui.PopupBackDismiss { expanded = false }
             options.forEachIndexed { index, option ->
                 DropdownMenuItem(
                     text = { Text(option) },

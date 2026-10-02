@@ -2675,5 +2675,17 @@
     "platform": "android",
     "area": "navigation-settings",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/OwnShareSheet.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/models/RemoteChangeFold.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
   }
 ]

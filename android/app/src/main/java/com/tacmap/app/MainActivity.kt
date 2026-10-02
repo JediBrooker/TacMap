@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
 import android.provider.Settings
+import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -41,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
@@ -63,7 +65,7 @@ import com.tacmap.models.TrackRecordingSettingsTarget
 import com.tacmap.util.DataKey
 import com.tacmap.util.retryExpiredSensitiveClipboard
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), OwnShareSheetHost {
 
     private lateinit var trial: TrialManager
     private lateinit var billing: BillingManager
@@ -106,6 +108,7 @@ class MainActivity : ComponentActivity() {
     private var restoreAfterRedeem = false
     /** DEBUG: launched with verification hooks (docs/DEBUG_HOOKS.md) */
     private var debugHooksActive = false
+    private val shareSheetLock = ShareSheetLockDeferral()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -330,12 +333,6 @@ class MainActivity : ComponentActivity() {
         com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = true
     }
 
-    override fun onStop() {
-        super.onStop()
-        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = false
-        (application as TacticalApp).pdfRenderGuard.disarmBackground()
-    }
-
     /**
      * DEBUG ONLY. Import a PDF as if it was picked, preset the camera and grid, and lift
      * FLAG_SECURE for this process so the verification scripts can screenshot.
@@ -358,6 +355,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (shareSheetLock.onPause()) lockForBackground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
+        com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = false
+        (application as TacticalApp).pdfRenderGuard.disarmBackground()
+        if (shareSheetLock.onStop()) {
+            lockForBackground()
+            // compose pauses recomposition at ON_STOP, so flipping missionKeyReady cant tear
+            // MapScreen + its stores down from here like it does from onPause. Nuke the
+            // composition by hand, ComposeView rebuilds it on the next measure once visible
+            (findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as? ComposeView)
+                ?.disposeComposition()
+        }
+    }
+
+    override fun willShowOwnShareSheet() = shareSheetLock.shareSheetRequested()
+
+    override fun ownShareSheetLaunchFailed() = shareSheetLock.shareSheetLaunchFailed()
+
+    private fun lockForBackground() {
         // Reduce an eligible v3 client to egress-only presence before the
         // mission key and its screen-owned stores are torn down.
         (application as TacticalApp).unitSyncRuntime.onActivityPausing()
@@ -386,6 +406,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        shareSheetLock.onResume()
         // Stop background egress now; Unit Sync reconnects only after the
         // mission key is available and MapScreen attaches fresh stores.
         (application as TacticalApp).unitSyncRuntime.onActivityForegrounded()

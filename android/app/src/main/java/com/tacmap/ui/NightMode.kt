@@ -2,7 +2,10 @@ package com.tacmap.ui
 
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.os.Build
 import android.view.View
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
@@ -11,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogProperties
@@ -139,7 +144,29 @@ fun DropdownMenu(
         modifier = modifier,
     ) {
         NightWindowFilter()
+        PopupBackDismiss(onDismissRequest)
         content()
+    }
+}
+
+/**
+ * Compose 1.6 popups only close on BACK via dispatchKeyEvent. Targeting SDK 36 the system
+ * routes BACK through OnBackInvokedDispatcher instead, so a focused menu just ignored it.
+ * Call from inside the popup content so it registers on the popup's own window. The
+ * DropdownMenu wrapper does it, ExposedDropdownMenu callers do it themselves like
+ * NightWindowFilter. On older / non opted-in devices the key event path still fires,
+ * dismissing twice is harmless.
+ */
+@Composable
+fun PopupBackDismiss(onDismiss: () -> Unit) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val view = LocalView.current
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
+    DisposableEffect(view) {
+        val dispatcher = view.findOnBackInvokedDispatcher()
+        val callback = OnBackInvokedCallback { currentOnDismiss() }
+        dispatcher?.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+        onDispose { dispatcher?.unregisterOnBackInvokedCallback(callback) }
     }
 }
 

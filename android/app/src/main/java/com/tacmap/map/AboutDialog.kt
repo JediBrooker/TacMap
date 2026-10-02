@@ -1,5 +1,6 @@
 package com.tacmap.map
 
+import com.tacmap.app.startOwnShareSheet
 import com.tacmap.localization.L10n
 
 import android.content.Intent
@@ -81,7 +82,7 @@ fun AboutDialog(onDismiss: () -> Unit, onReplayTour: (() -> Unit)? = null) {
                             putExtra(Intent.EXTRA_SUBJECT, L10n.text("TacMap crash log"))
                             putExtra(Intent.EXTRA_TEXT, report)
                         }
-                        context.startActivity(Intent.createChooser(intent, L10n.text("Export crash log")))
+                        context.startOwnShareSheet(Intent.createChooser(intent, L10n.text("Export crash log")))
                     }) { Text(L10n.text("Export crash log"), fontSize = 12.sp) }
                     TextButton(onClick = {
                         CrashReporter.clear(context)

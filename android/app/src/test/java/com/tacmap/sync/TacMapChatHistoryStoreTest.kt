@@ -200,6 +200,25 @@ class TacMapChatHistoryStoreTest {
     }
 
     @Test
+    fun aSingleInboundMessageIsPublishedImmediately() {
+        // No successor frame, no reopen: the one message has to be on the flow the dialog collects
+        val room = canonical32(40)
+        val actor = canonical32(41)
+        val incoming = message(room, canonicalMessageId(42), outgoing = false, sender = actor)
+        val store = TacMapChatHistoryStore.forTests(directory)
+        assertTrue(store.open(room))
+        assertEquals(emptyList<TacMapChatMessage>(), store.messages.value)
+
+        assertEquals(
+            TacMapChatInboundResult.ACCEPTED,
+            store.acceptInbound(incoming, actor, canonical32(43), canonical32(44), "0000000000000001", canonical32(45)),
+        )
+        assertEquals(listOf(incoming), store.messages.value)
+        assertEquals(1, store.unreadCount.value)
+        assertEquals(listOf(incoming), store.history(TacMapChatTarget.EntireRoom))
+    }
+
+    @Test
     fun inboundMessageAndReplayWatermarkCommitAtomicallyAndSurviveRestart() {
         val room = canonical32(5)
         val actor = canonical32(6)
