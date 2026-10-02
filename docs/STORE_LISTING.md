@@ -25,9 +25,9 @@ the screenshots in `docs/store/`.
 - **Pay once. Offline field maps for hiking, hunting, SAR, survey & tactical work.** *(78)*
 
 ## App Store promotional text (≤170 chars, editable without review)
-- **New in 2.2: elevation profile and line of sight, red night mode, KML/KMZ export, a long-press point menu and a guided map tour.** *(127)*
-- German: **Neu in 2.2: Höhenprofil und Sichtlinie, roter Nachtmodus, KML/KMZ-Export, ein Punktmenü per langem Drücken und eine geführte Kartentour.** *(136)*
-- Previous (2.1): range rings, offline sun & moon times, symbol list sorting and Keep screen on.
+- **New in 3.0: GeoPDFs line up with the printed MGRS grid, easy PDF calibration, sharp maps at every zoom, line of sight, red night mode and KML export.** *(149)*
+- German: **Neu in 3.0: GeoPDFs passen auf das gedruckte MGRS-Gitter, einfache PDF-Kalibrierung, scharfe Karten beim Zoomen, Sichtlinie, roter Nachtmodus, KML-Export.** *(154)*
+- Previous (2.1): range rings, offline sun & moon times, symbol list sorting and Keep screen on. 2.2 never shipped; its features are in 3.0.
 
 ---
 
@@ -136,10 +136,33 @@ The source of truth is `docs/store/localizations/en-US.json` and `de-DE.json`
 (`appStore.whatsNew` / `googlePlay.releaseNotes`); keep the blocks below in sync
 with them and run `scripts/export_store_localizations.py` to check limits.
 
-2.2.0 is a draft: no 2.2.0 version exists in App Store Connect yet. The last
-bullets assume PR #46 (Android parity + iOS calibration/ELEV fixes) merges
-before submission; drop them if it doesn't. The German copy needs a native
-speaker's review.
+3.0.0 (build 73) replaces the unreleased 2.2.0: builds 70-72 only went to
+TestFlight, so 3.0's notes carry the 2.2 features too. The full description in
+the JSON also gained the 3.0 map features (projection-accurate GeoPDFs,
+grid-reference calibration, sharp zoom, offline tiles, several maps) and the
+2.2 tools. The German copy needs a native speaker's review.
+
+### 3.0.0 — Apple App Store, English (1,333 / 4,000 characters)
+See `appStore.whatsNew` in `docs/store/localizations/en-US.json` (MAPS, FIELD
+TOOLS, UNIT SYNC sections).
+
+### 3.0.0 — Google Play, English (384 / 500 Unicode characters)
+```
+TacMap 3.0
+• GeoPDFs line up with the printed MGRS grid; USGS sheets import again.
+• Calibrate a plain PDF from grid references, with per-point accuracy.
+• Sharp maps at every zoom, offline tiles, several maps.
+• Elevation profile and line of sight.
+• Red night mode and KML/KMZ export.
+• Hold the map for a point menu; guided tour.
+• Steadier Unit Sync; fingerprint or face App Lock.
+```
+
+### 3.0.0 — German (de-DE)
+App Store 1,668 / 4,000 and Google Play 411 / 500 characters; see
+`docs/store/localizations/de-DE.json`.
+
+2.2.0 drafts below are kept for history only; that version never shipped.
 
 ### 2.2.0 — Apple App Store, English (1,117 / 4,000 characters)
 ```
