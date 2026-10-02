@@ -246,6 +246,7 @@ internal class SyncHarness(
     separateWorkers: Boolean = false,
     /** The 21.4 switch; production ships it off until doc change D1. */
     backgroundReconnect: Boolean = false,
+    persistenceWorker: kotlinx.coroutines.CoroutineDispatcher? = null,
 ) {
     val dispatcher = VirtualTimeDispatcher()
     val validationDispatcher = if (separateWorkers) VirtualTimeDispatcher() else dispatcher
@@ -282,7 +283,7 @@ internal class SyncHarness(
         deriveRoomV3 = ::cachedV3,
         deriveRoomV2 = ::cachedV2,
         validationDispatcher = validationDispatcher,
-        persistenceDispatcher = persistenceDispatcher,
+        persistenceDispatcher = persistenceWorker ?: persistenceDispatcher,
         deriveDispatcher = deriveDispatcher,
         wakeLock = wakeLock,
         allowsSimulatorTeleport = { false },
@@ -290,7 +291,15 @@ internal class SyncHarness(
     )
     val manager = SyncManager(waypointStore, drawingStore, scope, env)
 
-    fun runCurrent() = scheduler.runCurrent()
+    fun runCurrent() {
+        scheduler.runCurrent()
+        // The separate-worker scripts hold snapshot seals explicitly, while a
+        // fresh join's file load is setup following the explicitly driven KDF.
+        if (manager.status.value == SyncManager.Status.CONNECTING && manager.replayStateForTests == null) {
+            persistenceDispatcher.runCurrent()
+            scheduler.runCurrent()
+        }
+    }
     fun advance(ms: Long) {
         scheduler.advanceTimeBy(ms)
         scheduler.runCurrent()
@@ -363,6 +372,14 @@ internal class SyncHarness(
     fun close() {
         manager.dispose()
         scope.cancel()
+        // Non-cancellable durable completions own the serial replay order until
+        // their owner-dispatcher callbacks run. Never strand that lock in a test.
+        repeat(8) {
+            persistenceDispatcher.runCurrent()
+            validationDispatcher.runCurrent()
+            deriveDispatcher.runCurrent()
+            scheduler.runCurrent()
+        }
         dir.deleteRecursively()
     }
 

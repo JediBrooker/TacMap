@@ -3,7 +3,7 @@ import Foundation
 /// Remote unit member broadcasting location via sync relay. Ephemeral: recent
 /// updates expire quickly, while a v3 location may remain as a bounded
 /// last-known position when its matching authenticated session is still active.
-struct PresencePeer: Identifiable {
+struct PresencePeer: Identifiable, Equatable {
     let clientId: String
     var callsign: String
     var affiliation: String

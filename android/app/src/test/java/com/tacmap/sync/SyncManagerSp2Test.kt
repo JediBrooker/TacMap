@@ -45,6 +45,45 @@ class SyncManagerSp2Test {
         return h.completeHandshake(items, seq)
     }
 
+    @Test
+    fun signedLeaveUsesTheSocketPacerBudget() {
+        val hello = connected()
+        val socket = h.socket
+        val key = socket.sentOfType("chat-key").single()
+        h.deliver(JSONObject().put("t", "chat-key-ack").put("cv", 1).put("by", key.getString("by"))
+            .put("sd", key.getString("sd")).put("kid", key.getString("kid")))
+        val peer = FakeV3Peer(h.keys())
+        h.deliver(peer.hello())
+        val kx = TacMapChatEphemeralKey.generate().publicKeyRaw
+        val keys = h.keys()
+        val kid = TacMapChatCrypto.chatKeyId(keys.roomIdRaw, peer.actor, peer.sd, kx)
+        h.deliver(JSONObject().put("t", "chat-key").put("cv", 1).put("by", peer.actor).put("sd", peer.sdText)
+            .put("kx", SyncIdentity.urlB64(kx)).put("kid", kid).put("sig", SyncSigning.sign(peer.seed,
+                TacMapChatCrypto.chatKeyPreimage(keys.roomIdRaw, peer.actor, peer.sd, kx, kid))))
+        repeat(SyncOutboundPacer.FRAME_CAPACITY) {
+            assertTrue(h.manager.sendChat(TacMapChatTarget.EntireRoom, TacMapChatContentKind.TEXT, "budget $it")
+                is TacMapChatSendResult.Sent)
+        }
+        assertEquals(SyncOutboundPacer.FRAME_CAPACITY, socket.sent.size)
+        h.manager.leave()
+        h.runCurrent()
+        assertTrue(socket.sentOfType("leave").isEmpty())
+        assertEquals(SyncOutboundPacer.FRAME_CAPACITY, socket.sent.size)
+        assertEquals(1000 to "leave", socket.localClose)
+        assertNull(h.manager.room.value)
+        assertEquals(hello.getString("by"), socket.sentOfType("hello").single().getString("by"))
+    }
+
+    @Test
+    fun signedLeaveIsWrittenBeforeCloseWhenControlBudgetRemains() {
+        connected()
+        val socket = h.socket
+        h.manager.leave()
+        assertEquals(1, socket.sentOfType("leave").size)
+        assertEquals("leave", socket.sentFrames().last().getString("t"))
+        assertEquals(1000 to "leave", socket.localClose)
+    }
+
     private fun waypoint(name: String, id: String = UUID.randomUUID().toString()) =
         Waypoint(id = id, name = name, latitude = -35.0, longitude = 149.0, createdAt = 1_700_000_000_000L)
 

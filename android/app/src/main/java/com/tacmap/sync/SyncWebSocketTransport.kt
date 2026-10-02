@@ -14,6 +14,20 @@ import org.java_websocket.framing.Framedata
 import org.java_websocket.handshake.ServerHandshake
 import java.net.SocketTimeoutException
 import java.net.URI
+import java.net.Socket
+import java.net.SocketAddress
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.io.InputStream
+import java.io.IOException
+import java.io.OutputStream
+import java.util.IdentityHashMap
+import javax.net.SocketFactory
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.SSLParameters
+import javax.net.ssl.SSLSession
+import javax.net.ssl.HandshakeCompletedListener
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -96,6 +110,235 @@ internal class SyncWireReceiveBudget(
     }
 }
 
+/** Tracks the library's encoded buffers through write and flush, including
+ * the buffer its writer has already taken out of outQueue. Array identity
+ * comes from Draft_6455, so no frame parsing or private library fields are needed. */
+internal class SyncSocketWriteTracker(
+    private val maxBytes: Long = SyncWebSocketTransport.MAX_OUTBOUND_QUEUE_BYTES,
+    private val maxFrames: Int = SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW,
+    private val onOverflow: () -> Unit = {},
+) {
+    private data class Pending(val bytes: Long, val application: Boolean)
+    private val pending = IdentityHashMap<ByteArray, Pending>()
+    private var wireBytes = 0L
+    private var applicationBytes = 0L
+    private var closed = false
+
+    val pendingWireBytes: Long @Synchronized get() = wireBytes
+    val pendingApplicationBytes: Long @Synchronized get() = applicationBytes
+
+    fun enqueued(buffer: ByteBuffer, application: Boolean) {
+        val overflow = synchronized(this) {
+            check(!closed) { "WebSocket write accounting is terminal" }
+            check(buffer.hasArray()) { "WebSocket encoder must return an array-backed buffer" }
+            val bytes = buffer.remaining().toLong()
+            // Control responses bypass send(), so the encoder is the final
+            // admission point for every frame, including PONG and CLOSE.
+            if (pending.size >= maxFrames || bytes > maxBytes - wireBytes) {
+                closed = true
+                pending.clear()
+                wireBytes = 0L
+                applicationBytes = 0L
+                true
+            } else {
+                check(pending.put(buffer.array(), Pending(bytes, application)) == null) { "WebSocket buffer queued twice" }
+                wireBytes += bytes
+                if (application) applicationBytes += bytes
+                false
+            }
+        }
+        if (overflow) {
+            // Abort the socket directly; sending a close frame would recurse
+            // into the encoder whose bounded queue has just become terminal.
+            onOverflow()
+            throw IllegalStateException("WebSocket outbound queue limit reached")
+        }
+    }
+
+    @Synchronized
+    fun flushed(buffers: List<ByteArray>) {
+        for (buffer in buffers) {
+            val value = pending.remove(buffer) ?: continue
+            wireBytes -= value.bytes
+            if (value.application) applicationBytes -= value.bytes
+        }
+    }
+
+    @Synchronized
+    fun clear() {
+        closed = true
+        pending.clear()
+        wireBytes = 0L
+        applicationBytes = 0L
+    }
+
+    fun outputStream(delegate: OutputStream): OutputStream = object : OutputStream() {
+        private val written = ArrayList<ByteArray>()
+
+        override fun write(value: Int) = delegate.write(value)
+
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            delegate.write(bytes, offset, length)
+            // Java-WebSocket writes one complete encoded buffer at a time.
+            if (offset == 0 && length == bytes.size) written += bytes
+        }
+
+        override fun flush() {
+            delegate.flush()
+            flushed(written)
+            written.clear()
+        }
+
+        override fun close() = delegate.close()
+    }
+}
+
+/** Decorates the plaintext side of both ws and wss sockets. The TLS socket
+ * remains an SSLSocket so Java-WebSocket still enables HTTPS host verification. */
+internal class SyncWriteTrackingSocketFactory(
+    private val uri: URI,
+    private val writes: SyncSocketWriteTracker,
+    private val supplied: SocketFactory? = null,
+) : SocketFactory() {
+    override fun createSocket(): Socket {
+        supplied?.let { return wrap(it.createSocket()) }
+        if (uri.scheme != "wss") return wrap(Socket())
+        val raw = Socket()
+        try {
+            val port = if (uri.port >= 0) uri.port else 443
+            raw.connect(InetSocketAddress(uri.host, port), SyncWebSocketTransport.CONNECT_TIMEOUT_MS)
+            // Passing the original host preserves SNI and certificate host checks.
+            val secure = (SSLSocketFactory.getDefault() as SSLSocketFactory)
+                .createSocket(raw, uri.host, port, true) as SSLSocket
+            return wrap(secure)
+        } catch (failure: Throwable) {
+            runCatching { raw.close() }
+            throw failure
+        }
+    }
+
+    override fun createSocket(host: String, port: Int): Socket =
+        wrap(delegateFactory().createSocket(host, port))
+
+    override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
+        wrap(delegateFactory().createSocket(host, port, localHost, localPort))
+
+    override fun createSocket(host: InetAddress, port: Int): Socket =
+        wrap(delegateFactory().createSocket(host, port))
+
+    override fun createSocket(host: InetAddress, port: Int, localHost: InetAddress, localPort: Int): Socket =
+        wrap(delegateFactory().createSocket(host, port, localHost, localPort))
+
+    private fun delegateFactory(): SocketFactory = supplied ?: if (uri.scheme == "wss") {
+        SSLSocketFactory.getDefault()
+    } else {
+        SocketFactory.getDefault()
+    }
+
+    private fun wrap(socket: Socket): Socket = if (socket is SSLSocket) {
+        SyncTrackedTlsSocket(socket, writes)
+    } else {
+        SyncTrackedSocket(socket, writes)
+    }
+}
+
+private class SyncTrackedSocket(
+    private val delegate: Socket,
+    private val writes: SyncSocketWriteTracker,
+) : Socket() {
+    private val output by lazy { writes.outputStream(delegate.getOutputStream()) }
+    override fun getOutputStream(): OutputStream = output
+    override fun getInputStream(): InputStream = delegate.getInputStream()
+    override fun connect(endpoint: SocketAddress) = delegate.connect(endpoint)
+    override fun connect(endpoint: SocketAddress, timeout: Int) = delegate.connect(endpoint, timeout)
+    override fun bind(bindpoint: SocketAddress?) = delegate.bind(bindpoint)
+    override fun close() = delegate.close()
+    override fun isConnected(): Boolean = delegate.isConnected
+    override fun isClosed(): Boolean = delegate.isClosed
+    override fun isBound(): Boolean = delegate.isBound
+    override fun getInetAddress(): InetAddress? = delegate.inetAddress
+    override fun getLocalAddress(): InetAddress = delegate.localAddress
+    override fun getPort(): Int = delegate.port
+    override fun getLocalPort(): Int = delegate.localPort
+    override fun getRemoteSocketAddress(): SocketAddress? = delegate.remoteSocketAddress
+    override fun getLocalSocketAddress(): SocketAddress? = delegate.localSocketAddress
+    override fun setTcpNoDelay(on: Boolean) { delegate.tcpNoDelay = on }
+    override fun getTcpNoDelay(): Boolean = delegate.tcpNoDelay
+    override fun setReuseAddress(on: Boolean) { delegate.reuseAddress = on }
+    override fun getReuseAddress(): Boolean = delegate.reuseAddress
+    override fun setSoTimeout(timeout: Int) { delegate.soTimeout = timeout }
+    override fun getSoTimeout(): Int = delegate.soTimeout
+    override fun setReceiveBufferSize(size: Int) { delegate.receiveBufferSize = size }
+    override fun getReceiveBufferSize(): Int = delegate.receiveBufferSize
+    override fun setSendBufferSize(size: Int) { delegate.sendBufferSize = size }
+    override fun getSendBufferSize(): Int = delegate.sendBufferSize
+    override fun setKeepAlive(on: Boolean) { delegate.keepAlive = on }
+    override fun getKeepAlive(): Boolean = delegate.keepAlive
+    override fun shutdownInput() = delegate.shutdownInput()
+    override fun shutdownOutput() = delegate.shutdownOutput()
+    override fun isInputShutdown(): Boolean = delegate.isInputShutdown
+    override fun isOutputShutdown(): Boolean = delegate.isOutputShutdown
+}
+
+private class SyncTrackedTlsSocket(
+    private val delegate: SSLSocket,
+    private val writes: SyncSocketWriteTracker,
+) : SSLSocket() {
+    private val output by lazy { writes.outputStream(delegate.getOutputStream()) }
+    override fun getOutputStream(): OutputStream = output
+    override fun getInputStream(): InputStream = delegate.getInputStream()
+    override fun connect(endpoint: SocketAddress) = delegate.connect(endpoint)
+    override fun connect(endpoint: SocketAddress, timeout: Int) = delegate.connect(endpoint, timeout)
+    override fun bind(bindpoint: SocketAddress?) = delegate.bind(bindpoint)
+    override fun close() = delegate.close()
+    override fun isConnected(): Boolean = delegate.isConnected
+    override fun isClosed(): Boolean = delegate.isClosed
+    override fun isBound(): Boolean = delegate.isBound
+    override fun getInetAddress(): InetAddress? = delegate.inetAddress
+    override fun getLocalAddress(): InetAddress = delegate.localAddress
+    override fun getPort(): Int = delegate.port
+    override fun getLocalPort(): Int = delegate.localPort
+    override fun getRemoteSocketAddress(): SocketAddress? = delegate.remoteSocketAddress
+    override fun getLocalSocketAddress(): SocketAddress? = delegate.localSocketAddress
+    override fun setTcpNoDelay(on: Boolean) { delegate.tcpNoDelay = on }
+    override fun getTcpNoDelay(): Boolean = delegate.tcpNoDelay
+    override fun setReuseAddress(on: Boolean) { delegate.reuseAddress = on }
+    override fun getReuseAddress(): Boolean = delegate.reuseAddress
+    override fun setSoTimeout(timeout: Int) { delegate.soTimeout = timeout }
+    override fun getSoTimeout(): Int = delegate.soTimeout
+    override fun setReceiveBufferSize(size: Int) { delegate.receiveBufferSize = size }
+    override fun getReceiveBufferSize(): Int = delegate.receiveBufferSize
+    override fun setSendBufferSize(size: Int) { delegate.sendBufferSize = size }
+    override fun getSendBufferSize(): Int = delegate.sendBufferSize
+    override fun setKeepAlive(on: Boolean) { delegate.keepAlive = on }
+    override fun getKeepAlive(): Boolean = delegate.keepAlive
+    override fun shutdownInput() = delegate.shutdownInput()
+    override fun shutdownOutput() = delegate.shutdownOutput()
+    override fun isInputShutdown(): Boolean = delegate.isInputShutdown
+    override fun isOutputShutdown(): Boolean = delegate.isOutputShutdown
+    override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
+    override fun getEnabledCipherSuites(): Array<String> = delegate.enabledCipherSuites
+    override fun setEnabledCipherSuites(suites: Array<String>) { delegate.enabledCipherSuites = suites }
+    override fun getSupportedProtocols(): Array<String> = delegate.supportedProtocols
+    override fun getEnabledProtocols(): Array<String> = delegate.enabledProtocols
+    override fun setEnabledProtocols(protocols: Array<String>) { delegate.enabledProtocols = protocols }
+    override fun getSession(): SSLSession = delegate.session
+    override fun getHandshakeSession(): SSLSession? = delegate.handshakeSession
+    override fun addHandshakeCompletedListener(listener: HandshakeCompletedListener) = delegate.addHandshakeCompletedListener(listener)
+    override fun removeHandshakeCompletedListener(listener: HandshakeCompletedListener) = delegate.removeHandshakeCompletedListener(listener)
+    override fun startHandshake() = delegate.startHandshake()
+    override fun setUseClientMode(mode: Boolean) { delegate.useClientMode = mode }
+    override fun getUseClientMode(): Boolean = delegate.useClientMode
+    override fun setNeedClientAuth(need: Boolean) { delegate.needClientAuth = need }
+    override fun getNeedClientAuth(): Boolean = delegate.needClientAuth
+    override fun setWantClientAuth(want: Boolean) { delegate.wantClientAuth = want }
+    override fun getWantClientAuth(): Boolean = delegate.wantClientAuth
+    override fun setEnableSessionCreation(enabled: Boolean) { delegate.enableSessionCreation = enabled }
+    override fun getEnableSessionCreation(): Boolean = delegate.enableSessionCreation
+    override fun getSSLParameters(): SSLParameters = delegate.sslParameters
+    override fun setSSLParameters(parameters: SSLParameters) { delegate.sslParameters = parameters }
+}
+
 /**
  * Unit Sync transport with allocation-time inbound bounds.
  *
@@ -109,7 +352,9 @@ internal class SyncWireReceiveBudget(
  * compression extension is offered, so a small compressed frame cannot inflate
  * past the same ceiling.
  */
-internal class SyncWebSocketTransport : SyncTransportFactory {
+internal class SyncWebSocketTransport(
+    private val socketFactory: SocketFactory? = null,
+) : SyncTransportFactory {
     private val sockets = ConcurrentHashMap.newKeySet<BoundedSocket>()
 
     override fun newWebSocket(
@@ -121,6 +366,7 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
             uri = URI(url),
             headers = headers,
             listener = listener,
+            socketFactory = socketFactory,
             onTerminal = sockets::remove,
         )
         sockets += socket
@@ -166,6 +412,7 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
      */
     private class BoundedDraft(
         private val onProgress: (() -> Unit)?,
+        private val writes: SyncSocketWriteTracker? = null,
     ) : Draft_6455(emptyList<IExtension>(), MAX_FRAME_BYTES) {
         private var fragmentedPayloadBytes = 0L
         private var fragmentedMessageActive = false
@@ -228,7 +475,13 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
             return super.translateFrame(buffer)
         }
 
-        override fun copyInstance(): Draft = BoundedDraft(onProgress)
+        override fun createBinaryFrame(frame: Framedata): ByteBuffer {
+            val encoded = super.createBinaryFrame(frame)
+            writes?.enqueued(encoded, frame.opcode == Opcode.TEXT)
+            return encoded
+        }
+
+        override fun copyInstance(): Draft = BoundedDraft(onProgress, writes)
 
         override fun reset() {
             clearFragmentedState()
@@ -254,14 +507,19 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
         uri: URI,
         headers: Map<String, String>,
         private val listener: SyncWebSocketListener,
+        socketFactory: SocketFactory?,
         private val onTerminal: (BoundedSocket) -> Unit,
     ) : SyncWebSocket {
         private val terminal = AtomicBoolean(false)
         private val sendLock = Any()
         private val inboundCallbackGate = SyncInboundCallbackGate()
-        private val client = object : WebSocketClient(
+        private val writes: SyncSocketWriteTracker = SyncSocketWriteTracker(onOverflow = {
+            finish { listener.onFailure(this, IOException("Unit Sync outbound queue limit reached")) }
+            runCatching { client.closeConnection(CloseFrame.ABNORMAL_CLOSE, "outbound queue limit") }
+        })
+        private val client: WebSocketClient = object : WebSocketClient(
             uri,
-            boundedDraft { listener.onInboundProgress(this@BoundedSocket) },
+            BoundedDraft({ listener.onInboundProgress(this@BoundedSocket) }, writes),
             headers,
             CONNECT_TIMEOUT_MS,
         ) {
@@ -300,6 +558,7 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
             }
 
             init {
+                setSocketFactory(SyncWriteTrackingSocketFactory(uri, writes, socketFactory))
                 isDaemon = true
                 connectionLostTimeout = KEEPALIVE_SECONDS
             }
@@ -311,10 +570,7 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
             if (terminal.get() || client.readyState != ReadyState.OPEN) return false
             val payloadBytes = text.toByteArray(Charsets.UTF_8).size.toLong()
             if (payloadBytes > MAX_FRAME_BYTES) return false
-            val queuedBytes = (client.connection as? WebSocketImpl)
-                ?.outQueue
-                ?.sumOf { it.remaining().toLong() }
-                ?: MAX_OUTBOUND_QUEUE_BYTES
+            val queuedBytes = writes.pendingWireBytes
             // RFC 6455 client frames add at most 14 bytes (mask + 64-bit length).
             // Count that overhead too so the bound applies to the actual queue.
             val nextFrameBytes = payloadBytes + MAX_FRAME_OVERHEAD_BYTES
@@ -327,9 +583,8 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
             return runCatching { client.close(code, reason) }.isSuccess
         }
 
-        /** Framed bytes still sitting in Java-WebSocket's out queue. */
-        override fun queuedBytes(): Long =
-            (client.connection as? WebSocketImpl)?.outQueue?.sumOf { it.remaining().toLong() } ?: 0L
+        /** Includes a buffer the writer took out of the queue but has not flushed. */
+        override fun queuedBytes(): Long = writes.pendingApplicationBytes
 
         override fun sendPing(): Boolean {
             if (terminal.get() || client.readyState != ReadyState.OPEN) return false
@@ -350,6 +605,7 @@ internal class SyncWebSocketTransport : SyncTransportFactory {
 
         private fun finish(callback: () -> Unit) {
             if (!terminal.compareAndSet(false, true)) return
+            writes.clear()
             onTerminal(this)
             callback()
         }

@@ -62,7 +62,7 @@ struct SyncSheet: View {
                         if manager.pausedForAction != nil {
                             // parked on PAUSED_ACTION_REQUIRED, only Retry gets it going
                             Button(L10n.text("Retry")) { manager.retryPausedConnection() }
-                        } else {
+                        } else if !manager.mutationsPaused {
                             Button(L10n.text("Dismiss error")) { manager.acknowledgeLastError() }
                         }
                     }

@@ -139,6 +139,7 @@ def ack_timeout(attempt, ahead):
 RECEIVE = {
     "windowMs": 10_000,
     "windowKind": "tumbling, same as today",
+    "androidTransportQueue": {"maxBytes": 16 * MiB, "maxFrames": 8_192},
     "room": {"baseFrames": 600, "perSessionFrames": 25, "maxFrames": 4_000,
              "baseBytes": 12 * MiB, "perSessionBytes": 262_144, "maxBytes": 48 * MiB,
              "sessionsCounted": "authenticated remote sessions in activeSessions at admit time"},
@@ -437,6 +438,7 @@ PRESENCE = {
 
 BATCHING = {
     "inboundBatchMaxFrames": 64,
+    "splitBeforeRepeatedMutationWireId": True,
     "inboundQueueMaxFrames": 1_024,
     "inboundQueueMaxBytes": 16 * MiB,
     "replayWritesMax": {"perSnapshot": 2, "perHello": 1, "perLiveBatch": 2, "perOutboundDiffPass": 1,
@@ -635,6 +637,15 @@ SP4 = [
     "relay batch-put frame or retryable rate nack (S6-07 relay half)",
 ]
 
+# Count-before-bytes would retain 500 messages and never trigger hysteresis.
+# Compute the independent budget result for the full 501-message candidate.
+_count_boundary_sizes = [4190] * 501
+_count_boundary_drop = 0
+while sum(_count_boundary_sizes[_count_boundary_drop:]) + max(0, len(_count_boundary_sizes) - _count_boundary_drop - 1) > CHAT["history"]["pruneTargetBytes"]:
+    _count_boundary_drop += 1
+assert sum(_count_boundary_sizes) + 500 > CHAT["history"]["maxEncodedBytes"]
+assert sum(_count_boundary_sizes[1:]) + 499 <= CHAT["history"]["maxEncodedBytes"]
+
 # ---- scenarios ------------------------------------------------------------------
 fd, bd = room_budget(5)
 SCEN = [
@@ -802,7 +813,9 @@ SCEN = [
          {"fenceCount": 256, "superseded": 1, "newIdentity": True, "expect": {"result": "accepted", "fenceCountAfter": 256}}]},
     {"id": "chat_history_byte_prune", "requiredBy": "SP2", "findings": ["S4-07"], "unit": "ChatHistoryBudget",
      "given": {"fixedOverheadBytes": 300000, "separatorBytes": 1, "messageEncodedBytes": [8000] * 250},
-     "expect": {"dropOldest": 91, "keep": 159, "resultBytesAtMost": 1_572_864}},
+     "expect": {"dropOldest": 91, "keep": 159, "resultBytesAtMost": 1_572_864},
+     "countBoundary": {"given": {"fixedOverheadBytes": 0, "separatorBytes": 1, "messageEncodedBytes": _count_boundary_sizes},
+                       "expect": {"dropOldest": _count_boundary_drop, "keep": len(_count_boundary_sizes) - _count_boundary_drop, "resultBytesAtMost": 1_572_864}}},
     {"id": "presence_stationary_heartbeat", "requiredBy": "SP3", "findings": ["S5-10"], "unit": "PresenceSendPolicy",
      "given": {"fixes": {"startMs": 0, "endMs": 59000, "everyMs": 1000, "lat": -33.8688, "lon": 151.2093,
                          "speedMps": 0, "courseDeg": 0, "horizontalAccuracyM": 5}},

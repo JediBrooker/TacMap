@@ -25,24 +25,24 @@ internal class VirtualTimeDispatcher : CoroutineDispatcher(), Delay {
     var currentTime: Long = 0L
         private set
 
-    override fun dispatch(context: CoroutineContext, block: Runnable) {
+    @Synchronized override fun dispatch(context: CoroutineContext, block: Runnable) {
         queue += Task(currentTime, nextSeq++, block)
     }
 
-    override fun scheduleResumeAfterDelay(timeMillis: Long, continuation: CancellableContinuation<Unit>) {
+    @Synchronized override fun scheduleResumeAfterDelay(timeMillis: Long, continuation: CancellableContinuation<Unit>) {
         val task = Task(currentTime + timeMillis.coerceAtLeast(0L), nextSeq++, Runnable { continuation.resume(Unit) })
         queue += task
-        continuation.invokeOnCancellation { queue.remove(task) }
+        continuation.invokeOnCancellation { synchronized(this) { queue.remove(task) } }
     }
 
-    override fun invokeOnTimeout(timeMillis: Long, block: Runnable, context: CoroutineContext): DisposableHandle {
+    @Synchronized override fun invokeOnTimeout(timeMillis: Long, block: Runnable, context: CoroutineContext): DisposableHandle {
         val task = Task(currentTime + timeMillis.coerceAtLeast(0L), nextSeq++, block)
         queue += task
-        return DisposableHandle { queue.remove(task) }
+        return DisposableHandle { synchronized(this) { queue.remove(task) } }
     }
 
     /** Runs everything due now, including work that work due now schedules. */
-    fun runCurrent() {
+    @Synchronized fun runCurrent() {
         while (true) {
             val head = queue.peek() ?: return
             if (head.time > currentTime) return
@@ -52,7 +52,7 @@ internal class VirtualTimeDispatcher : CoroutineDispatcher(), Delay {
     }
 
     /** Runs every task strictly before now + [ms], then moves the clock there. */
-    fun advanceTimeBy(ms: Long) {
+    @Synchronized fun advanceTimeBy(ms: Long) {
         val target = currentTime + ms
         while (true) {
             val head = queue.peek() ?: break

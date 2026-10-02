@@ -767,6 +767,16 @@ final class SyncClientBehaviourTests: XCTestCase {
         let kept = sizes.dropFirst(drop)
         let total = Int(int(given["fixedOverheadBytes"])) + kept.reduce(0, +) + max(0, kept.count - 1)
         XCTAssertLessThanOrEqual(Int64(total), int(expect["resultBytesAtMost"]))
+        let boundary = s["countBoundary"] as? [String: Any] ?? [:]
+        let boundaryGiven = boundary["given"] as? [String: Any] ?? [:]
+        let boundaryExpected = boundary["expect"] as? [String: Any] ?? [:]
+        let boundarySizes = (boundaryGiven["messageEncodedBytes"] as? [NSNumber] ?? []).map(\.intValue)
+        let byteDrop = ChatHistoryBudget.dropCount(
+            fixedOverheadBytes: Int(int(boundaryGiven["fixedOverheadBytes"])),
+            separatorBytes: Int(int(boundaryGiven["separatorBytes"])), messageBytes: boundarySizes)
+        XCTAssertEqual(byteDrop, Int(int(boundaryExpected["dropOldest"])))
+        XCTAssertEqual(boundarySizes.dropFirst(byteDrop).suffix(ChatHistoryBudget.maxMessages).count,
+                       Int(int(boundaryExpected["keep"])))
         XCTAssertEqual(ChatHistoryBudget.dropCount(fixedOverheadBytes: 10, separatorBytes: 1, messageBytes: [5, 5]), 0)
     }
 

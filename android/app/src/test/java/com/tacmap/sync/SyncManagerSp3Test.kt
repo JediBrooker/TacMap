@@ -302,6 +302,204 @@ class SyncManagerSp3Test {
     }
 
     @Test
+    fun oppositeKindCreatedDuringValidationIsSkippedBeforeReplayCommit() {
+        val h = start(separateWorkers = true)
+        val peer = FakeV3Peer(h.keys())
+        val remote = waypoint("remote")
+        h.join()
+        h.deriveDispatcher.runCurrent(); h.runCurrent()
+        h.beginSnapshot()
+        h.snapshotPage(listOf(peer.waypointRecord(remote, 5)))
+        h.validationDispatcher.runCurrent()
+        val local = DrawingFeature(
+            id = remote.id, name = "local", geometry = DrawingGeometry.LINE,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)),
+        )
+        assertTrue(h.drawingStore.addFeature(local))
+        h.endSnapshot()
+        repeat(6) {
+            h.validationDispatcher.runCurrent(); h.runCurrent()
+            h.persistenceDispatcher.runCurrent(); h.runCurrent()
+        }
+        val replay = h.manager.replayStateForTests!!
+        assertNull(replay.getStamp(peer.wireId(remote.id)))
+        assertNull(replay.getPinnedPubkey(peer.actor))
+        assertEquals(0L, replay.localCounter)
+        assertFalse(replay.hasPendingModelApplications())
+        assertEquals(local, h.drawingStore.committedDocument.value.features.single())
+        assertTrue(h.waypointStore.committedWaypoints.value.isEmpty())
+        assertEquals(SnapshotRecordCategory.SKIP_UNSUPPORTED, h.manager.skippedCategoryForTests(peer.wireId(remote.id)))
+        assertEquals(1, h.socket.sentOfType("hello").size)
+    }
+
+    @Test
+    fun newlyCollidingRecordCannotHideLayersNeededByTheNextRecord() {
+        val h = start(separateWorkers = true)
+        val peer = FakeV3Peer(h.keys())
+        val layer = DrawingLayer(id = "shared-new-layer", name = "Recon", createdAt = 1)
+        fun drawing(name: String) = DrawingFeature(
+            name = name, geometry = DrawingGeometry.LINE, layerId = layer.id,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)),
+        )
+        val colliding = drawing("colliding")
+        val fresh = drawing("fresh")
+        fun content(d: DrawingFeature) = GeoJsonExporter.export(emptyList(), listOf(d), listOf(layer), 1f)
+        h.join()
+        h.deriveDispatcher.runCurrent(); h.runCurrent()
+        h.beginSnapshot()
+        h.snapshotPage(listOf(
+            peer.record(peer.wireId(colliding.id), 5, "drawing", content(colliding)),
+            peer.record(peer.wireId(fresh.id), 6, "drawing", content(fresh)),
+        ))
+        h.validationDispatcher.runCurrent()
+        assertTrue(h.waypointStore.add(waypoint("local", colliding.id)))
+        h.endSnapshot()
+        // Restaging itself waits for the separate validation worker, never the UI.
+        h.runCurrent()
+        assertEquals(-1L, h.manager.replayStateForTests!!.lastSnapshotSeq)
+        repeat(8) {
+            h.validationDispatcher.runCurrent(); h.runCurrent()
+            h.persistenceDispatcher.runCurrent(); h.runCurrent()
+        }
+        val replay = h.manager.replayStateForTests!!
+        assertNull(replay.getStamp(peer.wireId(colliding.id)))
+        assertEquals(6L, replay.getStamp(peer.wireId(fresh.id))!!.counter)
+        assertEquals(listOf(fresh.id), h.drawingStore.committedDocument.value.features.map { it.id })
+        assertEquals(layer.name, h.drawingStore.committedDocument.value.layers.single { it.id == layer.id }.name)
+        assertFalse(replay.hasPendingModelApplications())
+        assertEquals(1, h.socket.sentOfType("hello").size)
+        assertNotEqualsSecurity(h)
+    }
+
+    @Test
+    fun staleSnapshotRecordCannotStageLayersForAFreshRecord() {
+        val h = start(separateWorkers = true)
+        val peer = FakeV3Peer(h.keys())
+        val layer = DrawingLayer(id = "new-layer", name = "Recon", createdAt = 1)
+        fun drawing(name: String) = DrawingFeature(
+            name = name, geometry = DrawingGeometry.LINE, layerId = layer.id,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)),
+        )
+        val stale = drawing("stale")
+        val fresh = drawing("fresh")
+        fun content(d: DrawingFeature) = GeoJsonExporter.export(emptyList(), listOf(d), listOf(layer), 1f)
+        h.join()
+        h.deriveDispatcher.runCurrent(); h.runCurrent()
+        val replay = h.manager.replayStateForTests!!
+        assertTrue(replay.commitSnapshot(listOf(SyncReplayState.AuthenticatedMutation(
+            peer.wireId(stale.id), VersionStamp(10, peer.actor), peer.pub,
+            SyncIdentity.bytesToHex(SyncIdentity.sha256("newer saved content".toByteArray())), false,
+        )), 0))
+        h.beginSnapshot()
+        h.snapshotPage(listOf(
+            peer.record(peer.wireId(stale.id), 5, "drawing", content(stale)),
+            peer.record(peer.wireId(fresh.id), 11, "drawing", content(fresh)),
+        ))
+        h.endSnapshot()
+        repeat(6) {
+            h.validationDispatcher.runCurrent(); h.runCurrent()
+            h.persistenceDispatcher.runCurrent(); h.runCurrent()
+        }
+        assertEquals(listOf(fresh.id), h.drawingStore.committedDocument.value.features.map { it.id })
+        val adopted = h.drawingStore.committedDocument.value.layers.single { it.id == layer.id }
+        assertEquals(layer.name, adopted.name)
+        assertEquals(layer.color, adopted.color)
+        assertEquals(10L, replay.getStamp(peer.wireId(stale.id))!!.counter)
+        assertEquals(11L, replay.getStamp(peer.wireId(fresh.id))!!.counter)
+        assertFalse(replay.hasPendingModelApplications())
+        assertEquals(1, h.socket.sentOfType("hello").size)
+        assertNotEqualsSecurity(h)
+    }
+
+    @Test
+    fun exactResolvedSnapshotRecordCannotStageUnappliedLayers() {
+        exactRecordCannotStageUnappliedLayers(localDiverged = false)
+    }
+
+    @Test
+    fun locallyDivergedPendingSnapshotRecordCannotStageUnappliedLayers() {
+        exactRecordCannotStageUnappliedLayers(localDiverged = true)
+    }
+
+    private fun exactRecordCannotStageUnappliedLayers(localDiverged: Boolean) {
+        val h = start(separateWorkers = true)
+        val peer = FakeV3Peer(h.keys())
+        val layer = DrawingLayer(id = "unapplied-layer", name = "Recon", createdAt = 1)
+        fun drawing(name: String) = DrawingFeature(
+            name = name, geometry = DrawingGeometry.LINE, layerId = layer.id,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)),
+        )
+        val exact = drawing("exact")
+        val fresh = drawing("fresh")
+        fun content(d: DrawingFeature) = GeoJsonExporter.export(emptyList(), listOf(d), listOf(layer), 1f)
+        h.join()
+        h.deriveDispatcher.runCurrent(); h.runCurrent()
+        val replay = h.manager.replayStateForTests!!
+        val mutation = SyncReplayState.AuthenticatedMutation(
+            peer.wireId(exact.id), VersionStamp(5, peer.actor), peer.pub,
+            SyncIdentity.bytesToHex(SyncIdentity.sha256(content(exact).toByteArray())), false,
+        )
+        if (localDiverged) {
+            assertTrue(replay.commitRemoteAuthenticated(SyncReplayState.RemoteMutation(
+                mutation, priorModelHash = null, localModelId = exact.id, acceptedGeneration = 0,
+                expectedModelHash = mutation.contentHash,
+            )))
+            assertTrue(h.drawingStore.addFeature(exact.copy(name = "local", layerId = "default")))
+            h.runCurrent()
+        } else {
+            assertTrue(replay.commitSnapshot(listOf(mutation), 0))
+        }
+        h.beginSnapshot()
+        h.snapshotPage(listOf(
+            peer.record(peer.wireId(exact.id), 5, "drawing", content(exact)),
+            peer.record(peer.wireId(fresh.id), 6, "drawing", content(fresh)),
+        ))
+        h.endSnapshot()
+        repeat(8) {
+            h.validationDispatcher.runCurrent(); h.runCurrent()
+            h.persistenceDispatcher.runCurrent(); h.runCurrent()
+        }
+        assertTrue(h.drawingStore.committedDocument.value.features.any { it.id == fresh.id })
+        assertEquals(layer.name, h.drawingStore.committedDocument.value.layers.single { it.id == layer.id }.name)
+        if (localDiverged) {
+            assertEquals("local", h.drawingStore.committedDocument.value.features.single { it.id == exact.id }.name)
+        } else {
+            assertTrue(h.drawingStore.committedDocument.value.features.none { it.id == exact.id })
+        }
+        assertFalse(replay.hasPendingModelApplications())
+        assertEquals(1, h.socket.sentOfType("hello").size)
+        assertNotEqualsSecurity(h)
+    }
+
+    @Test
+    fun repeatedLiveWireIdEndsTheLayerStagingSubgroup() {
+        val h = start()
+        h.join(); h.completeHandshake()
+        val peer = FakeV3Peer(h.keys())
+        h.deliver(peer.hello())
+        val layer = DrawingLayer(id = "first-version-layer", name = "Recon", createdAt = 1)
+        val first = DrawingFeature(
+            name = "first", geometry = DrawingGeometry.LINE, layerId = layer.id,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)),
+        )
+        val second = first.copy(name = "second", layerId = "default")
+        val other = first.copy(id = UUID.randomUUID().toString(), name = "other")
+        fun record(feature: DrawingFeature, counter: Long, layers: List<DrawingLayer>) = peer.record(
+            peer.wireId(feature.id), counter, "drawing",
+            GeoJsonExporter.export(emptyList(), listOf(feature), layers, 1f), t = "put",
+        )
+        h.socket.deliver(record(first, 5, listOf(layer)))
+        h.socket.deliver(record(second, 6, emptyList()))
+        h.socket.deliver(record(other, 7, listOf(layer)))
+        h.runCurrent()
+        assertEquals("second", h.drawingStore.committedDocument.value.features.single { it.id == first.id }.name)
+        assertEquals(layer.name, h.drawingStore.committedDocument.value.layers.single { it.id == layer.id }.name)
+        assertTrue(h.drawingStore.committedDocument.value.features.any { it.id == other.id })
+        assertFalse(h.manager.replayStateForTests!!.hasPendingModelApplications())
+        assertNotEqualsSecurity(h)
+    }
+
+    @Test
     fun layerRenamedWhileTheSnapshotValidatesIsRestaged() {
         val h = start(separateWorkers = true)
         val peer = FakeV3Peer(h.keys())
@@ -379,7 +577,9 @@ class SyncManagerSp3Test {
         // the relay follows snapshot-end with live hellos; they queue behind the commit
         h.deliver(peer.hello())
         assertTrue(h.manager.onlineMembers.value.isEmpty())
-        repeat(4) {
+        // Snapshot commit, pending cleanup, hello epoch and the queued peer hello
+        // each have their own durable turn; none may publish ahead of its writer.
+        repeat(12) {
             h.validationDispatcher.runCurrent()
             h.persistenceDispatcher.runCurrent()
             h.runCurrent()

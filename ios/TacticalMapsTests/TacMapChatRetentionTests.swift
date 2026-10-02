@@ -98,4 +98,46 @@ final class TacMapChatRetentionTests: XCTestCase {
         XCTAssertEqual(reopened.messages.count, store.messages.count)
         XCTAssertEqual(reopened.messages.last?.body, body)
     }
+    func testByteHysteresisRunsBeforeTheCountCapAtFiveHundredMessages() throws {
+        let actor = canonical(0x31, 3)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        func plainDocument(_ messages: [TacMapChatMessage]) throws -> Data {
+            let objects = try messages.map { try JSONSerialization.jsonObject(with: encoder.encode($0)) }
+            return try JSONSerialization.data(withJSONObject: [
+                "version": 2, "messages": objects, "replay": [:], "unreadMessageIds": []
+            ], options: [.sortedKeys])
+        }
+        let small = try (0..<500).map { _ in try inbound(sender: actor, body: "x") }
+        let smallBytes = try plainDocument(small).count
+        let bodyLength = 1 + (TacMapChatStore.maximumEncodedHistoryBytes - smallBytes) / 500
+        XCTAssertLessThanOrEqual(bodyLength, TacMapChatPayload.maximumBodyBytes)
+        let history = try (0..<500).map { _ in try inbound(sender: actor, body: String(repeating: "x", count: bodyLength)) }
+        let initial = try plainDocument(history)
+        XCTAssertLessThanOrEqual(initial.count, TacMapChatStore.maximumEncodedHistoryBytes)
+        let incoming = TacMapChatMessage(id: try TacMapChatMessage.makeMessageID(),
+            roomId: roomId, scope: .room, senderActorId: actor, senderName: "Remote",
+            recipientActorId: nil, recipientName: nil, kind: .text,
+            body: String(repeating: "y", count: 1_000), sentAtMilliseconds: 1_790_000_000_000,
+            isOutgoing: true, deliveryState: .sending, failureCode: nil)
+        XCTAssertGreaterThan(try plainDocument(history + [incoming]).count, TacMapChatStore.maximumEncodedHistoryBytes)
+        XCTAssertLessThanOrEqual(try plainDocument(Array(history.dropFirst()) + [incoming]).count,
+                                TacMapChatStore.maximumEncodedHistoryBytes, "count-first would hide the byte overflow")
+        let chatDirectory = directory.appendingPathComponent("tacmap_chat", isDirectory: true)
+        try FileManager.default.createDirectory(at: chatDirectory, withIntermediateDirectories: true)
+        let url = try SyncLocalStore.resolveFile(directory: chatDirectory, roomId: roomId, domain: .chat, dataKey: testKey)
+        try SafeStore.write(initial, to: url, label: "sync/chat/\(roomId!)")
+        let store = TacMapChatStore(containerURL: directory)
+        try store.open(roomId: roomId)
+        XCTAssertTrue(try store.appendOutgoing(incoming))
+        XCTAssertLessThan(store.messages.count, 500)
+        XCTAssertLessThanOrEqual(try plainDocument(store.messages).count, ChatHistoryBudget.pruneTargetBytes)
+        let reopened = TacMapChatStore(containerURL: directory)
+        try reopened.open(roomId: roomId)
+        XCTAssertEqual(reopened.messages.map(\.id), store.messages.map(\.id))
+        XCTAssertEqual(reopened.messages.map(\.body), store.messages.map(\.body))
+        XCTAssertEqual(reopened.messages.last?.deliveryState, .failed)
+        XCTAssertEqual(reopened.messages.last?.failureCode, "session-ended")
+    }
+
 }

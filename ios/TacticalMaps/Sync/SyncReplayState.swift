@@ -75,6 +75,9 @@ final class SyncReplayState {
     // at that epoch, and so a replayed presence counter stays rejected.
     private var presenceSeq: [String: Int64] = [:]
     private var sessionDomains: [String: String] = [:]
+    // Chat pruning may run while a replacement hello is staged. Only a
+    // successfully sealed session can retire another store's replay fence.
+    private var durableSessionDomains: [String: String] = [:]
 
     /// Running max of every stamp/tombstone counter ever applied. Stamps only
     /// ever get replaced by higher ones, so this never has to rescan (S5 note 4).
@@ -122,7 +125,7 @@ final class SyncReplayState {
         roomId: String,
         containerURL: URL? = nil,
         persistenceWriter: @escaping PersistenceWriter = { data, url, label in
-            try SafeStore.write(data, to: url, label: label)
+            try SyncPersistenceExecutor.write(data, to: url, label: label)
         }
     ) {
         self.roomId = roomId
@@ -238,7 +241,8 @@ final class SyncReplayState {
     /// extra epochs on top so later background reconnects never write. The
     /// epoch stays strictly increasing either way, which is all replay
     /// protection needs.
-    func reserveHelloEpoch(actorId: String, pubkey: String, floor: UInt64 = 0, spare: UInt64 = 0) throws -> String {
+    func reserveHelloEpoch(actorId: String, pubkey: String, floor: UInt64 = 0, spare: UInt64 = 0,
+                           deferPersistence: Bool = false) throws -> String {
         guard localActorBindingIsValid(actorId: actorId, pubkey: pubkey) else {
             throw ReplayError.invalidState
         }
@@ -252,14 +256,15 @@ final class SyncReplayState {
         guard !overflow else { throw ReplayError.counterExhausted }
         setActor(actorId, pubkey)
         setHelloEpoch(actorId, String(format: "%016llx", persistedValue))
-        // durable before it gets signed, batch or not
-        try persistNow()
+        // Deferred manager calls flush before signing; direct callers persist.
+        if deferPersistence { try persist() } else { try persistNow() }
         return String(format: "%016llx", next)
     }
 
     func getHelloEpoch(_ actorId: String) -> String? { helloEpochs[actorId] }
 
     func activeSessionDomain(_ actorId: String) -> String? { sessionDomains[actorId] }
+    func durableSessionDomain(_ actorId: String) -> String? { durableSessionDomains[actorId] }
 
     /// Called only after actor binding, AEAD, signature and payload validation.
     /// Contract 17.1: a counter 16+ above the persisted one (or the first one
@@ -269,7 +274,7 @@ final class SyncReplayState {
     func acceptPresence(actorId: String, sessionDomain: String, counter: Int64) throws -> Bool {
         guard sessionDomains[actorId] == sessionDomain, counter > 0 else { return false }
         let existing = presenceSeq[actorId] ?? 0
-        guard counter > existing, counter <= existing + Self.advanceWindow else { return false }
+        guard counter > existing, counter - existing <= Self.advanceWindow else { return false }
         let persisted = persistedPresence[actorId].flatMap {
             $0.sessionDomain == sessionDomain ? $0.counter : nil
         } ?? 0
@@ -281,8 +286,27 @@ final class SyncReplayState {
         // let the relay replay a position we already showed. A failed forced
         // write below fails the session closed anyway.
         presenceSeq[actorId] = counter
-        if mustWrite { try persistNow() }
+        if mustWrite { try persist() }
         return true
+    }
+
+    @MainActor
+    func writeCleanPresenceFence(on executor: SyncOffMainExecutor, completion: @escaping (Error?) -> Void = { _ in }) {
+        afterPendingPersistence {
+            guard !self.presenceFenceExact || self.presenceCountersDirty || self.hasUnflushedChanges else {
+                completion(nil); return
+            }
+            self.setPresenceFenceExact(true)
+            self.batchNeedsWrite = true
+            self.flushBatch(on: executor, completion: completion)
+        }
+    }
+
+    @MainActor
+    func flushPresenceCounters(on executor: SyncOffMainExecutor, completion: @escaping (Error?) -> Void) {
+        guard presenceCountersDirty else { completion(nil); return }
+        batchNeedsWrite = true
+        flushBatch(on: executor, completion: completion)
     }
 
     /// Any accepted counter not on disk yet. Drives the 60 s flush.
@@ -324,7 +348,8 @@ final class SyncReplayState {
     func reserveLocalMutations(
         _ requests: [LocalReservation],
         actorId: String,
-        pubkey: String
+        pubkey: String,
+        deferPersistence: Bool = false
     ) throws -> [VersionStamp?] {
         var stampsOut: [VersionStamp?] = []
         stampsOut.reserveCapacity(requests.count)
@@ -350,7 +375,9 @@ final class SyncReplayState {
             stampsOut.append(stamp)
         }
         // a pass that only resends recovery stamps reserves nothing
-        if !undoLog.isEmpty { try persistNow() }
+        if !undoLog.isEmpty {
+            if deferPersistence { try persist() } else { try persistNow() }
+        }
         return stampsOut
     }
 
@@ -434,7 +461,7 @@ final class SyncReplayState {
             setLocalCounter(max(localCounter, mutation.stamp.counter))
             if isExactPersistedMutation(mutation) {
                 let hasMatchingPending = pendingModelApplications[mutation.wireObjectId]
-                    .map { mutationsEqual($0.mutation, mutation) } ?? false
+                    .map { Self.mutationsEqual($0.mutation, mutation) } ?? false
                 results.append(hasMatchingPending ? .exactAlreadyPersisted : .conflictOrStale)
             } else if canAccept(mutation.wireObjectId, mutation.stamp, enforceWindow: false) {
                 apply(mutation)
@@ -455,7 +482,7 @@ final class SyncReplayState {
     func pendingModelDecision(_ mutation: DurableMutation, currentModelHash: String?,
                               currentGeneration: Int64 = 0) -> PendingModelDecision {
         guard let pending = pendingModelApplications[mutation.wireObjectId],
-              mutationsEqual(pending.mutation, mutation) else { return .none }
+              Self.mutationsEqual(pending.mutation, mutation) else { return .none }
         let incomingHash = pending.expectedModelHash
         if currentModelHash == incomingHash { return .alreadyApplied }
         if currentGeneration != pending.acceptedGeneration { return .localDiverged }
@@ -473,7 +500,7 @@ final class SyncReplayState {
         var cleared = 0
         for mutation in mutations {
             guard let pending = pendingModelApplications[mutation.wireObjectId],
-                  mutationsEqual(pending.mutation, mutation) else { continue }
+                  Self.mutationsEqual(pending.mutation, mutation) else { continue }
             setPending(mutation.wireObjectId, nil)
             cleared += 1
         }
@@ -490,19 +517,71 @@ final class SyncReplayState {
     func beginBatch() { batchDepth += 1 }
 
     var isBatching: Bool { batchDepth > 0 }
+    private var batchNeedsWrite = false
+    var hasUnflushedChanges: Bool { !undoLog.isEmpty || batchNeedsWrite }
 
     /// Close the batch, writing once if anything changed.
     func endBatch() throws {
         guard batchDepth > 0 else { return }
         batchDepth -= 1
-        if batchDepth == 0, !undoLog.isEmpty { try writeNow() }
+        if batchDepth == 0, hasUnflushedChanges { try writeNow() }
     }
 
     /// Write what the open batch collected so far (before a model apply or
     /// anything that sends). No-op when nothing changed.
     func flushBatch() throws {
-        guard !undoLog.isEmpty else { return }
+        guard hasUnflushedChanges else { return }
         try writeNow()
+    }
+
+    private var persistenceInFlight = false
+    private var pendingPersistenceActions: [@MainActor () -> Void] = []
+
+    @MainActor
+    private func afterPendingPersistence(_ work: @escaping @MainActor () -> Void) {
+        if persistenceInFlight { pendingPersistenceActions.append(work) }
+        else { work() }
+    }
+
+    private final class PersistenceResult {
+        var error: Error?
+    }
+
+    /// Capture on the protocol worker, encode and seal on the persistence
+    /// worker, then finish durability on main before the manager publishes.
+    @MainActor
+    func flushBatch(on executor: SyncOffMainExecutor, completion: @escaping (Error?) -> Void) {
+        if persistenceInFlight {
+            pendingPersistenceActions.append { self.flushBatch(on: executor, completion: completion) }
+            return
+        }
+        guard hasUnflushedChanges else { completion(nil); return }
+        do {
+            guard let url = try resolvedFileURL() else { didPersist(); completion(nil); return }
+            let object = serializedObject()
+            let writer = persistenceWriter
+            let label = storeLabel
+            let result = PersistenceResult()
+            persistenceInFlight = true
+            executor.execute({
+                do {
+                    let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+                    try writer(data, url, label)
+                } catch { result.error = error }
+            }) {
+                if result.error != nil { self.rollbackToDurable() }
+                else { self.didPersist() }
+                self.persistenceInFlight = false
+                completion(result.error)
+                while !self.persistenceInFlight, !self.pendingPersistenceActions.isEmpty {
+                    let next = self.pendingPersistenceActions.removeFirst()
+                    next()
+                }
+            }
+        } catch {
+            rollbackToDurable()
+            completion(error)
+        }
     }
 
     /// Read-only copy for the off-main snapshot validator. Swift collections
@@ -512,6 +591,7 @@ final class SyncReplayState {
         fileprivate let tombstones: [String: VersionStamp]
         fileprivate let contentHashes: [String: String]
         fileprivate let actors: [String: String]
+        fileprivate let pending: [String: RemoteMutation]
         fileprivate let highWater: Int64
 
         func actorKeyIsAcceptable(_ actorId: String, pubkey: String) -> Bool {
@@ -523,6 +603,12 @@ final class SyncReplayState {
                                       highWater: highWater, stamps: stamps, tombstones: tombstones)
         }
 
+        func willApplyExact(_ mutation: DurableMutation, currentHash: String?, generation: Int64) -> Bool {
+            guard let remote = pending[mutation.wireObjectId], SyncReplayState.mutationsEqual(remote.mutation, mutation) else { return false }
+            return currentHash != remote.expectedModelHash && generation == remote.acceptedGeneration
+                && currentHash == remote.priorModelHash
+        }
+
         func isExactPersistedMutation(_ mutation: DurableMutation) -> Bool {
             SyncReplayState.isExact(mutation, stamps: stamps, tombstones: tombstones,
                                     contentHashes: contentHashes, actors: actors)
@@ -531,7 +617,7 @@ final class SyncReplayState {
 
     func readView() -> ReadView {
         ReadView(stamps: stamps, tombstones: tombstones, contentHashes: contentHashes,
-                 actors: actors, highWater: roomHighWater())
+                 actors: actors, pending: pendingModelApplications, highWater: roomHighWater())
     }
 
     func save() throws { try persistNow() }
@@ -597,7 +683,7 @@ final class SyncReplayState {
         lastSnapshotSeq = -1
         stamps.removeAll(); tombstones.removeAll(); contentHashes.removeAll(); actors.removeAll(); helloEpochs.removeAll()
         pendingModelApplications.removeAll()
-        presenceSeq.removeAll(); sessionDomains.removeAll()
+        presenceSeq.removeAll(); sessionDomains.removeAll(); durableSessionDomains.removeAll()
         maxStampCounter = 0
         presenceFenceExact = true
         persistedPresence.removeAll()
@@ -630,6 +716,7 @@ final class SyncReplayState {
         let pendingModelApplications: [String: RemoteMutation]
         let presenceSeq: [String: Int64]
         let sessionDomains: [String: String]
+        let durableSessionDomains: [String: String]
         let maxStampCounter: Int64
         let presenceFenceExact: Bool
         let persistedPresence: [String: PersistedPresence]
@@ -641,6 +728,7 @@ final class SyncReplayState {
                       contentHashes: contentHashes, actors: actors, helloEpochs: helloEpochs,
                       pendingModelApplications: pendingModelApplications,
                       presenceSeq: presenceSeq, sessionDomains: sessionDomains,
+                      durableSessionDomains: durableSessionDomains,
                       maxStampCounter: maxStampCounter, presenceFenceExact: presenceFenceExact,
                       persistedPresence: persistedPresence)
     }
@@ -656,6 +744,7 @@ final class SyncReplayState {
         pendingModelApplications = old.pendingModelApplications
         presenceSeq = old.presenceSeq
         sessionDomains = old.sessionDomains
+        durableSessionDomains = old.durableSessionDomains
         maxStampCounter = old.maxStampCounter
         presenceFenceExact = old.presenceFenceExact
         persistedPresence = old.persistedPresence
@@ -746,6 +835,7 @@ final class SyncReplayState {
 
     /// Back to exactly what the last durable write holds.
     private func rollbackToDurable() {
+        batchNeedsWrite = false
         for entry in undoLog.reversed() {
             switch entry {
             case .localCounter(let v): localCounter = v
@@ -805,7 +895,7 @@ final class SyncReplayState {
             && remote.acceptedGeneration >= 0 && remote.acceptedGeneration <= VersionStamp.maxCounter
     }
 
-    private func mutationsEqual(_ lhs: DurableMutation, _ rhs: DurableMutation) -> Bool {
+    private static func mutationsEqual(_ lhs: DurableMutation, _ rhs: DurableMutation) -> Bool {
         guard lhs.wireObjectId == rhs.wireObjectId, lhs.stamp == rhs.stamp,
               lhs.publicKey == rhs.publicKey else { return false }
         switch (lhs.kind, rhs.kind) {
@@ -850,6 +940,7 @@ final class SyncReplayState {
 
     /// Deferred inside an inbound batch, immediate otherwise.
     private func persist() throws {
+        batchNeedsWrite = true
         guard batchDepth == 0 else { return }
         try writeNow()
     }
@@ -876,6 +967,8 @@ final class SyncReplayState {
     }
 
     private func didPersist() {
+        durableSessionDomains = sessionDomains
+        batchNeedsWrite = false
         undoLog.removeAll(keepingCapacity: true)
         var persisted: [String: PersistedPresence] = [:]
         persisted.reserveCapacity(presenceSeq.count)
@@ -971,7 +1064,7 @@ final class SyncReplayState {
         }
     }
 
-    private func serialize() throws -> Data {
+    private func serializedObject() -> [String: Any] {
         let actorRecords = actors.mapValues { ["pubkey": $0, "confirmed": true] as [String: Any] }
         let dict: [String: Any] = [
             "schemaVersion": 3,
@@ -987,7 +1080,11 @@ final class SyncReplayState {
             "presenceFenceExact": presenceFenceExact,
             "sessionDomains": sessionDomains
         ]
-        return try JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys])
+        return dict
+    }
+
+    private func serialize() throws -> Data {
+        try JSONSerialization.data(withJSONObject: serializedObject(), options: [.sortedKeys])
     }
 
     private func encodeRemote(_ remote: RemoteMutation) -> [String: Any] {
@@ -1134,6 +1231,7 @@ final class SyncReplayState {
         helloEpochs = decodedEpochs
         pendingModelApplications = decodedPending
         sessionDomains = decodedSessions
+        durableSessionDomains = decodedSessions
         maxStampCounter = decodedStamps.values.map(\.counter).max() ?? 0
         var onDisk: [String: PersistedPresence] = [:]
         var effective: [String: Int64] = [:]
@@ -1167,7 +1265,7 @@ final class LocalModelRevisionJournal {
 
     init(containerURL: URL?, testKey: Data? = nil,
          persistenceWriter: @escaping PersistenceWriter = { data, url, label in
-             try SafeStore.write(data, to: url, label: label)
+             try SyncPersistenceExecutor.write(data, to: url, label: label)
          }) {
         fileURL = containerURL?.appendingPathComponent("sync_model_revisions.json")
         self.testKey = testKey
@@ -1204,6 +1302,38 @@ final class LocalModelRevisionJournal {
             throw error
         }
     }
+
+    @MainActor
+    func bumpAll(_ localIds: [String], on executor: SyncOffMainExecutor,
+                 completion: @escaping (Error?) -> Void) {
+        let old = generations
+        do {
+            for id in Set(localIds) {
+                guard UUID(uuidString: id) != nil, generations[id, default: 0] < VersionStamp.maxCounter else {
+                    throw SyncReplayState.ReplayError.invalidState
+                }
+                generations[id, default: 0] += 1
+            }
+            guard !localIds.isEmpty, let fileURL else { completion(nil); return }
+            let candidate = generations
+            let root: [String: Any] = ["schemaVersion": 1, "generations": candidate.mapValues(VersionStamp.counterHex16)]
+            let writer = persistenceWriter, label = label, testKey = testKey
+            let result = AsyncJournalResult()
+            executor.execute({
+                do {
+                    let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+                    if let testKey {
+                        try SealedEnvelope.sealFile(key: testKey, plaintext: data, label: label).write(to: fileURL, options: .atomic)
+                    } else { try writer(data, fileURL, label) }
+                } catch { result.error = error }
+            }) {
+                if result.error != nil, self.generations == candidate { self.generations = old }
+                completion(result.error)
+            }
+        } catch { generations = old; completion(error) }
+    }
+
+    private final class AsyncJournalResult { var error: Error? }
 
     private func restore(_ previous: [String: Int64?]) {
         for (localId, value) in previous {

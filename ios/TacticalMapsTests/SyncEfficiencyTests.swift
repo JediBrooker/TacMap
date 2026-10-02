@@ -723,4 +723,96 @@ final class SyncEfficiencyTests: XCTestCase {
         harness.pump()
         XCTAssertEqual(manager.surfacedIssueLog.filter { $0 == .backgroundPaused }.count, 1)
     }
+    func testSupersedingWrittenMutationsReleasesEveryOldWindowSlotWithoutAcks() throws {
+        harness.join()
+        harness.connect()
+        var waypoint = remoteWaypoint(19)
+        _ = try harness.waypointStore.addDurably(waypoint)
+        harness.pump(250)
+        for edit in 1...45 {
+            waypoint.name = "Local edit \(edit)"
+            _ = try harness.waypointStore.commitEdit(waypoint)
+            harness.pump(250)
+        }
+        XCTAssertEqual(harness.sentMutations().count, 46)
+        XCTAssertEqual(manager.status, .connected)
+        XCTAssertFalse(manager.surfacedIssueLog.contains(.unconfirmedReconnect))
+    }
+
+    func testLeaveIsCountedAgainstTheExhaustedInteractiveBudget() throws {
+        harness.join()
+        harness.connect()
+        try ackOurChatKey()
+        for message in 0..<40 {
+            _ = try manager.sendChat(body: "queued \(message)", kind: .text, scope: .room, recipient: nil)
+        }
+        let socket = harness.socket
+        XCTAssertEqual(socket.sent.count, 30, "hello and chat-key share the same frame bucket")
+        manager.leave()
+        XCTAssertTrue(socket.sent(type: "leave").isEmpty, "leave cannot become frame 31")
+        XCTAssertTrue(socket.isCancelled)
+    }
+
+    func testAnOppositeKindCreatedDuringSnapshotValidationIsSkippedBeforeReplayCommit() throws {
+        let executor = ManualSyncOffMainExecutor()
+        harness.tearDown()
+        harness = try SyncManagerHarness(offMainExecutor: executor)
+        harness.join()
+        executor.runAll()
+        let waypoint = remoteWaypoint(99)
+        harness.beginSnapshot()
+        harness.page([harness.peerWaypointPut(waypoint, counter: 100)])
+        harness.endSnapshot()
+        let drawing = DrawingShape(id: waypoint.id, kind: .polyline, coordinates: [
+            Coordinate2D(latitude: -33.8, longitude: 151.2), Coordinate2D(latitude: -33.81, longitude: 151.21)
+        ], layerID: DrawingLayer.legacyFallbackID)
+        _ = try harness.drawingStore.addDurably(drawing)
+        executor.runAll()
+        harness.ackHello()
+        harness.pump()
+        XCTAssertEqual(manager.status, .connected)
+        XCTAssertTrue(manager.surfacedIssueLog.contains(.skippedUnsupported))
+        XCTAssertFalse(harness.waypointStore.waypoints.contains { $0.id == waypoint.id })
+        // A lower signed stamp still lands after removing the collision, proving
+        // the unsupported record never advanced that wire id's replay state.
+        _ = try harness.drawingStore.deleteDurably(drawing)
+        harness.socket.deliver(harness.peerHello())
+        harness.socket.deliver(harness.peerWaypointPut(waypoint, counter: 2, live: true))
+        harness.pump()
+        XCTAssertTrue(harness.waypointStore.waypoints.contains { $0.id == waypoint.id })
+    }
+
+    func testResolvedSnapshotRecordDoesNotStageADeletedLayerForAFreshRecord() throws {
+        let layer = DrawingLayer(name: "Remote layer", defaultColorHex: "#112233")
+        let first = DrawingShape(kind: .polyline, coordinates: [
+            Coordinate2D(latitude: -33.8, longitude: 151.2), Coordinate2D(latitude: -33.81, longitude: 151.21)
+        ], layerID: layer.id)
+        let firstRecord = harness.peerPut(wireId: harness.wireId(first.id),
+            content: harness.peerContent(drawing: first, layers: [layer]), counter: 2, kind: "drawing")
+        harness.join()
+        harness.connect(items: [firstRecord])
+        _ = try harness.drawingStore.removeLayer(layer, reassigningWaypointsIn: harness.waypointStore)
+        XCTAssertNil(harness.drawingStore.layer(id: layer.id))
+        let fresh = DrawingShape(kind: .polyline, coordinates: [
+            Coordinate2D(latitude: -34, longitude: 151), Coordinate2D(latitude: -34.01, longitude: 151.01)
+        ], layerID: layer.id)
+        let freshRecord = harness.peerPut(wireId: harness.wireId(fresh.id),
+            content: harness.peerContent(drawing: fresh, layers: [layer]), counter: 3, kind: "drawing")
+        manager.leave()
+        harness.join()
+        harness.beginSnapshot(seq: 2)
+        harness.page([firstRecord, freshRecord])
+        harness.endSnapshot(seq: 2)
+        harness.ackHello()
+        XCTAssertEqual(harness.drawingStore.shapes.first { $0.id == fresh.id }?.layerID, layer.id)
+        XCTAssertNotNil(harness.drawingStore.layer(id: layer.id))
+        XCTAssertEqual(harness.drawingStore.shapes.first { $0.id == first.id }?.layerID, DrawingLayer.legacyFallbackID)
+        XCTAssertNotEqual(manager.lastIssueKind, .security)
+    }
+
+    func testCrashFloorAtTheLargestValidCounterDoesNotOverflow() {
+        XCTAssertEqual(PresenceFencePersistence.loadFloor(persisted: VersionStamp.maxCounter, exact: false), VersionStamp.maxCounter)
+        XCTAssertEqual(PresenceFencePersistence.loadFloor(persisted: VersionStamp.maxCounter - 3, exact: false), VersionStamp.maxCounter)
+    }
+
 }

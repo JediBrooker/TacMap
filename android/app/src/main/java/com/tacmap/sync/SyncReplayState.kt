@@ -11,12 +11,29 @@ import java.math.BigInteger
 import java.util.UUID
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+
+/** The encoder iterates this view on its worker, never at owner capture. */
+private class SyncSparseMapView<V>(val base: Map<String, V>, val patch: Map<String, V?>) : AbstractMap<String, V>() {
+    override fun get(key: String): V? = if (patch.containsKey(key)) patch[key] else base[key]
+    override fun containsKey(key: String): Boolean = if (patch.containsKey(key)) patch[key] != null else base.containsKey(key)
+    override val entries: Set<Map.Entry<String, V>> get() = object : AbstractSet<Map.Entry<String, V>>() {
+        override val size: Int get() = base.size + patch.count { (k, v) -> v != null && k !in base } - patch.count { (k, v) -> v == null && k in base }
+        override fun iterator(): Iterator<Map.Entry<String, V>> = sequence {
+            for (entry in base.entries) if (entry.key !in patch) yield(entry)
+            for ((key, value) in patch) if (value != null) yield(java.util.AbstractMap.SimpleImmutableEntry(key, value))
+        }.iterator()
+    }
+}
+
 
 /**
  * Durable v3 rollback state. Security-sensitive changes are committed here
@@ -39,10 +56,12 @@ class SyncReplayState(
         // every replay file write goes through this, the snapshot commit writes from a worker
         // and SafeStore uses one fixed tmp name per file
         private val writeLock = Any()
+        private val persistenceOrder = Mutex()
         // Encodes are numbered process-wide, so even a re-joined room's new state
         // object never gets overwritten by an older object's slow write.
         private val encodeSeqSource = java.util.concurrent.atomic.AtomicLong()
         private val writtenSeqByLabel = HashMap<String, Long>()
+        private val loadedInstanceByStore = HashMap<String, Long>()
         private val HASH_PATTERN = Regex("^[0-9a-f]{64}$")
     }
 
@@ -148,7 +167,9 @@ class SyncReplayState(
     // tracked writes: the open transaction remembers the old value of exactly this key
     @Suppress("UNCHECKED_CAST")
     private fun <V> HashMap<String, V>.tput(key: String, value: V) {
+        if (containsKey(key) && this[key] == value) return
         undo?.let { log ->
+            touchedMaps?.getOrPut(this) { LinkedHashSet() }?.add(key)
             val had = containsKey(key)
             val prev = get(key)
             log.add {
@@ -165,6 +186,7 @@ class SyncReplayState(
     private fun <V> HashMap<String, V>.tremove(key: String) {
         if (!containsKey(key)) return
         undo?.let { log ->
+            touchedMaps?.getOrPut(this) { LinkedHashSet() }?.add(key)
             val prev = getValue(key)
             log.add { this[key] = prev }
         }
@@ -172,7 +194,10 @@ class SyncReplayState(
     }
 
     private fun HashSet<String>.tremove(key: String) {
-        if (remove(key)) undo?.add { add(key) }
+        if (remove(key)) {
+            touchedFloor?.add(key)
+            undo?.add { add(key) }
+        }
     }
 
     private fun bumpHighWater(counter: Long) {
@@ -245,6 +270,12 @@ class SyncReplayState(
 
     private var batchLog: ArrayList<() -> Unit>? = null
     private var batchScalars: Scalars? = null
+    private var touchedMaps: java.util.IdentityHashMap<Any, MutableSet<String>>? = null
+    private var touchedFloor: MutableSet<String>? = null
+    internal var lastAsyncOwnerPatchCount = 0
+        private set
+    internal var runtimeFullCopyCount = 0
+        private set
 
     /**
      * Opens a batch: every commit until [commitBatch] stays in memory with an
@@ -257,6 +288,8 @@ class SyncReplayState(
         val log = ArrayList<() -> Unit>()
         batchLog = log
         batchScalars = captureScalars()
+        touchedMaps = java.util.IdentityHashMap()
+        touchedFloor = LinkedHashSet()
         undo = log
         inBatch = true
         batchDirty = false
@@ -288,6 +321,8 @@ class SyncReplayState(
         undo = null
         batchLog = null
         batchScalars = null
+        touchedMaps = null
+        touchedFloor = null
     }
 
     /** [beginBatch] + [block] + [commitBatch]; a throwing block rolls back and rethrows. */
@@ -304,37 +339,165 @@ class SyncReplayState(
 
     val isInBatch: Boolean get() = inBatch
 
+    private val persistenceMutex = Mutex()
+    private val instanceEpoch = encodeSeqSource.incrementAndGet()
+    private val instanceStoreKey: String get() = "${filesDir?.absolutePath.orEmpty()}|$label"
+    val isPersistenceInFlight: Boolean get() = persistenceMutex.isLocked
+
+    /** A protocol consumer suspends here; the UI dispatcher remains free. */
+    suspend fun awaitPersistence() {
+        // Unlock may already have handed ownership to a queued operation. Do
+        // not let a protocol caller stage keys ahead of that operation.
+        while (persistenceMutex.isLocked) persistenceMutex.withLock { }
+    }
+
+    /** Copy runtime counters as well as disk fields; loading would add a crash floor. */
+    private fun copyRuntimeTo(target: SyncReplayState) {
+        runtimeFullCopyCount += 1
+        target.localCounter = localCounter
+        target.lastSnapshotSeq = lastSnapshotSeq
+        target.highWater = highWater
+        target.presenceFenceExact = presenceFenceExact
+        target.presenceDirty = presenceDirty
+        target.stamps.clear(); target.stamps.putAll(stamps)
+        target.tombstones.clear(); target.tombstones.putAll(tombstones)
+        target.contentHashes.clear(); target.contentHashes.putAll(contentHashes)
+        target.actors.clear(); target.actors.putAll(actors)
+        target.helloEpochs.clear(); target.helloEpochs.putAll(helloEpochs)
+        target.presenceSessions.clear(); target.presenceSessions.putAll(presenceSessions)
+        target.pendingModelApplications.clear(); target.pendingModelApplications.putAll(pendingModelApplications)
+        target.presenceDurable.clear(); target.presenceDurable.putAll(presenceDurable)
+        target.presenceFloorOnly.clear(); target.presenceFloorOnly.addAll(presenceFloorOnly)
+        target.transientPresenceSeq.clear(); target.transientPresenceSeq.putAll(transientPresenceSeq)
+    }
+
+    /** Seal an isolated candidate, then advance authoritative memory on the owner dispatcher. */
+    suspend fun commitBatchOffMain(io: CoroutineContext): Boolean = persistenceMutex.withLock {
+        commitBatchOffMainLocked(io)
+    }
+
+    private suspend fun commitBatchOffMainLocked(io: CoroutineContext): Boolean {
+        check(inBatch) { "no open replay batch" }
+        if (!batchDirty) { endBatch(); return true }
+        // Capture only changed keys. The owner rolls them back before suspension;
+        // the worker reads that stable authority through sparse, read-only overlays.
+        // persistenceMutex serializes every production writer until adoption.
+        val patches = ArrayList<() -> Unit>()
+        var patchCount = 0
+        fun <V> view(map: HashMap<String, V>): Map<String, V> {
+            val values = LinkedHashMap<String, V?>()
+            for (key in touchedMaps?.get(map).orEmpty()) values[key] = map[key]
+            patchCount += values.size
+            patches += { for ((key, value) in values) {
+                if (value == null) map.remove(key) else map[key] = value
+            } }
+            return SyncSparseMapView(map, values)
+        }
+        val floorRemoved = touchedFloor.orEmpty().filter { it !in presenceFloorOnly }
+        val candidate = EncodingView(captureScalars(), view(stamps), view(tombstones),
+            view(contentHashes), view(actors), view(helloEpochs), view(presenceSessions),
+            view(pendingModelApplications), view(presenceDurable),
+            SparseSetView(presenceFloorOnly, floorRemoved.toSet()))
+        val candidateScalars = candidate.scalars
+        lastAsyncOwnerPatchCount = patchCount + floorRemoved.size
+        abortBatch()
+        val seq = encodeSeqSource.incrementAndGet()
+        return withContext(NonCancellable) {
+            var durableChanges: Map<String, Long?> = emptyMap()
+            var clearFloors: List<String> = emptyList()
+            val ok = persistenceOrder.withLock {
+                if ((loadedInstanceByStore[instanceStoreKey] ?: instanceEpoch) > instanceEpoch) {
+                    return@withLock false
+                }
+                withContext(io) {
+                    val text = if (persistOverride == null && filesDir != null) encode(candidate).toString() else null
+                    if (!writeEncoded(text, seq)) false else {
+                        // Compute stride-base changes on the worker; adoption
+                        // touches only actors whose persisted counters changed.
+                        val changes = LinkedHashMap<String, Long?>()
+                        for ((actor, session) in candidate.presenceSessions) {
+                            val counter = candidate.encodedPresenceCounter(actor, session)
+                            if (presenceDurable[actor] != counter) changes[actor] = counter
+                        }
+                        for (actor in presenceDurable.keys) {
+                            if (actor !in candidate.presenceSessions) changes[actor] = null
+                        }
+                        durableChanges = changes
+                        clearFloors = if (candidateScalars.presenceFenceExact) presenceFloorOnly.toList() else floorRemoved
+                        true
+                    }
+                }
+            }
+            if (ok) {
+                patches.forEach { it() }
+                localCounter = candidateScalars.localCounter
+                lastSnapshotSeq = candidateScalars.lastSnapshotSeq
+                highWater = candidateScalars.highWater
+                presenceFenceExact = candidateScalars.presenceFenceExact
+                presenceDirty = false
+                for ((actor, counter) in durableChanges) {
+                    if (counter == null) presenceDurable.remove(actor) else presenceDurable[actor] = counter
+                }
+                clearFloors.forEach { presenceFloorOnly.remove(it) }
+                lastAsyncOwnerPatchCount += patchCount + durableChanges.size + clearFloors.size
+            }
+            ok
+        }
+    }
+
     /**
-     * Snapshot commit path (plans/04 section 19). Memory changes now on the
-     * caller's thread, the seal + fsync runs on [io]. The caller must not
-     * expose anything from [change] before this returns true.
+     * Snapshot commit path (plans/04 section 19). Stage on the owner thread,
+     * encode/seal/fsync the private candidate on [io], then advance authority
+     * after durability. No staged replay value escapes during the suspension.
      */
-    suspend fun persistOffMain(io: CoroutineContext, change: () -> Unit): Boolean {
+    suspend fun persistOffMain(io: CoroutineContext, change: () -> Unit): Boolean = persistenceMutex.withLock {
+        persistOffMainLocked(io, change)
+    }
+
+    private suspend fun persistOffMainLocked(io: CoroutineContext, change: () -> Unit): Boolean {
         if (inBatch) return false
-        val log = ArrayList<() -> Unit>()
-        val scalars = captureScalars()
-        undo = log
+        beginBatch()
         try {
             change()
+            batchDirty = true
         } catch (_: Throwable) {
-            undo = null
-            rollback(log, scalars)
+            abortBatch()
             return false
         }
-        undo = null
-        val seq = encodeSeqSource.incrementAndGet()
-        val text = if (persistOverride == null && filesDir != null) encode().toString() else null
-        val ok = withContext(io) { writeEncoded(text, seq) }
-        // a newer save on this thread already put a superset of these changes on disk
-        if (ok || writtenSeq() >= seq) {
-            afterSave()
-            return true
-        }
-        // Anything that ran on this thread meanwhile failed too and undid its own
-        // keys first, so undoing ours now is still last-in-first-out.
-        rollback(log, scalars)
-        return false
+        return commitBatchOffMainLocked(io)
     }
+
+    suspend fun reserveHelloEpochOffMain(
+        actorId: String, pubkey: String, floor: BigInteger?, spare: Int, io: CoroutineContext,
+    ): String? = persistenceMutex.withLock {
+        if (inBatch) return@withLock null
+        beginBatch()
+        val epoch = reserveHelloEpoch(actorId, pubkey, floor, spare)
+        if (epoch == null) { abortBatch(); return@withLock null }
+        epoch.takeIf { commitBatchOffMainLocked(io) }
+    }
+
+    suspend fun flushPresenceOffMain(io: CoroutineContext): Boolean = persistenceMutex.withLock {
+        if (!presenceDirty) return@withLock true
+        persistOffMainLocked(io) { presenceFenceExact = false }
+    }
+
+    suspend fun persistExactPresenceOffMain(io: CoroutineContext): Boolean = persistenceMutex.withLock {
+        if (presenceFenceExact && !presenceDirty) return@withLock true
+        persistOffMainLocked(io) { presenceFenceExact = true }
+    }
+
+    /** A fresh join must observe earlier writes from a departed instance of this room. */
+    suspend fun loadOffMain(actorId: String, pubkey: String, io: CoroutineContext): Boolean =
+        persistenceOrder.withLock {
+            // A load is a new room authority. Deferred clean points from an
+            // older departed instance may not overwrite its later counters.
+            loadedInstanceByStore[instanceStoreKey] = instanceEpoch
+            val candidate = SyncReplayState(roomId, filesDir, persistOverride)
+            val ok = withContext(io) { candidate.load(actorId, pubkey) }
+            if (ok) candidate.copyRuntimeTo(this)
+            ok
+        }
 
     private fun beatsCurrent(wireObjectId: String, incoming: VersionStamp): Boolean {
         val stamp = stamps[wireObjectId]
@@ -438,9 +601,10 @@ class SyncReplayState(
     }
 
     /** Same commit with the sealed write on [io] (plans/04 section 19). */
-    suspend fun commitRemoteSnapshotOffMain(remotes: List<RemoteMutation>, seq: Long, io: CoroutineContext): Boolean {
-        if (!remoteSnapshotValid(remotes, seq)) return false
-        return persistOffMain(io) { applyRemoteSnapshot(remotes, seq) }
+    suspend fun commitRemoteSnapshotOffMain(remotes: List<RemoteMutation>, seq: Long, io: CoroutineContext): Boolean =
+        persistenceMutex.withLock {
+            if (!remoteSnapshotValid(remotes, seq)) return@withLock false
+            persistOffMainLocked(io) { applyRemoteSnapshot(remotes, seq) }
     }
 
     private fun applyMutation(mutation: AuthenticatedMutation) {
@@ -670,6 +834,33 @@ class SyncReplayState(
     fun getPinnedPubkey(actorId: String): String? = actors[actorId]
     /** One copy per snapshot for the off-main validator, never per record. */
     fun actorPinsCopy(): Map<String, String> = HashMap(actors)
+
+    /** Immutable replay view for the snapshot validator's layer staging. */
+    fun snapshotStageEligibility(
+        currentHash: (String?) -> String?,
+        currentGeneration: (String?) -> Long,
+    ): (AuthenticatedMutation) -> Boolean {
+        val savedStamps = HashMap(stamps)
+        val savedTombstones = HashMap(tombstones)
+        val savedActors = HashMap(actors)
+        val savedHashes = HashMap(contentHashes)
+        val savedPending = HashMap(pendingModelApplications)
+        return { mutation ->
+            val id = mutation.wireObjectId
+            val newer = (savedStamps[id]?.let { mutation.stamp > it } ?: true) &&
+                (savedTombstones[id]?.let { mutation.stamp > it } ?: true)
+            val exact = savedStamps[id] == mutation.stamp && savedActors[mutation.stamp.actorId] == mutation.pubkey &&
+                if (mutation.deleted) savedTombstones[id] == mutation.stamp && savedHashes[id] == null
+                else id !in savedTombstones && savedHashes[id] == mutation.contentHash
+            val pending = savedPending[id]?.takeIf { it.mutation == mutation }
+            val willApplyExact = exact && pending != null &&
+                currentGeneration(pending.localModelId) == pending.acceptedGeneration &&
+                currentHash(pending.localModelId) == pending.priorModelHash &&
+                currentHash(pending.localModelId) != pending.expectedModelHash
+            newer || willApplyExact
+        }
+    }
+
     /** Session-only compatibility helper; deliberately absent from persistence. */
     fun advancePresence(actorId: String, counter: Long): Boolean {
         val prior = transientPresenceSeq[actorId] ?: 0L
@@ -737,10 +928,10 @@ class SyncReplayState(
     suspend fun clearPendingModelApplicationsOffMain(
         mutations: Collection<AuthenticatedMutation>,
         io: CoroutineContext,
-    ): Boolean {
+    ): Boolean = persistenceMutex.withLock {
         val exact = mutations.filter { pendingModelApplications[it.wireObjectId]?.mutation == it }
-        if (exact.isEmpty()) return true
-        return persistOffMain(io) {
+        if (exact.isEmpty()) return@withLock true
+        persistOffMainLocked(io) {
             for (mutation in exact) pendingModelApplications.tremove(mutation.wireObjectId)
         }
     }
@@ -816,8 +1007,6 @@ class SyncReplayState(
             false
         }
     }
-
-    private fun writtenSeq(): Long = synchronized(writeLock) { writtenSeqByLabel[label] ?: 0L }
 
     private fun afterSave() {
         // what just went to disk becomes the stride base
@@ -926,10 +1115,32 @@ class SyncReplayState(
         }
     }
 
-    private fun encode(): JSONObject = JSONObject().apply {
+    private class SparseSetView(val base: Set<String>, val removed: Set<String>) : AbstractSet<String>() {
+        override val size: Int get() = base.size - removed.count { it in base }
+        override fun contains(element: String): Boolean = element !in removed && element in base
+        override fun iterator(): Iterator<String> = base.asSequence().filter { it !in removed }.iterator()
+    }
+
+    private data class EncodingView(
+        val scalars: Scalars,
+        val stamps: Map<String, VersionStamp>, val tombstones: Map<String, VersionStamp>,
+        val contentHashes: Map<String, String>, val actors: Map<String, String>,
+        val helloEpochs: Map<String, String>, val presenceSessions: Map<String, PresenceSession>,
+        val pendingModelApplications: Map<String, RemoteMutation>,
+        val presenceDurable: Map<String, Long>, val presenceFloorOnly: Set<String>,
+    ) {
+        fun encodedPresenceCounter(actor: String, session: PresenceSession): Long =
+            if (!scalars.presenceFenceExact && actor in presenceFloorOnly) presenceDurable[actor] ?: session.counter
+            else session.counter
+    }
+
+    private fun encodingView() = EncodingView(captureScalars(), stamps, tombstones, contentHashes, actors,
+        helloEpochs, presenceSessions, pendingModelApplications, presenceDurable, presenceFloorOnly)
+
+    private fun encode(view: EncodingView = encodingView()): JSONObject = with(view) { JSONObject().apply {
         put("schemaVersion", 3)
-        put("localCounter", VersionStamp.counterHex16(localCounter))
-        put("lastSnapshotSeq", lastSnapshotSeq)
+        put("localCounter", VersionStamp.counterHex16(scalars.localCounter))
+        put("lastSnapshotSeq", scalars.lastSnapshotSeq)
         put("stamps", JSONObject().also { out -> for ((k, v) in stamps) out.put(k, v.encode()) })
         put("tombstones", JSONObject().also { out -> for ((k, v) in tombstones) out.put(k, v.encode()) })
         put("contentHashes", JSONObject().also { out -> for ((k, v) in contentHashes) out.put(k, v) })
@@ -944,12 +1155,12 @@ class SyncReplayState(
             }
         })
         // absent in files written before 17.1, which load as exact
-        put("presenceFenceExact", presenceFenceExact)
+        put("presenceFenceExact", scalars.presenceFenceExact)
         put("pendingModelApplications", JSONObject().also { out ->
             for ((id, remote) in pendingModelApplications) out.put(id, encodeRemote(remote))
         })
     }
-
+ }
     private fun encodeRemote(remote: RemoteMutation): JSONObject = JSONObject().apply {
         val mutation = remote.mutation
         put("vs", mutation.stamp.encode())
@@ -1089,8 +1300,37 @@ class LocalModelRevisionJournal(
     private val generations = HashMap<String, Long>()
     private val file = File(filesDir, "sync_model_revisions.json")
     private val label = "sync/model-revisions"
+    private val persistenceMutex = Mutex()
+    val isPersistenceInFlight: Boolean get() = persistenceMutex.isLocked
+
+    suspend fun awaitPersistence() = persistenceMutex.withLock { }
+
+    /** Ordered event collector awaits durability without occupying the UI thread. */
+    suspend fun bumpAllOffMain(localIds: Set<String>, io: CoroutineContext): Boolean = persistenceMutex.withLock {
+        if (localIds.isEmpty()) return@withLock true
+        val patch = synchronized(this) {
+            LinkedHashMap<String, Long?>().also { values ->
+                for (id in localIds) {
+                    if (runCatching { UUID.fromString(id) }.isFailure) return@withLock false
+                    val value = generations[id] ?: 0L
+                    if (value >= VersionStamp.MAX_COUNTER) return@withLock false
+                    values[id] = value + 1
+                }
+            }
+        }
+        withContext(NonCancellable) {
+            val ok = withContext(io) { save(SyncSparseMapView(generations, patch)) }
+            if (ok) synchronized(this@LocalModelRevisionJournal) {
+                for ((id, value) in patch) generations[id] = checkNotNull(value)
+            }
+            ok
+        }
+    }
 
     @Synchronized fun generation(localId: String?): Long = localId?.let { generations[it] } ?: 0L
+
+    /** Snapshot workers receive an immutable view, never the live journal. */
+    @Synchronized fun generationsCopy(): Map<String, Long> = HashMap(generations)
 
     @Synchronized fun bump(localId: String): Boolean = bumpAll(setOf(localId))
 
@@ -1119,6 +1359,16 @@ class LocalModelRevisionJournal(
         return false
     }
 
+    /** Startup reads and possible legacy resealing share the same writer order. */
+    suspend fun loadOffMain(io: CoroutineContext): Boolean = persistenceMutex.withLock {
+        val candidate = LocalModelRevisionJournal(filesDir, persistOverride)
+        val ok = withContext(io) { candidate.load() }
+        if (ok) synchronized(this@LocalModelRevisionJournal) {
+            generations.clear(); generations.putAll(candidate.generations)
+        }
+        ok
+    }
+
     @Synchronized fun load(): Boolean = try {
         when (val result = SafeStore.readOrQuarantine(file, label) { decodeJournal(it) }) {
             is SafeStore.LoadResult.Empty -> true
@@ -1127,13 +1377,13 @@ class LocalModelRevisionJournal(
         }
     } catch (_: Throwable) { false }
 
-    private fun save(): Boolean {
+    private fun save(values: Map<String, Long> = generations): Boolean {
         persistOverride?.let { return runCatching { it() }.getOrDefault(false) }
         return try {
             val json = buildJsonObject {
                 put("schemaVersion", 1)
                 put("generations", buildJsonObject {
-                    for ((id, generation) in generations) put(id, VersionStamp.counterHex16(generation))
+                    for ((id, generation) in values) put(id, VersionStamp.counterHex16(generation))
                 })
             }
             SafeStore.writeAtomically(file, label, json.toString())

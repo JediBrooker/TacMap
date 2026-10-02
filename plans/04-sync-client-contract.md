@@ -89,7 +89,11 @@ Findings: S2-09, S3-10, S4-04, S5-01, S5-03, S3 verifier note 4.
      queue delays the re-arm (natural backpressure).
 2. One serial protocol worker drains the queue in arrival order, in batches of
    at most `inboundBatchMaxFrames` (64) frames that are already queued. A batch
-   never waits for more frames.
+   never waits for more frames. Split before a second `put`/`del` for the same
+   wire ID, or before a frame that reads the committed model or sends a response.
+   Each resulting subgroup is a logical batch with the write limits below.
+   This keeps earlier layer adoption and model effects visible to the next
+   mutation for the same object; at worst 64 frames form 64 logical batches.
 3. Per batch, in order: validate frames, apply all replay-state changes in
    memory in frame order (later frames in the batch see earlier ones), persist
    **one** replay transaction, apply model changes with **at most one write per
@@ -535,6 +539,12 @@ across a window boundary (2 x 200) plus 200 frames of everything else, so one
 member's import can no longer disconnect the room. The handshake phase keeps the
 existing 10,000 frames / 54,525,952 bytes until hello-ack. Exceeding any budget
 closes 1008 and reconnects with `transient` backoff.
+
+Android additionally bounds its library's queued wire frames (including automatic
+pong frames) to `receiveBudget.androidTransportQueue`: 16 MiB and 8,192 frames.
+Exceeding either closes the transport directly and clears its completion registry.
+iOS URLSession owns its control-frame queue internally; its application frame
+queue and receive budgets remain bounded as above.
 
 Vectors: `receive_budget_bulk_import_no_close`,
 `background_discard_uses_background_budget`.

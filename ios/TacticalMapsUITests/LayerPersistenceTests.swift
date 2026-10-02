@@ -19,7 +19,7 @@ final class LayerPersistenceTests: XCTestCase {
         XCTAssertTrue(privacy.waitForExistence(timeout: 5), "Privacy & OPSEC menu row missing")
         privacy.tap()
 
-        let settingsNavigation = app.navigationBars["Settings, Privacy & OPSEC"]
+        let settingsNavigation = app.navigationBars["Settings"]
         guard settingsNavigation.waitForExistence(timeout: 5) else {
             XCTFail("Privacy & OPSEC screen did not open")
             return

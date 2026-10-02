@@ -322,7 +322,6 @@ final class TacMapChatStore: ObservableObject {
         if document.messages.contains(where: { $0.id == message.id }) { return false }
         var candidate = document
         candidate.messages.append(message)
-        pruneByAcceptanceOrder(&candidate)
         publish(try persist(candidate))
         return true
     }
@@ -390,7 +389,6 @@ final class TacMapChatStore: ObservableObject {
         )
         candidate.messages.append(message)
         candidate.unreadMessageIds.append(message.id)
-        pruneByAcceptanceOrder(&candidate)
         publish(try persist(candidate))
         return .accepted
     }
@@ -460,7 +458,6 @@ final class TacMapChatStore: ObservableObject {
             trimmed.recentFingerprints.removeFirst(fence.recentFingerprints.count - Document.maximumRecentFingerprints)
             candidate.replay[key] = trimmed
         }
-        guard candidate.isValid else { throw StoreError.invalidRecord }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         var data = try encoder.encode(candidate)
@@ -478,6 +475,9 @@ final class TacMapChatStore: ObservableObject {
             candidate.unreadMessageIds.removeAll { !retained.contains($0) }
             data = try encoder.encode(candidate)
         }
+        pruneByAcceptanceOrder(&candidate)
+        guard candidate.isValid else { throw StoreError.invalidRecord }
+        data = try encoder.encode(candidate)
         guard data.count <= Self.maximumEncodedHistoryBytes else {
             throw StoreError.historyTooLarge
         }

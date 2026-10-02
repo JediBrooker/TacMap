@@ -434,4 +434,37 @@ final class SyncHostileRecordTests: XCTestCase {
         XCTAssertEqual(harness.manager.surfacedIssueLog.filter { $0 == .snapshotStructural }.count, 1)
         XCTAssertNil(harness.manager.pausedForAction)
     }
+    func testRawTypeAndDeletedFieldsCannotContradictAnOtherwiseValidSignature() throws {
+        for fields in [
+
+            ["t": "put", "deleted": true], ["t": "del", "deleted": false],
+            ["t": "put", "deleted": 1], ["t": "unexpected", "deleted": false]
+        ] as [[String: Any]] {
+            for live in [false, true] {
+                let h = try SyncManagerHarness()
+                defer { h.tearDown() }
+                h.join()
+                let value = waypoint(UUID())
+                var record = h.peerWaypointPut(value, counter: 100, live: live)
+                fields.forEach { record[$0.key] = $0.value }
+                if live {
+                    h.connect()
+                    h.socket.deliver(h.peerHello())
+                    h.socket.deliver(record)
+                    h.pump()
+                } else {
+                    h.beginSnapshot(); h.page([record]); h.endSnapshot(); h.ackHello()
+                }
+                if !live || fields["t"] as? String != "unexpected" {
+                    XCTAssertTrue(h.manager.surfacedIssueLog.contains(.skippedUnverified), "\(fields)")
+                }
+                XCTAssertFalse(h.waypointStore.waypoints.contains { $0.id == value.id })
+                h.socket.deliver(h.peerHello())
+                h.socket.deliver(h.peerWaypointPut(value, counter: 2, live: true))
+                h.pump()
+                XCTAssertTrue(h.waypointStore.waypoints.contains { $0.id == value.id })
+            }
+        }
+    }
+
 }

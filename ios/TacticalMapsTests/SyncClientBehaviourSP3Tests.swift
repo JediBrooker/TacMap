@@ -38,6 +38,8 @@ final class SyncClientBehaviourSP3Tests: XCTestCase {
     // MARK: constants
 
     func testSp3SwiftConstantsMatchTheContract() {
+        XCTAssertEqual((contract["persistenceBatching"] as? [String: Any])?["splitBeforeRepeatedMutationWireId"] as? Bool, true)
+
         let foreground = section("presence")["foreground"] as? [String: Any] ?? [:]
         XCTAssertEqual(PresenceSendPolicy.minIntervalMs, int(foreground["minIntervalMs"]))
         XCTAssertEqual(PresenceSendPolicy.stationaryHeartbeatMs, int(foreground["stationaryHeartbeatMs"]))

@@ -320,6 +320,9 @@ final class SyncManagerHarness {
     var randomValue = 0.5
     let directory: URL
     let suiteName: String
+    private static var activeDefaultsSlots = Set<Int>()
+    private let defaultsSlot: Int
+    private var tornDown = false
     let defaults: UserDefaults
     let waypointStore: WaypointStore
     let drawingStore: DrawingStore
@@ -337,6 +340,8 @@ final class SyncManagerHarness {
 
     init(joinCode: String = "3:sp2-harness-room-0001",
          offMainExecutor: SyncOffMainExecutor? = nil,
+         persistenceExecutor: SyncOffMainExecutor? = nil,
+         replayWriter: SyncReplayState.PersistenceWriter? = nil,
          realKeyDerivation: Bool = false,
          backgroundReconnectEnabled: Bool = false,
          locationService: LocationService? = nil) throws {
@@ -347,8 +352,15 @@ final class SyncManagerHarness {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("sync-harness-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        suiteName = "SyncManagerHarness.\(UUID().uuidString)"
+        let defaultsPoolSlot = (0..<64).first { !Self.activeDefaultsSlots.contains($0) }!
+        Self.activeDefaultsSlots.insert(defaultsPoolSlot)
+        defaultsSlot = defaultsPoolSlot
+        // CFPreferences keeps domains cached even after removePersistentDomain.
+        // Reuse a bounded set while keeping real durable preferences in tests.
+        suiteName = "SyncManagerHarness.slot\(defaultsPoolSlot)"
         defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        _ = defaults.synchronize()
         let counter = writes
         waypointStore = WaypointStore(
             storageURL: directory.appendingPathComponent("waypoints.json"),
@@ -384,7 +396,8 @@ final class SyncManagerHarness {
             replayPersistenceWriter: { data, url, label in
                 counter.replayWrites += 1
                 counter.replayBytes += data.count
-                try SafeStore.write(data, to: url, label: label)
+                if let replayWriter { try replayWriter(data, url, label) }
+                else { try SafeStore.write(data, to: url, label: label) }
             },
             journalPersistenceWriter: { data, url, label in
                 counter.journalWrites += 1
@@ -393,6 +406,7 @@ final class SyncManagerHarness {
             // validation and PBKDF2 run inline so the manual clock stays the
             // only source of time, unless a test wants to hold them
             offMainExecutor: offMainExecutor ?? InlineSyncOffMainExecutor(),
+            persistenceExecutor: persistenceExecutor ?? InlineSyncOffMainExecutor(),
             backgroundReconnectEnabled: backgroundReconnectEnabled
         )
         randomBox = { [weak self] in self?.randomValue ?? 0.5 }
@@ -402,9 +416,13 @@ final class SyncManagerHarness {
     }
 
     func tearDown() {
+        guard !tornDown else { return }
+        tornDown = true
         manager.leave()
         SafeStore.keyProvider = previousKeyProvider
         defaults.removePersistentDomain(forName: suiteName)
+        _ = defaults.synchronize()
+        Self.activeDefaultsSlots.remove(defaultsSlot)
         try? FileManager.default.removeItem(at: directory)
     }
 

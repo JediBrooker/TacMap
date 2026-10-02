@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -314,15 +315,9 @@ class SyncManager internal constructor(
     private var observeJob: Job? = null
     private var revisionJob: Job? = null
     private val modelRevisionJournal = LocalModelRevisionJournal(appFilesDir)
-    private val revisionEventProcessor = LocalRevisionEventProcessor(modelRevisionJournal) {
-        revisionJournalAvailable = false
-        reportError(
-            Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(),
-            SyncIssueKind.SECURITY,
-        )
-        persistenceFailure()
-    }
     private var revisionJournalAvailable = false
+    private var revisionJournalLoad: kotlinx.coroutines.Deferred<Boolean>? = null
+    private var foregroundAttachGeneration = 0L
 
     // Per-device Ed25519 signing identity. Seed is sealed at rest; the public
     // key rides every presence AND every object write so peers pin it (TOFU) and
@@ -603,6 +598,7 @@ class SyncManager internal constructor(
         val committedLayers: List<com.tacmap.drawings.DrawingLayer>,
         /** localId -> kind at snapshot-begin, a copy the worker can read safely. */
         private val localKinds: Map<String, String>,
+        private val stageEligible: (SyncReplayState.AuthenticatedMutation) -> Boolean,
         parent: Job,
         dispatcher: kotlinx.coroutines.CoroutineDispatcher,
         private val onProgress: () -> Unit,
@@ -633,7 +629,9 @@ class SyncManager internal constructor(
                         // couldn't check it, so it's not trusted. same as the relay leaving it out
                         V3Check.Skip(wireId, SnapshotRecordReason.INNER_JSON_INVALID)
                     }
-                    SnapshotValidator.stage(staged, check)
+                    if (check is V3Check.Valid && stageEligible(check.record.mutation)) {
+                        SnapshotValidator.stage(staged, check)
+                    }
                     results += check
                 }
                 onProgress()
@@ -707,8 +705,17 @@ class SyncManager internal constructor(
         chatHistoryStore.durableSessionDomain = { actor -> replayState?.getPresenceSessionDomain(actor) }
         loadPresenceConfig()
         migrateLegacyLocalStoresAfterUnlock()
-        revisionJournalAvailable = modelRevisionJournal.load()
+        reloadRevisionJournal()
         startModelRevisionObservation()
+    }
+
+    private fun reloadRevisionJournal() {
+        revisionJournalAvailable = false
+        revisionJournalLoad = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            val ok = modelRevisionJournal.loadOffMain(env.persistenceDispatcher)
+            if (!lifecycleGate.isDisposed) revisionJournalAvailable = ok
+            ok
+        }
     }
 
     // ----- Public API -----
@@ -772,7 +779,7 @@ class SyncManager internal constructor(
         backgroundPresenceOnly = true
         awaitingForegroundStores = false
         // clean point for the presence fences, the key is still unlocked here (17.1)
-        replayState?.persistExactPresence()
+        persistPresenceCleanPoint()
         detachMissionStateForKeyLock()
         presenceCadence.reset()
         presencePolicy.reset()
@@ -815,7 +822,7 @@ class SyncManager internal constructor(
         backgroundPresenceOnly = true
         awaitingForegroundStores = true
         if (storesAttached) {
-            replayState?.persistExactPresence()
+            persistPresenceCleanPoint()
             detachMissionStateForKeyLock()
         }
         presenceCadence.reset()
@@ -826,6 +833,7 @@ class SyncManager internal constructor(
     }
 
     private fun detachMissionStateForKeyLock() {
+        foregroundAttachGeneration += 1
         reconnectJob?.cancel(); reconnectJob = null
         // nothing durable gets written behind the key lock, not even a presence flush
         presenceFlushJob?.cancel(); presenceFlushJob = null
@@ -861,6 +869,7 @@ class SyncManager internal constructor(
      * mission key and fresh stores before reconnecting and accepting a snapshot. */
     internal fun prepareForForegroundUnlock() {
         if (!backgroundPresenceOnly && !awaitingForegroundStores) return
+        foregroundAttachGeneration += 1
         awaitingForegroundStores = true
         backgroundPresenceOnly = true
         // the foreground hello reserves above every spare, so a background session just ends
@@ -891,24 +900,35 @@ class SyncManager internal constructor(
             surfaceIssue(SyncIssueCode.BACKGROUND_PAUSED, Messages.syncBackgroundPausedMessage(formatPauseTime(pausedAt)))
         }
 
-        revisionJournalAvailable = modelRevisionJournal.load()
+        awaitingForegroundStores = true
+        backgroundPresenceOnly = true
+        val attachGeneration = ++foregroundAttachGeneration
+        val attachJoinToken = joinToken
+        reloadRevisionJournal()
         startModelRevisionObservation()
-        val roomId = activeRoomStorageId
-        if (roomId != null && _room.value != null) {
-            if (protocolVersion == 3) chatHistoryStore.open(roomId)
-            startObserving()
-            startPresenceBroadcast()
-            startStalenessSweep()
-            if (_pausedActionRequired.value) {
-                // a stop that doesn't retry on foreground waits for the Retry button
-                if (!pausedRetryOnForeground) return true
-                clearPausedState()
-                retireStopIssue()
-                failureCounters.reset()
-                backoff.reset()
+        scope.launch {
+            val available = revisionJournalLoad?.await() == true
+            if (lifecycleGate.isDisposed || foregroundAttachGeneration != attachGeneration || joinToken != attachJoinToken ||
+                waypointStoreRef !== newWaypointStore || drawingStoreRef !== newDrawingStore) return@launch
+            if (!available) { persistenceFailure(); return@launch }
+            backgroundPresenceOnly = false
+            awaitingForegroundStores = false
+            val roomId = activeRoomStorageId
+            if (roomId != null && _room.value != null) {
+                if (protocolVersion == 3) chatHistoryStore.open(roomId)
+                startObserving()
+                startPresenceBroadcast()
+                startStalenessSweep()
+                if (_pausedActionRequired.value) {
+                    if (!pausedRetryOnForeground) return@launch
+                    clearPausedState()
+                    retireStopIssue()
+                    failureCounters.reset()
+                    backoff.reset()
+                }
+                wantConnected = true
+                connect(roomId)
             }
-            wantConnected = true
-            connect(roomId)
         }
         return true
     }
@@ -1329,14 +1349,12 @@ class SyncManager internal constructor(
                     if (v3) env.deriveRoomV3(code.removePrefix("3:")) else env.deriveRoomV2(code.removePrefix("2:"))
                 }
             }
-            lifecycleGate.runIfActive {
-                if (token != joinToken) {
-                    wipeDerived(derived.getOrNull())
-                    return@runIfActive
-                }
-                joinJob = null
-                completeJoin(code, derived, requestedRoomName)
+            if (lifecycleGate.isDisposed || token != joinToken) {
+                wipeDerived(derived.getOrNull())
+                return@launch
             }
+            completeJoin(code, derived, requestedRoomName, token)
+            if (token == joinToken) joinJob = null
         }
     }
 
@@ -1347,7 +1365,13 @@ class SyncManager internal constructor(
         }
     }
 
-    private fun completeJoin(code: String, derived: Result<Any>, requestedRoomName: String) {
+    private suspend fun completeJoin(code: String, derived: Result<Any>, requestedRoomName: String, token: Long) {
+        if (code.startsWith("3:") &&
+            (revisionJournalLoad?.await() != true || lifecycleGate.isDisposed || token != joinToken)) {
+            wipeDerived(derived.getOrNull())
+            if (!lifecycleGate.isDisposed && token == joinToken) persistenceFailure()
+            return
+        }
         if (code.startsWith("3:")) {
             val setup = runCatching {
                 // Resolving the signing identity can fail while the at-rest key
@@ -1356,15 +1380,20 @@ class SyncManager internal constructor(
                 val keys = derived.getOrThrow() as SyncCrypto.V3RoomKeys
                 val actor = SyncIdentity.actorId(keys.roomIdRaw, pubRaw)
                 val replay = SyncReplayState(keys.roomId, appFilesDir)
-                check(replay.load(actor, myPublicKey)) { L10n.text("replay state unavailable") }
+                check(replay.loadOffMain(actor, myPublicKey, env.persistenceDispatcher)) { L10n.text("replay state unavailable") }
                 Triple(keys, replay, actor)
             }.getOrElse {
                 wipeDerived(derived.getOrNull())
+                if (lifecycleGate.isDisposed || token != joinToken) return
                 _status.value = Status.OFFLINE
                 reportError(
                     Messages.syncSyncIdentityOrRollbackStateIsLockedOrDamagedMessage(),
                     SyncIssueKind.SECURITY,
                 )
+                return
+            }
+            if (lifecycleGate.isDisposed || token != joinToken) {
+                wipeDerived(setup.first)
                 return
             }
             protocolVersion = 3
@@ -1428,7 +1457,9 @@ class SyncManager internal constructor(
         env.reachability?.stop()
         val leavingSocket = ws
         markLocalClose(SyncLocalClose.LEAVE)
-        // the signed leave goes straight out, the pacer queue dies with the socket
+        // Discard queued work, then count a best-effort signed leave against
+        // this socket's remaining control budget before closing it.
+        pacer.clear()
         if (leavingSocket != null) sendExplicitLeaveV3(leavingSocket)
         if (leavingSocket?.close(1000, "leave") == false) leavingSocket.cancel()
         ws = null
@@ -1459,7 +1490,7 @@ class SyncManager internal constructor(
         // v3 state: clear transport-session fields but NOT replayState (durable)
         dropSessionIndexes()
         // clean point (17.1): exact counters so the next load needs no crash floor
-        replayState?.let { replay -> if (!replay.isInBatch) replay.persistExactPresence() }
+        persistPresenceCleanPoint()
         myActorId = null
         presenceCounter = 0L
         activeSessions.clear()
@@ -1498,7 +1529,7 @@ class SyncManager internal constructor(
         lifecycleGate.dispose(secretBuffers) {
             wantConnected = false
             joinToken += 1
-            runCatching { replayState?.takeUnless { it.isInBatch }?.persistExactPresence() }
+            persistPresenceCleanPoint()
             clearBackgroundReconnect()
             managerJob.cancel()
             inbound.clear()
@@ -2431,6 +2462,7 @@ class SyncManager internal constructor(
         if (diffJob?.isActive == true) return
         diffJob = scope.launch {
             kotlinx.coroutines.delay(DIFF_DEBOUNCE_MS)
+            diffJob = null
             lifecycleGate.runIfActive {
                 if (_status.value == Status.CONNECTED && waypointStoreRef != null && drawingStoreRef != null) {
                     syncLocalState(waypointStore.committedWaypoints.value, drawingStore.committedDocument.value)
@@ -2511,11 +2543,23 @@ class SyncManager internal constructor(
     /** Lifetime observer: revisions continue across disconnect and Leave. */
     private fun startModelRevisionObservation() {
         revisionJob?.cancel()
+        val observedWaypoints = waypointStore
+        val observedDrawings = drawingStore
         revisionJob = scope.launch {
-            merge(waypointStore.mutations, drawingStore.mutations)
+            merge(observedWaypoints.mutations, observedDrawings.mutations)
                 .collect { event ->
+                    revisionJournalLoad?.await()
+                    if (lifecycleGate.isDisposed || waypointStoreRef !== observedWaypoints || drawingStoreRef !== observedDrawings) return@collect
                     if (!revisionJournalAvailable) { persistenceFailure(); return@collect }
-                    if (!revisionEventProcessor.process(event)) return@collect
+                    if (event.origin != ModelMutationOrigin.REMOTE_SYNC &&
+                        !modelRevisionJournal.bumpAllOffMain(event.localIds, env.persistenceDispatcher)) {
+                        revisionJournalAvailable = false
+                        if (!lifecycleGate.isDisposed) {
+                            reportError(Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(), SyncIssueKind.SECURITY)
+                            persistenceFailure()
+                        }
+                        return@collect
+                    }
                 }
         }
     }
@@ -2600,7 +2644,7 @@ class SyncManager internal constructor(
         if (!revisionJournalAvailable || resolvingPendingModel || replay.hasPendingModelApplications()) return
         // counter-window: the relay proved it can't take our writes, stop trying for this join
         if (mutationsPaused) return
-        if (replay.isInBatch) {
+        if (replay.isInBatch || replay.isPersistenceInFlight || modelRevisionJournal.isPersistenceInFlight) {
             scheduleDiff()
             return
         }
@@ -2654,12 +2698,21 @@ class SyncManager internal constructor(
             replay.abortBatch()
             return persistenceFailure()
         }
-        if (!replay.commitBatch()) return persistenceFailure()
-        for (send in sends) {
-            if (send.content != null && send.kind != null) {
-                sendPutV3(send.localId, send.wireId, send.stamp, send.kind, send.content)
-            } else {
-                sendDelV3(send.localId, send.wireId, send.stamp)
+        val socket = ws
+        val generation = activeConnectionGeneration
+        val token = joinToken
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            if (!replay.commitBatchOffMain(env.persistenceDispatcher)) {
+                if (foregroundPersistenceCurrent(replay, socket, generation, token)) persistenceFailure()
+                return@launch
+            }
+            if (!foregroundPersistenceCurrent(replay, socket, generation, token)) return@launch
+            for (send in sends) {
+                if (send.content != null && send.kind != null) {
+                    sendPutV3(send.localId, send.wireId, send.stamp, send.kind, send.content)
+                } else {
+                    sendDelV3(send.localId, send.wireId, send.stamp)
+                }
             }
         }
     }
@@ -2717,12 +2770,27 @@ class SyncManager internal constructor(
         val spare = if (backgroundPresenceOptIn()) HelloEpochPolicy.BACKGROUND_SPARE_BLOCK else 0
         val planned = HelloEpochPolicy.reserve(persisted, floor, spare)
         if (planned is HelloEpochPolicy.Result.Exhausted) return HelloResult.EXHAUSTED
-        val epoch = replay.reserveHelloEpoch(actor, myPublicKey, floor, spare) ?: return HelloResult.FAILED
-        sessionHelloEpoch = java.math.BigInteger(epoch, 16)
-        // whatever spares this hello put on disk are what a screen-off reconnect may use (21.4)
-        lastForegroundHelloEpoch = sessionHelloEpoch
-        lastForegroundSpareCount = (planned as HelloEpochPolicy.Result.Next).spareCount
-        return if (enqueueSignedHello(epoch)) HelloResult.SENT else HelloResult.FAILED
+        val socket = ws
+        val generation = activeConnectionGeneration
+        val token = joinToken
+        val pubkey = myPublicKey
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            val epoch = replay.reserveHelloEpochOffMain(actor, pubkey, floor, spare, env.persistenceDispatcher)
+            if (!foregroundPersistenceCurrent(replay, socket, generation, token)) return@launch
+            if (epoch == null) {
+                awaitingHelloAck = false
+                persistenceFailure()
+                return@launch
+            }
+            sessionHelloEpoch = java.math.BigInteger(epoch, 16)
+            lastForegroundHelloEpoch = sessionHelloEpoch
+            lastForegroundSpareCount = (planned as HelloEpochPolicy.Result.Next).spareCount
+            if (!enqueueSignedHello(epoch)) {
+                awaitingHelloAck = false
+                failConnection(SyncLocalClose.LIVENESS_TIMEOUT)
+            }
+        }
+        return HelloResult.SENT
     }
 
     /** Signs and queues the hello for an epoch that's already safe to use. */
@@ -2764,14 +2832,14 @@ class SyncManager internal constructor(
             helloVersion,
         ) ?: return false
         val signature = SyncSigning.sign(deviceSeed, preimage)
-        return socket.send(JSONObject().apply {
+        return enqueueFrame(SyncOutboundClass.CONTROL, JSONObject().apply {
             put("t", "leave")
             put("lv", SyncIdentity.EXPLICIT_LEAVE_VERSION)
             put("by", actor)
             put("sd", SyncIdentity.urlB64(sd))
             put("vs", helloVersion)
             put("sig", signature)
-        }.toString())
+        }.toString(), guard = { ws === socket })
     }
 
     private fun startChatSessionV3() {
@@ -3204,6 +3272,15 @@ class SyncManager internal constructor(
     }
 
     private suspend fun handleTextEvent(event: InboundEvent.Text) {
+        if (!backgroundPresenceOnly && !awaitingForegroundStores) {
+            replayState?.awaitPersistence()
+            modelRevisionJournal.awaitPersistence()
+            replayState?.awaitPersistence()
+        }
+        // Background-session parsing is egress-only and admitText owns its
+        // small fence/budget path. Snapshot publication uses the stronger
+        // foreground fence; transport admission must still reach that path.
+        if (lifecycleGate.isDisposed || ws !== event.socket || activeConnectionGeneration != event.generation) return
         val frame = admitText(event)
         if (frame == null) {
             flushLiveBatch()
@@ -3211,6 +3288,14 @@ class SyncManager internal constructor(
         }
         val msg = frame.msg
         val type = msg.optString("t")
+        if (protocolVersion == 3 && type in setOf("put", "del") &&
+            liveBatch?.records?.any { it.mutation.wireObjectId == msg.optString("id") } == true
+        ) {
+            // The later copy would replace the earlier pending marker. End
+            // this subgroup so its adopted layers are actually committed first.
+            flushLiveBatch()
+            if (!stillCurrent(event.socket, event.generation)) return
+        }
         if (protocolVersion == 3 && type in LIVE_BATCH_TYPES && acceptsLiveInboundV3() && openLiveBatch() != null) {
             lifecycleGate.runIfActive {
                 try {
@@ -3222,6 +3307,7 @@ class SyncManager internal constructor(
             return
         }
         flushLiveBatch()
+        if (!stillCurrent(event.socket, event.generation)) return
         if (protocolVersion == 3 && type == "snapshot-end") {
             if (lifecycleGate.isDisposed) return
             try {
@@ -3270,35 +3356,58 @@ class SyncManager internal constructor(
      * receiver hashes, one marker clear, and only then peers and members go
      * out (plans/04 section 1.3).
      */
-    private fun flushLiveBatch() {
+    private suspend fun flushLiveBatch() {
         val batch = liveBatch ?: return
         liveBatch = null
+        val socket = ws
+        val generation = activeConnectionGeneration
+        val token = joinToken
+        if (batch.failed || !foregroundPersistenceCurrent(batch.replay, socket, generation, token)) {
+            batch.replay.abortBatch()
+            return
+        }
+        if (!batch.replay.commitBatchOffMain(env.persistenceDispatcher)) {
+            if (foregroundPersistenceCurrent(batch.replay, socket, generation, token)) persistenceFailure()
+            return
+        }
+        if (!foregroundPersistenceCurrent(batch.replay, socket, generation, token)) return
+        if (batch.records.isNotEmpty() && waypointStoreRef != null && drawingStoreRef != null) {
+            resolvingPendingModel = true
+            val ok = try {
+                modelRevisionJournal.awaitPersistence()
+                if (!foregroundPersistenceCurrent(batch.replay, socket, generation, token)) return
+                val clears = applyRemoteRecords(batch.records, batch.before.takeIf { it.isCurrent() })
+                clears != null && batch.replay.clearPendingModelApplicationsOffMain(clears, env.persistenceDispatcher)
+            } finally {
+                // Leave/new join owns the new resolver state.
+                if (replayState === batch.replay) resolvingPendingModel = false
+            }
+            if (!foregroundPersistenceCurrent(batch.replay, socket, generation, token)) return
+            if (!ok) { persistenceFailure(); return }
+        }
+        if (!foregroundPersistenceCurrent(batch.replay, socket, generation, token)) return
         lifecycleGate.runIfActive {
-            if (batch.failed || replayState !== batch.replay) {
-                batch.replay.abortBatch()
-                return@runIfActive
-            }
-            if (!batch.replay.commitBatch()) {
-                persistenceFailure()
-                return@runIfActive
-            }
-            if (batch.records.isNotEmpty() && waypointStoreRef != null && drawingStoreRef != null) {
-                resolvingPendingModel = true
-                val ok = try {
-                    // same view the records were checked against, the commit above didn't touch the model
-                    val clears = applyRemoteRecords(batch.records, batch.before)
-                    clears != null && batch.replay.clearPendingModelApplications(clears)
-                } finally {
-                    resolvingPendingModel = false
-                }
-                if (!ok) {
-                    persistenceFailure()
-                    return@runIfActive
-                }
-            }
             batch.peers?.let { _peers.value = it }
             batch.onlineMembers?.let { _onlineMembers.value = it }
             if (batch.chatRecipientsDirty) publishChatRecipients()
+        }
+    }
+
+    private fun foregroundPersistenceCurrent(
+        replay: SyncReplayState, socket: SyncWebSocket?, generation: Long, token: Long,
+    ): Boolean = !lifecycleGate.isDisposed && !backgroundPresenceOnly && !awaitingForegroundStores &&
+        replayState === replay && ws === socket && activeConnectionGeneration == generation && joinToken == token
+
+    private fun persistPresenceCleanPoint() {
+        val replay = replayState ?: return
+        // An uncommitted live run never escaped to the UI. Discard it before
+        // queuing the exact fence after any already-running durable operation.
+        if (replay.isInBatch) {
+            replay.abortBatch()
+            if (liveBatch?.replay === replay) liveBatch = null
+        }
+        scope.launch(kotlinx.coroutines.NonCancellable, start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            replay.persistExactPresenceOffMain(env.persistenceDispatcher)
         }
     }
 
@@ -3417,10 +3526,13 @@ class SyncManager internal constructor(
                 snapshotRun?.close()
                 // the worker gets copies: keys, actor pins, the committed layers (section 19)
                 val pins = replay.actorPinsCopy()
+                val model = ModelLookup()
+                val generations = modelRevisionJournal.generationsCopy()
                 snapshotRun = SnapshotRun(
                     validator = SnapshotValidator(key, keys.roomIdRaw, keys.metadataKey, pins::get, displayDensity),
                     committedLayers = drawingStore.committedDocument.value.layers,
                     localKinds = localObjectKinds(),
+                    stageEligible = replay.snapshotStageEligibility(model::hash, { generations[it] ?: 0L }),
                     parent = managerJob,
                     dispatcher = env.validationDispatcher,
                     // a finished page counts as handshake progress (section 9)
@@ -3542,9 +3654,24 @@ class SyncManager internal constructor(
             is V3Check.Valid -> validated += check.record
             is V3Check.Skip -> skips[check.wireId] = check.reason
         }
-        restageIfLayersChanged(validated, run.committedLayers)
+        var before: ModelLookup
+        while (true) {
+            modelRevisionJournal.awaitPersistence()
+            if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
+            before = ModelLookup()
+            // Stores may have changed while validation ran. A newly created
+            // opposite-kind object is unsupported before any replay commit.
+            val collided = validated.removeAll { record ->
+                if (record is ValidatedV3.Put && before.kind(record.localId)?.let { it != record.kind } == true) {
+                    skips[record.mutation.wireObjectId] = SnapshotRecordReason.IDENTITY_COLLISION
+                    true
+                } else false
+            }
+            restageIfLayersChanged(validated, run.committedLayers, before.document.layers, skips, collided)
+            if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
+            if (before.isCurrent()) break
+        }
         val index = ensureWireIndex()
-        val before = ModelLookup()
         val resolved = validated.map { record ->
             if (record is ValidatedV3.Delete) record.copy(localId = index?.localId(record.mutation.wireObjectId)) else record
         }
@@ -3562,6 +3689,7 @@ class SyncManager internal constructor(
             }
             // committed but not applied is the same as a crash here: the markers
             // get resolved by the next snapshot
+            modelRevisionJournal.awaitPersistence()
             if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
             lifecycleGate.runIfActive {
                 // skips commit nothing; the seq still advances like the relay left them out
@@ -3607,24 +3735,47 @@ class SyncManager internal constructor(
     }
 
     private fun stillCurrent(socket: SyncWebSocket, connectionGeneration: Long): Boolean =
-        !lifecycleGate.isDisposed && ws === socket && activeConnectionGeneration == connectionGeneration
+        !lifecycleGate.isDisposed && !backgroundPresenceOnly && !awaitingForegroundStores &&
+            ws === socket && activeConnectionGeneration == connectionGeneration
 
     /** User touched layers while the snapshot was in flight: recompute against what's committed now (section 3). */
-    private fun restageIfLayersChanged(
+    private suspend fun restageIfLayersChanged(
         validated: MutableList<ValidatedV3>,
         committedAtBegin: List<com.tacmap.drawings.DrawingLayer>,
+        current: List<com.tacmap.drawings.DrawingLayer>,
+        skips: MutableMap<String, SnapshotRecordReason>,
+        force: Boolean = false,
     ) {
-        val current = drawingStore.committedDocument.value.layers
-        if (current == committedAtBegin) return
-        val staged = ArrayList(current)
-        for ((index, record) in validated.withIndex()) {
-            if (record !is ValidatedV3.Put) continue
-            SnapshotValidator.expectedModelHash(record.parsed, record.localId, staged, displayDensity)?.let { hash ->
-                validated[index] = record.copy(expectedModelHash = hash)
+        if (!force && current == committedAtBegin) return
+        val model = ModelLookup()
+        val generations = modelRevisionJournal.generationsCopy()
+        val stageEligible = replayState?.snapshotStageEligibility(model::hash, { generations[it] ?: 0L }) ?: return
+        // Reparse against captured current layers on the validation worker.
+        // The caller rechecks the captured stores before starting durability.
+        withContext(env.validationDispatcher) {
+            val staged = ArrayList(current)
+            val iterator = validated.listIterator()
+            while (iterator.hasNext()) {
+                val record = iterator.next() as? ValidatedV3.Put ?: continue
+                val parsed = runCatching { GeoJsonImporter.parse(
+                    record.content, staged, staged.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID,
+                    density = displayDensity, keepRingAnchors = true,
+                ) }.getOrNull()
+                val hash = parsed?.let {
+                    SnapshotValidator.expectedModelHash(it, record.localId, staged, displayDensity)
+                }
+                if (parsed == null || hash == null) {
+                    skips[record.mutation.wireObjectId] = if (parsed == null)
+                        SnapshotRecordReason.IMPORTER_FAILED else SnapshotRecordReason.EXPECTED_HASH_UNAVAILABLE
+                    iterator.remove()
+                    continue
+                }
+                iterator.set(record.copy(parsed = parsed, expectedModelHash = hash))
+                if (stageEligible(record.mutation)) {
+                    for (layer in parsed.newLayers) if (staged.none { it.id == layer.id }) staged += layer
+                }
             }
-            for (layer in record.parsed.newLayers) {
-                if (staged.none { it.id == layer.id }) staged += layer
-            }
+            lastInboundProgressMs.set(nowMs())
         }
     }
 
@@ -3945,7 +4096,12 @@ class SyncManager internal constructor(
                     if (ws !== socket) return@runIfActive
                     val replay = replayState ?: return@runIfActive
                     // a failed flush isn't a safety problem, the stride write before exposure is
-                    if (replay.hasUnflushedPresence && !replay.isInBatch) replay.flushPresence()
+                    if (replay.hasUnflushedPresence && !replay.isInBatch && !replay.isPersistenceInFlight &&
+                        !backgroundPresenceOnly && !awaitingForegroundStores) {
+                        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                            replay.flushPresenceOffMain(env.persistenceDispatcher)
+                        }
+                    }
                 }
                 if (ws !== socket) return@launch
             }
@@ -4284,7 +4440,7 @@ class SyncManager internal constructor(
             batch.records += validated
             (validated as? ValidatedV3.Put)?.let { batch.stagedKinds[it.localId] = it.kind }
         } finally {
-            if (openedHere) flushLiveBatch()
+            if (openedHere) scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { flushLiveBatch() }
         }
     }
 

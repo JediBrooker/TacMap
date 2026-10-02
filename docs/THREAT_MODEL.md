@@ -564,6 +564,25 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   If the authenticated socket drops, sharing pauses rather than creating a new
   background session. Force-quit, termination, permission loss, and unavailable
   GPS/network also stop delivery.
+  Selected-unit chat is blocked on the sender once the peer's signed presence
+  advertises a retention window above 45 seconds. Room chat remains live-only;
+  a Routed status never claims receipt. A peer can still miss a direct message
+  before its background bridge presence arrives (ADR-004 sections 1 and 9).
+- **Durable replay boundaries (iOS and Android).** Accepted object/session
+  changes are sealed before model or authenticated peer state is published.
+  iOS snapshot validation and replay/journal encoding and sealing run on
+  background workers, including replay load and legacy actor-pin repairs;
+  model stores commit once per batch on the UI thread.
+  A leave or lifecycle change invalidates pending publication, and rejoining
+  waits for the previous replay cleanup. Chat-history writes keep their existing
+  durable-before-send and durable-before-receive ordering. The separate chat
+  history store still seals synchronously on the UI thread; SP3 moves map
+  replay and model-revision journal writes, rather than all application storage.
+  Presence counters use strides of 16 plus a 60-second flush. An inexact file
+  reload raises each stored counter's acceptance floor by 15, capped at the
+  largest valid counter, so a crash cannot make an already exposed position
+  acceptable again. Clean points write exact counters; a failed clean point
+  keeps the preceding safe floor (ADR-001 section 8).
 - **A joined room survives a pause (iOS and Android).** A lifecycle change ends
   the Unit Sync socket only when it locks the mission-data key, engages App
   Lock, or detaches the mission stores. Leaving the Activity on Android always
@@ -631,6 +650,12 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
 - TacMap Chat unavailable until an upgraded v3 relay acknowledges the current
   session's signed ephemeral chat key. Messages are live-only: there is no
   offline mailbox, and **Routed** does not mean delivered or read.
+  Initial local key establishment retains peer keys already verified against
+  the current socket's authenticated hello/session. Full secret teardown
+  clears both the actual peer-key map and any staged recipient publication,
+  so a completed inbound batch cannot advertise an endpoint after its keys
+  have been discarded. Replacement hello and connection teardown still
+  invalidate the corresponding peer authority.
 - Relay ingress is bounded per socket by both frame count and encoded UTF-8
   bytes: 1 MiB per frame and 4 MiB/200 frames per 10 seconds. Binary frames are
   bounded before decoding and protocol pings accept no padding fields.

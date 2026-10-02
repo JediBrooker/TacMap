@@ -21,6 +21,7 @@ internal sealed interface ValidatedV3 {
         override val mutation: SyncReplayState.AuthenticatedMutation,
         val parsed: GeoJsonImporter.Result,
         val localId: String,
+        val content: String,
         override val expectedModelHash: String,
     ) : ValidatedV3 {
         override val localModelId: String get() = localId
@@ -200,6 +201,7 @@ internal class SnapshotValidator(
             ),
             parsed,
             localId,
+            content,
             expected,
         ))
     }

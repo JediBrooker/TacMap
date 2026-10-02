@@ -316,7 +316,9 @@ Documented so the trade-offs are explicit rather than surprising:
   at 1 MiB and process them serially. Android rejects an oversized declared
   frame before allocating its payload, disables compression and redirects,
   caps fragmented messages at 128 frames, and bounds every raw data/control
-  frame during a bounded 512-frame initial-snapshot allowance. iOS configures
+  frame during an initial-snapshot allowance of 10,000 frames / 54,525,952 bytes,
+  lasting until `hello-ack`. This is separate from the 512-frame / 8 MiB
+  waiting queue. iOS configures
   the native WebSocket task's maximum message size and rejects redirects; its
   public API handles Ping/Pong internally, so individual control frames cannot
   be included in the app-level budget. Clients rely on transport keepalive
@@ -362,7 +364,7 @@ before SP1 get the hour they were first indexed (about the deploy time). Presenc
   after at most 90, then nothing. A device returning after the purge finds a
   fresh room at `seq` 0, which shipped clients report as a rollback, and if
   its counters had passed 10,000 its writes are nacked `counter-window`; it
-  has to move to a new join code (SP2 clients will say so plainly). In v2
+  has to move to a new join code (SP2 clients say so plainly). In v2
   whoever connects first afterwards pins the fresh room, as before SP1. A join that
   passed its auth check just before a wipe gets 503 `Room reset during join`
   and its reconnect pins the fresh room. A room whose first join failed right
@@ -375,9 +377,9 @@ before SP1 get the hour they were first indexed (about the deploy time). Presenc
   go once the whole room has been unused for 30 days. Current clients resend
   their own tombstones whenever a snapshot does not confirm them, so an active
   author's tombstones are kept. A departed author that does come back resends
-  every compacted tombstone in one unpaced burst after `hello-ack`, which trips
-  the rate window about once per 200 and stores them all again; SP2 pacing is
-  the fix. A device offline for more than 30 days can resurrect an object whose
+  every compacted tombstone after `hello-ack`. Shipped clients send an unpaced
+  burst that trips the rate window about once per 200. SP2 clients pace the
+  resends below the relay budget; both versions store those tombstones again. A device offline for more than 30 days can resurrect an object whose
   tombstone was compacted; see ADR-001 §16.
 - **Clients must not assume these rules.** Pre-SP1 relays (including older
   self-hosted ones) wipe the whole room at idle expiry and there is no in-band

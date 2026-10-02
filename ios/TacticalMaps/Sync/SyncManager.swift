@@ -865,9 +865,25 @@ final class SyncManager: ObservableObject {
     /// never republishes the manager, ContentView or the drawings overlay.
     let presence = SyncPresenceModel()
     var peers: [String: PresencePeer] {
-        get { presence.peers }
-        set { presence.peers = newValue }
+        get { inboundPublication?.peers ?? presence.peers }
+        set {
+            if inboundPublication != nil { inboundPublication?.peers = newValue }
+            else { presence.peers = newValue }
+        }
     }
+    private struct InboundPublication {
+        var peers: [String: PresencePeer]
+        var members: [String: OnlineMember]
+        var recipients: [String: TacMapChatRecipient]
+    }
+    private var inboundPublication: InboundPublication?
+    private var inboundPersistenceInFlight = false
+    private var modelEpoch: UInt64 = 0
+    private var pendingJournalWrites = 0
+    private var outboundPersistenceInFlight = false
+    private var pendingReplayCleanups = 0
+    private var afterReplayCleanup: [@MainActor () -> Void] = []
+
     /// Signature-verified v3 sessions currently reported by the relay. This is
     /// independent of `peers`, which contains only shared map locations.
     @Published private(set) var onlineMembers: [String: OnlineMember] = [:]
@@ -881,6 +897,7 @@ final class SyncManager: ObservableObject {
     /// Set while sync is parked on PAUSED_ACTION_REQUIRED (relay refused us,
     /// room full, identity rejected...). The sheet shows Retry for it.
     @Published private(set) var pausedForAction: SyncPausedState?
+    @Published private(set) var mutationsPaused = false
     /// Every contract issue code surfaced this join, in order. Tests read it,
     /// the UI uses lastError.
     private(set) var surfacedIssueLog: [SyncIssueCode] = []
@@ -923,6 +940,7 @@ final class SyncManager: ObservableObject {
     /// Runs off main (PBKDF2, 20.3), so it must not touch the main actor.
     private let roomKeyDeriver: (String) -> SyncCrypto.V3RoomKeys
     private let offMainExecutor: SyncOffMainExecutor
+    private let persistenceExecutor: SyncOffMainExecutor
     /// Test seams for counting durable writes. nil = SafeStore.
     private let replayPersistenceWriter: SyncReplayState.PersistenceWriter?
     private let journalPersistenceWriter: LocalModelRevisionJournal.PersistenceWriter?
@@ -1158,6 +1176,10 @@ final class SyncManager: ObservableObject {
     private var revisionObservers = Set<AnyCancellable>()
     private var modelRevisionJournal: LocalModelRevisionJournal?
     private var revisionJournalAvailable = false
+    private var revisionJournalLoading = false
+    private var startupRevisionWriteInFlight = false
+    private var startupRevisionEvents: [[String]] = []
+    private var afterRevisionJournalReady: [@MainActor () -> Void] = []
 
     // v2 containment ceilings (pending v3 protocol limits)
     private static let maxBase64Bytes = 1_048_576        // 1 MiB encoded ct
@@ -1202,12 +1224,14 @@ final class SyncManager: ObservableObject {
         replayPersistenceWriter: SyncReplayState.PersistenceWriter? = nil,
         journalPersistenceWriter: LocalModelRevisionJournal.PersistenceWriter? = nil,
         offMainExecutor: SyncOffMainExecutor? = nil,
+        persistenceExecutor: SyncOffMainExecutor? = nil,
         backgroundReconnectEnabled: Bool = BackgroundPresencePolicy.reconnectEnabled
     ) {
         self.backgroundReconnectEnabled = backgroundReconnectEnabled
         self.replayPersistenceWriter = replayPersistenceWriter
         self.journalPersistenceWriter = journalPersistenceWriter
         self.offMainExecutor = offMainExecutor ?? DispatchSyncOffMainExecutor()
+        self.persistenceExecutor = persistenceExecutor ?? SyncPersistenceExecutor()
         self.socketFactory = socketFactory ?? URLSessionSyncSocketFactory()
         self.scheduler = scheduler ?? DispatchSyncScheduler()
         self.pathMonitor = pathMonitor ?? NWPathSyncMonitor()
@@ -1251,9 +1275,48 @@ final class SyncManager: ObservableObject {
         let journal = journalPersistenceWriter.map {
             LocalModelRevisionJournal(containerURL: storageContainerURL, persistenceWriter: $0)
         } ?? LocalModelRevisionJournal(containerURL: storageContainerURL)
-        modelRevisionJournal = journal
-        revisionJournalAvailable = journal.load()
+        revisionJournalLoading = true
         observeModelRevisions()
+        let loaded = ReplayLoadResult()
+        // SafeStore reads can migrate plaintext and persist a sealed-only
+        // barrier. Keep this private instance on the persistence worker until
+        // the load settles, while lifetime observers retain local edit events.
+        persistenceExecutor.execute({ loaded.success = journal.load() }) { [weak self] in
+            guard let self else { return }
+            self.modelRevisionJournal = journal
+            if loaded.success { self.drainStartupRevisionEvents() }
+            else { self.finishRevisionJournalStartup(success: false) }
+        }
+    }
+
+    private func drainStartupRevisionEvents() {
+        guard presenceCadence.foregroundReady, !startupRevisionWriteInFlight else { return }
+        guard !startupRevisionEvents.isEmpty, let journal = modelRevisionJournal else {
+            finishRevisionJournalStartup(success: true)
+            return
+        }
+        let ids = startupRevisionEvents.removeFirst()
+        startupRevisionWriteInFlight = true
+        journal.bumpAll(ids, on: persistenceExecutor) { [weak self] error in
+            guard let self else { return }
+            self.startupRevisionWriteInFlight = false
+            if error == nil { self.drainStartupRevisionEvents() }
+            else { self.finishRevisionJournalStartup(success: false) }
+        }
+    }
+
+    private func finishRevisionJournalStartup(success: Bool) {
+        revisionJournalLoading = false
+        revisionJournalAvailable = success
+        startupRevisionEvents.removeAll()
+        if !success {
+            pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+            if wantConnected { failClosedV3(pendingLastError!) }
+        }
+        let ready = afterRevisionJournalReady
+        afterRevisionJournalReady.removeAll()
+        ready.forEach { $0() }
+        if success { markDiffDirty() }
     }
 
     /// Keeps mission-state processing foreground-only while allowing an
@@ -1279,6 +1342,7 @@ final class SyncManager: ObservableObject {
         reschedulePresenceBroadcastTimer()
 
         if foregroundReady {
+            if revisionJournalLoading, modelRevisionJournal != nil { drainStartupRevisionEvents() }
             if !wasForegroundReady {
                 // a presence-only background session never carries on into
                 // the foreground, the normal reconnect below replaces it
@@ -1332,11 +1396,12 @@ final class SyncManager: ObservableObject {
         clearOutboundDeliveries(markForReconciliation: true)
         // queued frames are foreground-only work, the next snapshot covers them
         resetInboundQueue(rearmParked: true)
+        dropInboundAndLiveWork()
         presenceFlushTimer?.cancel()
         presenceFlushTimer = nil
         // 17.1 clean point. Best effort: an auth-bound key may be locked already,
         // then the stride flag just stays false which is the safe side.
-        try? replayState?.writeCleanPresenceFence()
+        replayState?.writeCleanPresenceFence(on: persistenceExecutor)
     }
 
     /// 21.5: background sharing stopped without the user asking. Say when, once.
@@ -1698,7 +1763,17 @@ final class SyncManager: ObservableObject {
             if isV3 { derived.v3 = deriver(rawCode) } else { derived.v2 = SyncCrypto.deriveRoom(rawCode) }
         }) { [weak self] in
             guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
-            self.finishJoin(code: code, v3: derived.v3, v2: derived.v2, proposedRoomName: proposedRoomName)
+            // A new join must load after the prior socket's queued seals and
+            // clean point, so an immediate leave/rejoin cannot reuse a floor.
+            let finish: @MainActor () -> Void = { [weak self] in
+                guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                self.persistenceExecutor.execute({}) { [weak self] in
+                    guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                    self.finishJoin(code: code, v3: derived.v3, v2: derived.v2, proposedRoomName: proposedRoomName)
+                }
+            }
+            if self.pendingReplayCleanups > 0 { self.afterReplayCleanup.append(finish) }
+            else { finish() }
         }
     }
 
@@ -1712,6 +1787,22 @@ final class SyncManager: ObservableObject {
                             v3: SyncCrypto.V3RoomKeys?,
                             v2: SyncCrypto.RoomKeys?,
                             proposedRoomName: String?) {
+        if v3 != nil {
+            if revisionJournalLoading {
+                let token = joinToken
+                afterRevisionJournalReady.append { [weak self] in
+                    guard let self, self.joinToken == token, self.wantConnected, self.room == code,
+                          self.presenceCadence.foregroundReady else { return }
+                    self.finishJoin(code: code, v3: v3, v2: v2, proposedRoomName: proposedRoomName)
+                }
+                return
+            }
+            guard revisionJournalAvailable else {
+                pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+                abandonJoin()
+                return
+            }
+        }
         if let keys = v3 {
             v3Keys = keys
             roomKey = keys.roomKey
@@ -1727,33 +1818,24 @@ final class SyncManager: ObservableObject {
             let rs = replayPersistenceWriter.map {
                 SyncReplayState(roomId: keys.roomId, containerURL: storageContainerURL, persistenceWriter: $0)
             } ?? SyncReplayState(roomId: keys.roomId, containerURL: storageContainerURL)
-            guard rs.load(localActorId: localActorId, publicKey: myPublicKey) else {
-                pendingLastError = Messages.syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage()
-                abandonJoin()
-                return
+            let token = joinToken
+            let publicKey = myPublicKey
+            let loaded = ReplayLoadResult()
+            // Loading may repair an old actor pin and seal the replay document.
+            // Keep that repair on the same serial worker as later commits.
+            persistenceExecutor.execute({
+                loaded.success = rs.load(localActorId: localActorId, publicKey: publicKey)
+            }) { [weak self] in
+                guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                guard loaded.success else {
+                    self.pendingLastError = Messages.syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage()
+                    self.abandonJoin()
+                    return
+                }
+                self.finishV3Join(keys: keys, replay: rs)
+                self.finishJoinedRoom(proposedRoomName: proposedRoomName)
             }
-            rs.onDurableWrite = { [weak self] in
-                guard let self else { return }
-                self.lastReplayDurableMs = self.scheduler.nowMs
-            }
-            lastReplayDurableMs = scheduler.nowMs
-            replayState = rs
-            // contract 18: the wire-id index is built once, now that the keys
-            // and the stores are both attached
-            rebuildWireIndex(metadataKey: keys.metadataKey)
-            // chat fences of sessions the replay state has moved past can go
-            chatStore.durableSessionDomain = { [weak rs] actor in rs?.activeSessionDomain(actor) }
-            do {
-                try chatStore.open(roomId: keys.roomId)
-                pendingChatSessionIssue = nil
-            } catch {
-                // Unit Sync can still operate, but chat remains fail-closed: no
-                // frame is sent unless its sealed history/replay document is
-                // available for a durable-before-send commit.
-                pendingChatSessionIssue = (error as? TacMapChatStore.StoreError)?.localizedMessage
-                ?? (error as? TacMapChatCrypto.CryptoError)?.localizedMessage
-                ?? .literal(error.localizedDescription)
-            }
+            return
         } else if let keys = v2 {
             roomKey = keys.roomKey
             roomId = keys.roomId
@@ -1765,6 +1847,39 @@ final class SyncManager: ObservableObject {
             return
         }
 
+        finishJoinedRoom(proposedRoomName: proposedRoomName)
+    }
+
+    private final class ReplayLoadResult {
+        var success = false
+    }
+
+    private func finishV3Join(keys: SyncCrypto.V3RoomKeys, replay rs: SyncReplayState) {
+        rs.onDurableWrite = { [weak self] in
+            guard let self else { return }
+            self.lastReplayDurableMs = self.scheduler.nowMs
+        }
+        lastReplayDurableMs = scheduler.nowMs
+        replayState = rs
+        // contract 18: the wire-id index is built once, now that the keys
+        // and the stores are both attached
+        rebuildWireIndex(metadataKey: keys.metadataKey)
+        // chat fences of sessions the replay state has moved past can go
+        chatStore.durableSessionDomain = { [weak rs] actor in rs?.durableSessionDomain(actor) }
+        do {
+            try chatStore.open(roomId: keys.roomId)
+            pendingChatSessionIssue = nil
+        } catch {
+            // Unit Sync can still operate, but chat remains fail-closed: no
+            // frame is sent unless its sealed history/replay document is
+            // available for a durable-before-send commit.
+            pendingChatSessionIssue = (error as? TacMapChatStore.StoreError)?.localizedMessage
+            ?? (error as? TacMapChatCrypto.CryptoError)?.localizedMessage
+            ?? .literal(error.localizedDescription)
+        }
+    }
+
+    private func finishJoinedRoom(proposedRoomName: String?) {
         if let activeRoomId = roomId {
             if let proposedRoomName,
                !PresenceConfig.normalizedRoomName(proposedRoomName).isEmpty {
@@ -1807,6 +1922,7 @@ final class SyncManager: ObservableObject {
         reconnectBackoff.reset()
         closeClassifier.reset()
         joinState = JoinState()
+        mutationsPaused = false
         pausedForAction = nil
         surfacedIssueLog.removeAll()
         stableSessionTimer?.cancel()
@@ -1834,13 +1950,11 @@ final class SyncManager: ObservableObject {
         v2SnapshotFailureGeneration = nil
         let leavingTask = task
         let explicitLeaveFrame = signedExplicitLeaveFrame()
+        let leavingPacer = pacer
         task = nil
         resetOutboundPacing()
-        if let leavingTask, let explicitLeaveFrame {
-            // last frame on this socket, it closes right after so it skips the pacer
-            leavingTask.send(text: explicitLeaveFrame) { _ in
-                leavingTask.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
-            }
+        if let leavingTask, let explicitLeaveFrame, let leavingPacer {
+            sendPacedLeave(explicitLeaveFrame, socket: leavingTask, pacer: leavingPacer)
         } else {
             leavingTask?.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
         }
@@ -1850,7 +1964,18 @@ final class SyncManager: ObservableObject {
         dropInboundAndLiveWork()
         presenceFlushTimer?.cancel()
         presenceFlushTimer = nil
-        try? replayState?.writeCleanPresenceFence()
+        if let state = replayState {
+            pendingReplayCleanups += 1
+            state.writeCleanPresenceFence(on: persistenceExecutor) { [weak self] _ in
+                guard let self else { return }
+                self.pendingReplayCleanups -= 1
+                if self.pendingReplayCleanups == 0 {
+                    let waiting = self.afterReplayCleanup
+                    self.afterReplayCleanup.removeAll()
+                    waiting.forEach { $0() }
+                }
+            }
+        }
         replayState?.onDurableWrite = nil
         joinToken &+= 1
         wireIndex = nil
@@ -2097,7 +2222,10 @@ final class SyncManager: ObservableObject {
             pendingChatSessionIssue = chatStore.pendingIssue ?? Messages.chatHistoryUnavailableMessage()
             return
         }
-        clearChatSessionSecrets()
+        // Peers may announce their authenticated key before our hello-ack.
+        // Starting this socket's local key must retain those current-session
+        // endpoints; connection teardown still clears all local and peer keys.
+        clearLocalChatSessionSecrets()
         do {
             chatLocalSession = try TacMapChatCrypto.makeLocalSession(
                 roomIdRaw: keys.roomIdRaw,
@@ -2139,13 +2267,18 @@ final class SyncManager: ObservableObject {
     }
 
     private func clearChatSessionSecrets() {
+        clearLocalChatSessionSecrets()
+        chatPeerKeys.removeAll(keepingCapacity: false)
+        inboundPublication?.recipients.removeAll(keepingCapacity: false)
+        chatRecipients.removeAll(keepingCapacity: false)
+    }
+
+    private func clearLocalChatSessionSecrets() {
         chatKeyRetryItem?.cancel()
         chatKeyRetryItem = nil
         chatKeyAdvertAttempts = 0
         chatSessionReady = false
         chatLocalSession = nil
-        chatPeerKeys.removeAll(keepingCapacity: false)
-        chatRecipients.removeAll(keepingCapacity: false)
         chatCounter = 0
         for messageId in pendingChatSends.keys {
             _ = try? chatStore.updateDelivery(id: messageId, state: .failed, failureCode: "session-ended")
@@ -2157,7 +2290,7 @@ final class SyncManager: ObservableObject {
         var next: [String: TacMapChatRecipient] = [:]
         for (actorId, key) in chatPeerKeys {
             guard activeSessions[actorId]?.sessionDomain == key.sessionDomain else { continue }
-            let displayName = onlineMembers[actorId]?.displayName
+            let displayName = (inboundPublication?.members ?? onlineMembers)[actorId]?.displayName
                 ?? peers[actorId]?.callsign
                 ?? L10n.text("Unit %1$@", String(actorId.suffix(6)).uppercased())
             next[actorId] = TacMapChatRecipient(
@@ -2168,13 +2301,15 @@ final class SyncManager: ObservableObject {
             )
         }
         // 20.2: an unchanged value must not republish the manager
-        if next != chatRecipients { chatRecipients = next }
+        if inboundPublication != nil { inboundPublication?.recipients = next }
+        else if next != chatRecipients { chatRecipients = next }
     }
 
     /// Assign only when something a view shows changed. The tracker bumps
     /// lastSeenAt on every frame, which nothing displays, and republishing it
     /// re-rendered the whole map per presence frame (S5-12).
     private func setOnlineMembers(_ next: [String: OnlineMember]) {
+        if inboundPublication != nil { inboundPublication?.members = next; return }
         guard next.count != onlineMembers.count || next.contains(where: { id, member in
             guard let current = onlineMembers[id] else { return true }
             return !current.sameDisplay(as: member)
@@ -2186,6 +2321,13 @@ final class SyncManager: ObservableObject {
 
     private func connect() {
         guard presenceCadence.foregroundReady, pausedForAction == nil, let roomId else { return }
+        // Foreground reconciliation can race the journal startup callback:
+        // finishJoin has room keys while its replay load is still queued.
+        // Only the loaded, current room authority may open a v3 socket.
+        if protocolVersion == 3 {
+            guard revisionJournalAvailable, !revisionJournalLoading,
+                  replayState?.roomId == roomId, v3Keys?.roomId == roomId else { return }
+        }
         guard let base = Self.validatedRelayBaseForRuntime(relayEndpoint) else {
             wantConnected = false
             status = .offline
@@ -2374,7 +2516,7 @@ final class SyncManager: ObservableObject {
     }
 
     private func scheduleInboundDrain() {
-        guard inboundDrainTimer == nil, !snapshotValidationInFlight, queuedInboundCount > 0 else { return }
+        guard inboundDrainTimer == nil, !snapshotValidationInFlight, !inboundPersistenceInFlight, !outboundPersistenceInFlight, queuedInboundCount > 0 else { return }
         inboundDrainTimer = scheduler.schedule(afterMs: 0) { [weak self] in
             guard let self else { return }
             self.inboundDrainTimer = nil
@@ -2387,12 +2529,21 @@ final class SyncManager: ObservableObject {
     /// replay batch; live records are applied to the model together at the
     /// end (or before any frame that needs the model or sends something).
     private func drainInbound() {
-        guard !snapshotValidationInFlight else { return }
+        guard !snapshotValidationInFlight, !inboundPersistenceInFlight, !outboundPersistenceInFlight else { return }
         let rs = replayState
         rs?.beginBatch()
+        if protocolVersion == 3 {
+            inboundPublication = InboundPublication(peers: presence.peers, members: onlineMembers, recipients: chatRecipients)
+        }
         var processed = 0
         while processed < Self.inboundBatchMaxFrames, inboundHead < inboundQueue.count {
             let frame = inboundQueue[inboundHead]
+            let type = frame.object["t"] as? String ?? ""
+            let duplicate = (frame.object["id"] as? String).map { liveGroupWireIds.contains($0) } ?? false
+            if protocolVersion == 3, (!Self.batchableInboundTypes.contains(type) || duplicate),
+               rs?.hasUnflushedChanges == true || !liveGroup.isEmpty {
+                break
+            }
             inboundHead += 1
             inboundQueuedBytes -= frame.bytes
             // a frame from an ended session, or one that waited while we went
@@ -2411,16 +2562,57 @@ final class SyncManager: ObservableObject {
             if snapshotValidationInFlight { break }
         }
         compactInboundQueue()
-        flushLiveRecordGroup()
-        if let rs {
-            do {
-                try rs.endBatch()
-            } catch {
-                failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-            }
+        if let rs, protocolVersion == 3 {
+            finishInboundBatch(rs)
+        } else {
+            if let rs { try? rs.endBatch() }
+            resumeParkedReceive()
+            scheduleInboundDrain()
         }
-        resumeParkedReceive()
-        scheduleInboundDrain()
+    }
+
+    private func finishInboundBatch(_ rs: SyncReplayState) {
+        inboundPersistenceInFlight = true
+        let generation = activeConnectionGeneration
+        let token = joinToken
+        let group = liveGroup
+        liveGroup.removeAll()
+        liveGroupWireIds.removeAll()
+        liveGroupStaging = nil
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do {
+                if !group.isEmpty {
+                    let outcome = try self.applyAcceptedRecords(group.map {
+                        ($0.value, self.modelContentHash(localId: $0.value.localId))
+                    })
+                    try rs.clearPendingModelApplications(outcome.clears)
+                    if !outcome.unsupported.isEmpty {
+                        self.surface(.skippedUnsupported, scope: .join, count: outcome.unsupported.count)
+                    }
+                }
+                rs.flushBatch(on: self.persistenceExecutor) { [weak self] error in
+                    guard let self, self.replayState === rs, self.joinToken == token,
+                          self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+                    if let error { self.snapshotPersistenceFailed(error); return }
+                    do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+                    self.inboundPersistenceInFlight = false
+                    let publication = self.inboundPublication
+                    self.inboundPublication = nil
+                    if let publication {
+                        if self.presence.peers != publication.peers { self.presence.peers = publication.peers }
+                        self.setOnlineMembers(publication.members)
+                        if self.chatRecipients != publication.recipients { self.chatRecipients = publication.recipients }
+                    }
+                    self.resumeParkedReceive()
+                    self.scheduleInboundDrain()
+                }
+            } catch { self.snapshotPersistenceFailed(error) }
+        }
     }
 
     private func compactInboundQueue() {
@@ -2467,18 +2659,9 @@ final class SyncManager: ObservableObject {
         liveGroupWireIds.removeAll()
         liveGroupStaging = nil
         snapshotValidationInFlight = false
-    }
-
-    /// Before any frame that reads the model, sends, or writes elsewhere:
-    /// apply the staged live records and make the replay batch durable.
-    private func flushInboundBatch() {
-        flushLiveRecordGroup()
-        guard let rs = replayState else { return }
-        do {
-            try rs.flushBatch()
-        } catch {
-            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-        }
+        inboundPersistenceInFlight = false
+        outboundPersistenceInFlight = false
+        inboundPublication = nil
     }
 
     private func rejectInboundFrame(
@@ -2972,17 +3155,31 @@ final class SyncManager: ObservableObject {
     }
 
     private func modelObjectsChanged(_ changed: Set<UUID>, added: [UUID]) {
+        if !changed.isEmpty { modelEpoch &+= 1 }
         wireIndex?.insert(added)
         guard !changed.isEmpty else { return }
         // No mission-object mutation should normally occur behind the lock,
         // and a remote apply is not a local edit. Both just move the baseline
         // (the index) and never touch the auth-bound revision journal.
         guard presenceCadence.foregroundReady, !resolvingPendingModel else { return }
+        if revisionJournalLoading {
+            startupRevisionEvents.append(changed.map(\.uuidString))
+            return
+        }
         do {
             guard revisionJournalAvailable, let journal = modelRevisionJournal else {
                 throw SyncReplayState.ReplayError.invalidState
             }
-            try journal.bumpAll(changed.map(\.uuidString))
+            pendingJournalWrites += 1
+            journal.bumpAll(changed.map(\.uuidString), on: persistenceExecutor) { [weak self] error in
+                guard let self else { return }
+                self.pendingJournalWrites -= 1
+                if error != nil {
+                    self.revisionJournalAvailable = false
+                    self.pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
+                    self.failClosedV3(self.pendingLastError!)
+                } else if self.pendingJournalWrites == 0 { self.markDiffDirty() }
+            }
         } catch {
             revisionJournalAvailable = false
             pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
@@ -3090,7 +3287,6 @@ final class SyncManager: ObservableObject {
         frameClass: SyncOutboundPacer.FrameClass,
         completion: @escaping (Bool) -> Void
     ) -> Bool {
-        // the explicit leave is sent straight, see leave()
         guard let text = encodedFrame(obj), task != nil else { return false }
         return enqueueFrame(text, frameClass: frameClass, requestId: nil, completion: completion)
     }
@@ -3116,6 +3312,21 @@ final class SyncManager: ObservableObject {
     }
 
     // MARK: Outbound pacing (contract section 11)
+
+    private func sendPacedLeave(_ text: String, socket: SyncSocket, pacer: SyncOutboundPacer) {
+        // Keep the old socket's buckets, but discard all work except leave.
+        for frameClass in SyncOutboundPacer.FrameClass.allCases {
+            for item in pacer.queued(frameClass) { pacer.remove(id: item.id) }
+        }
+        pacer.enqueue(.control, bytes: text.utf8.count)
+        guard pacer.next(nowMs: Double(scheduler.nowMs)) != nil else {
+            socket.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
+            return
+        }
+        socket.send(text: text) { _ in
+            socket.cancel(closeCode: SyncLocalCloseAction.leave.closeCode, reason: nil)
+        }
+    }
 
     private func startOutboundPacing() {
         resetOutboundPacing()
@@ -3193,11 +3404,13 @@ final class SyncManager: ObservableObject {
 
     private func queueDelivery(_ delivery: PendingOutboundDelivery) {
         if let prior = outboundDeliveries.register(delivery) {
-            // newer reservation for the same object wins, an unwritten copy of
-            // the old one just disappears
+            // Superseding settles the old window slot even if its ack is lost.
+            // Drop it without pumping until the new reservation is queued.
             dropUnwrittenCopy(prior.requestId)
             ackTimers.removeValue(forKey: prior.requestId)?.cancel()
             ackStates.removeValue(forKey: prior.requestId)
+            writtenUnacked.removeAll { $0 == prior.requestId }
+            pacer?.settle(requestId: prior.requestId)
         }
         ackStates[delivery.requestId] = SyncAckTimer()
         enqueueFrame(delivery.frame, frameClass: .mutation, requestId: delivery.requestId) { _ in }
@@ -3297,7 +3510,8 @@ final class SyncManager: ObservableObject {
               revisionJournalAvailable,
               // counter-window proved the relay cant take our writes anymore
               !joinState.mutationsPaused,
-              !resolvingPendingModel, !rs.hasPendingModelApplications() else { return }
+              !resolvingPendingModel, !inboundPersistenceInFlight, !snapshotValidationInFlight, !outboundPersistenceInFlight, pendingJournalWrites == 0,
+              !rs.hasPendingModelApplications() else { return }
         let index = ensureWireIndex(keys)
         let sessionString = SyncIdentity.urlB64Encode(sd)
 
@@ -3349,25 +3563,43 @@ final class SyncManager: ObservableObject {
         guard !candidates.isEmpty else { return }
 
         let stamps: [VersionStamp?]
+        rs.beginBatch()
         do {
             stamps = try rs.reserveLocalMutations(candidates.map {
                 SyncReplayState.LocalReservation(
                     wireObjectId: $0.wireId,
                     kind: $0.contentHash.map { .put(contentHash: $0) } ?? .delete,
                     recoveryStamp: $0.recovery)
-            }, actorId: actorId, pubkey: myPublicKey)
+            }, actorId: actorId, pubkey: myPublicKey, deferPersistence: true)
         } catch {
             failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
             return
         }
-        for (candidate, stamp) in zip(candidates, stamps) {
-            guard let stamp else { continue }
-            if let content = candidate.content {
-                queuePutV3(localId: candidate.localId, wireObjectId: candidate.wireId,
-                           kind: candidate.kind, content: content, stamp: stamp)
-            } else {
-                queueDelV3(localId: candidate.localId, wireObjectId: candidate.wireId, stamp: stamp)
+        outboundPersistenceInFlight = true
+        let generation = activeConnectionGeneration
+        let token = joinToken
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else {
+                try? rs.endBatch(); return
             }
+            self.outboundPersistenceInFlight = false
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+            for (candidate, stamp) in zip(candidates, stamps) {
+                guard let stamp else { continue }
+                // A model edit during the seal gets a new reservation next pass.
+                guard self.modelContentHash(localId: candidate.localId) == candidate.contentHash else { continue }
+                if let content = candidate.content {
+                    self.queuePutV3(localId: candidate.localId, wireObjectId: candidate.wireId,
+                                    kind: candidate.kind, content: content, stamp: stamp)
+                } else {
+                    self.queueDelV3(localId: candidate.localId, wireObjectId: candidate.wireId, stamp: stamp)
+                }
+            }
+            self.scheduleInboundDrain()
+            self.markDiffDirty()
         }
     }
 
@@ -3568,17 +3800,31 @@ final class SyncManager: ObservableObject {
                 nowMs: scheduler.wallMs,
                 after4014: joinState.after4014,
                 rejected: joinState.rejectedEpoch)
-            epoch = try rs.reserveHelloEpoch(actorId: actorId, pubkey: myPublicKey, floor: floor, spare: spare)
+            rs.beginBatch()
+            epoch = try rs.reserveHelloEpoch(actorId: actorId, pubkey: myPublicKey, floor: floor, spare: spare, deferPersistence: true)
         } catch HelloEpochPolicy.Failure.exhausted, SyncReplayState.ReplayError.counterExhausted {
             enterPausedForAction(.sessionCounterBehind, retryOnForeground: false)
             return
         } catch {
             failClosedV3(Messages.syncCouldNotReserveAuthenticatedSessionEpochMessage()); return
         }
-        joinState.after4014 = false
-        joinState.rejectedEpoch = nil
-        if let value = UInt64(epoch, radix: 16) { lastForegroundHello = (value, spare) }
-        writeHello(epochHex: epoch)
+        snapshotValidationInFlight = true
+        let generation = activeConnectionGeneration, token = joinToken
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else {
+                try? rs.endBatch(); return
+            }
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+            self.snapshotValidationInFlight = false
+            self.joinState.after4014 = false
+            self.joinState.rejectedEpoch = nil
+            if let value = UInt64(epoch, radix: 16) { self.lastForegroundHello = (value, spare) }
+            self.writeHello(epochHex: epoch)
+            self.scheduleInboundDrain()
+        }
     }
 
     /// Sign and queue a hello for an epoch that is already durable (the one
@@ -4297,6 +4543,7 @@ final class SyncManager: ObservableObject {
     private func pauseMutationsForJoin() {
         guard !joinState.mutationsPaused else { return }
         joinState.mutationsPaused = true
+        mutationsPaused = true
         for delivery in outboundDeliveries.all() {
             outboundDeliveries.resolve(requestId: delivery.requestId)
             settleDelivery(delivery.requestId)
@@ -4582,10 +4829,6 @@ final class SyncManager: ObservableObject {
 
     private func handleParsedMessageV3(_ obj: [String: Any], frameBytes: Int) {
         let type = obj["t"] as? String
-        if !Self.batchableInboundTypes.contains(type ?? "") {
-            flushInboundBatch()
-            guard task != nil else { return }
-        }
         switch type {
         case "snapshot-begin":
             // a second begin, a begin mid-session or a bad seq is a fence
@@ -4769,6 +5012,13 @@ final class SyncManager: ObservableObject {
             return
         }
         let index = ensureWireIndex(keys)
+        let ids = modelIndex.allIds
+        let hashes = Dictionary(uniqueKeysWithValues: ids.compactMap { id in
+            modelIndex.export(id).map { (id.uuidString, $0.hash) }
+        })
+        let generations = Dictionary(uniqueKeysWithValues: ids.map {
+            ($0.uuidString, modelRevisionJournal?.generation($0.uuidString) ?? 0)
+        })
         let input = SnapshotValidationInput(
             records: records,
             keys: keys,
@@ -4777,15 +5027,14 @@ final class SyncManager: ObservableObject {
             committedLayers: drawingStore.layers,
             fallbackLayerID: fallbackLayerID,
             waypointIDs: Set(modelIndex.waypoints.keys),
+            modelHashes: hashes, modelGenerations: generations, modelEpoch: modelEpoch,
             drawingIDs: Set(modelIndex.shapes.keys),
             knownWireIds: index.forward,
             hasher: index.hasher)
         let generation = activeConnectionGeneration
         let box = SnapshotValidationBox()
         snapshotValidationInFlight = true
-        // after two layer races just do it right here, consistency beats speed
-        let executor: SyncOffMainExecutor = attempt < 2 ? offMainExecutor : InlineSyncOffMainExecutor()
-        executor.execute({
+        offMainExecutor.execute({
             box.result = SnapshotValidator.validate(input)
         }) { [weak self, weak socket] in
             guard let self, let socket, self.task === socket,
@@ -4793,13 +5042,13 @@ final class SyncManager: ObservableObject {
             // The user edited a layer while we were validating: the staged
             // layers and expected hashes describe an old model. Validate again
             // against the current one rather than commit stale hashes (19).
-            if self.drawingStore.layers != input.committedLayers {
+            if self.modelEpoch != input.modelEpoch || self.drawingStore.layers != input.committedLayers
+                || Set(self.modelIndex.waypoints.keys) != input.waypointIDs
+                || Set(self.modelIndex.shapes.keys) != input.drawingIDs {
                 self.validateSnapshot(records, seq: seq, socket: socket, attempt: attempt + 1)
                 return
             }
-            self.snapshotValidationInFlight = false
             self.commitValidatedSnapshot(box.result, seq: seq)
-            self.scheduleInboundDrain()
         }
     }
 
@@ -4824,58 +5073,73 @@ final class SyncManager: ObservableObject {
         unverified.forEach { recordSkip($0, .unverified) }
         unsupported.forEach { recordSkip($0, .unsupported) }
 
-        do {
-            let remotes = validated.map {
-                SyncReplayState.RemoteMutation(
-                    mutation: $0.mutation,
-                    priorModelHash: modelContentHash(localId: $0.localId),
-                    localModelId: $0.localId,
-                    acceptedGeneration: modelRevisionJournal?.generation($0.localId) ?? 0,
-                    expectedModelHash: $0.expectedModelHash)
-            }
-            _ = try rs.commitRemoteSnapshot(remotes, seq: endSeq)
-            // pending markers are durable before the model is touched (ADR-001 8)
-            try rs.flushBatch()
-            snapshotConfirmedLocalDeletes.removeAll()
-            if let actorId = myActorId {
-                for value in validated where value.parsed == nil && value.mutation.stamp.actorId == actorId {
-                    snapshotConfirmedLocalDeletes[value.mutation.wireObjectId] = value.mutation.stamp.encode()
-                }
-            }
-            var outcome = try applyAcceptedRecords(zip(validated, remotes).map { ($0, $1.priorModelHash) })
-            unsupported.append(contentsOf: outcome.unsupported)
-            // markers the relay omitted or contradicted: keep the local model
-            // and let it win with a new stamp after hello-ack
-            let resolved = Set(outcome.clears.map(\.wireObjectId))
-            for remote in rs.pendingRemoteMutations() where !resolved.contains(remote.mutation.wireObjectId) {
-                if modelContentHash(localId: remote.localModelId) == remote.expectedModelHash {
-                    markCurrentModelBaseline(localId: remote.localModelId)
-                } else if let localId = remote.localModelId {
-                    forcedLocalDiff.insert(localId)
-                }
-                outcome.clears.append(remote.mutation)
-            }
-            try rs.clearPendingModelApplications(outcome.clears)
-            try rs.flushBatch()
-        } catch RecordApplyError.hashMismatch {
-            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-            return
-        } catch let error as SyncRemoteModelMutationError {
-            reportRemoteModelPersistenceFailure(error, remainsPending: true)
-            failClosedV3(pendingLastError ?? Messages.syncAPendingAuthenticatedSyncUpdateCouldNotBeSavedMessage())
-            return
-        } catch {
-            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-            return
+        let remotes = validated.map {
+            SyncReplayState.RemoteMutation(
+                mutation: $0.mutation,
+                priorModelHash: modelContentHash(localId: $0.localId),
+                localModelId: $0.localId,
+                acceptedGeneration: modelRevisionJournal?.generation($0.localId) ?? 0,
+                expectedModelHash: $0.expectedModelHash)
         }
+        rs.beginBatch()
+        do { _ = try rs.commitRemoteSnapshot(remotes, seq: endSeq) }
+        catch { snapshotPersistenceFailed(error); return }
+        let generation = activeConnectionGeneration
+        let token = joinToken
+        rs.flushBatch(on: persistenceExecutor) { [weak self] error in
+            guard let self, self.replayState === rs, self.joinToken == token,
+                  self.activeConnectionGeneration == generation, self.task != nil,
+                  self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+            if let error { self.snapshotPersistenceFailed(error); return }
+            do {
+                self.snapshotConfirmedLocalDeletes.removeAll()
+                if let actorId = self.myActorId {
+                    for value in validated where value.parsed == nil && value.mutation.stamp.actorId == actorId {
+                        self.snapshotConfirmedLocalDeletes[value.mutation.wireObjectId] = value.mutation.stamp.encode()
+                    }
+                }
+                // Read current hashes and generations after the seal. A local
+                // edit made while it ran must win over the pending remote record.
+                var outcome = try self.applyAcceptedRecords(validated.map {
+                    ($0, self.modelContentHash(localId: $0.localId))
+                })
+                unsupported.append(contentsOf: outcome.unsupported)
+                let resolved = Set(outcome.clears.map(\.wireObjectId))
+                for remote in rs.pendingRemoteMutations() where !resolved.contains(remote.mutation.wireObjectId) {
+                    if self.modelContentHash(localId: remote.localModelId) == remote.expectedModelHash {
+                        self.markCurrentModelBaseline(localId: remote.localModelId)
+                    } else if let localId = remote.localModelId { self.forcedLocalDiff.insert(localId) }
+                    outcome.clears.append(remote.mutation)
+                }
+                try rs.clearPendingModelApplications(outcome.clears)
+                rs.flushBatch(on: self.persistenceExecutor) { [weak self] error in
+                    guard let self, self.replayState === rs, self.joinToken == token,
+                          self.activeConnectionGeneration == generation, self.task != nil,
+                          self.presenceCadence.foregroundReady else { try? rs.endBatch(); return }
+                    if let error { self.snapshotPersistenceFailed(error); return }
+                    do { try rs.endBatch() } catch { self.snapshotPersistenceFailed(error); return }
+                    self.finishSnapshotCommit(seq: endSeq, unverified: unverified, unsupported: unsupported)
+                }
+            } catch { self.snapshotPersistenceFailed(error) }
+        }
+    }
 
+    private func snapshotPersistenceFailed(_ error: Error) {
+        if let error = error as? SyncRemoteModelMutationError {
+            reportRemoteModelPersistenceFailure(error, remainsPending: true)
+        }
+        failClosedV3(pendingLastError ?? Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
+    }
+
+    private func finishSnapshotCommit(seq: Int64, unverified: [String], unsupported: [String]) {
+        snapshotValidationInFlight = false
         snapshotSeq = nil
         snapshotRecords.removeAll()
         snapshotInvalid = false
         snapshotSawFinalPage = false
         snapshotAggregateBytes = 0
         snapshotWireIds.removeAll()
-        unverified = Array(Set(unverified))
+        let unverified = Array(Set(unverified))
         if !unverified.isEmpty { surface(.skippedUnverified, scope: .join, count: unverified.count) }
         if !unsupported.isEmpty { surface(.skippedUnsupported, scope: .join, count: Set(unsupported).count) }
         snapshotVerifiedClean = unverified.isEmpty && !snapshotSeqRegressed
@@ -4883,6 +5147,7 @@ final class SyncManager: ObservableObject {
         // Remain snapshotting (and therefore outbound-gated) until the relay
         // confirms it has verified/persisted hello and attached the actor tuple.
         sendHelloV3()
+        scheduleInboundDrain()
     }
 
     private enum RecordApplyError: Error {
@@ -5238,12 +5503,6 @@ final class SyncManager: ObservableObject {
     }
 
     private func applyLiveRecordV3(_ rec: [String: Any], deleted: Bool) {
-        // a second record for the same object in one batch sees the first one
-        // applied, exactly like frame-by-frame processing did
-        if let wireId = rec["id"] as? String, liveGroupWireIds.contains(wireId) {
-            flushLiveRecordGroup()
-            guard task != nil else { return }
-        }
         guard let rs = replayState, let context = liveRecordContext() else { return }
         let validated: ValidatedRecordV3
         switch SnapshotRecordClassifier.classify(rec, deleted: deleted, context: context) {
@@ -5270,7 +5529,7 @@ final class SyncManager: ObservableObject {
         }
         let priorHash = modelContentHash(localId: validated.localId)
         do {
-            // joins the open replay batch, made durable by flushLiveRecordGroup
+            // Joins the logical batch, made durable before any model apply.
             // before anything touches the model
             guard try rs.commitRemoteBatch([.init(
                 mutation: validated.mutation,
@@ -5288,36 +5547,6 @@ final class SyncManager: ObservableObject {
             var staging = liveGroupStaging ?? SnapshotLayerStaging(committed: drawingStore.layers)
             staging.adopt(parsed.newLayers)
             liveGroupStaging = staging
-        }
-        // the drain applies the group at the end of the batch; outside a drain
-        // (nothing calls this there today) apply right away
-        if replayState?.isBatching != true { flushLiveRecordGroup() }
-    }
-
-    /// Contract 1.3 for live records: commit durable, every staged record into
-    /// the stores in one write per store, verify, clear all markers in one
-    /// write (joins the batch write when a drain is open).
-    private func flushLiveRecordGroup() {
-        guard !liveGroup.isEmpty else { return }
-        let group = liveGroup
-        liveGroup.removeAll()
-        liveGroupWireIds.removeAll()
-        liveGroupStaging = nil
-        guard let rs = replayState else { return }
-        do {
-            try rs.flushBatch()
-            let outcome = try applyAcceptedRecords(group.map { ($0.value, $0.priorHash) })
-            try rs.clearPendingModelApplications(outcome.clears)
-            if !outcome.unsupported.isEmpty {
-                surface(.skippedUnsupported, scope: .join, count: outcome.unsupported.count)
-            }
-        } catch RecordApplyError.hashMismatch {
-            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
-        } catch let error as SyncRemoteModelMutationError {
-            reportRemoteModelPersistenceFailure(error, remainsPending: true)
-            failClosedV3(pendingLastError ?? Messages.syncAPendingAuthenticatedSyncUpdateCouldNotBeSavedMessage())
-        } catch {
-            failClosedV3(Messages.syncRollbackProtectionStateCouldNotBeSavedMessage())
         }
     }
 
@@ -5543,7 +5772,8 @@ final class SyncManager: ObservableObject {
     /// carries all counters).
     private func schedulePresenceFlush() {
         guard presenceFlushTimer == nil, replayState?.presenceCountersDirty == true else { return }
-        let due = max(0, lastReplayDurableMs + PresenceFencePersistence.flushMs - scheduler.nowMs)
+        let busy = inboundPersistenceInFlight || snapshotValidationInFlight || outboundPersistenceInFlight
+        let due = max(busy ? 1_000 : 0, lastReplayDurableMs + PresenceFencePersistence.flushMs - scheduler.nowMs)
         presenceFlushTimer = scheduler.schedule(afterMs: due) { [weak self] in
             guard let self else { return }
             self.presenceFlushTimer = nil
@@ -5554,10 +5784,15 @@ final class SyncManager: ObservableObject {
                 self.schedulePresenceFlush()
                 return
             }
-            do {
-                try rs.flushPresenceCounters()
-            } catch {
-                self.failClosedV3(Messages.syncPresenceReplayStateCouldNotBeSavedMessage())
+            guard !self.inboundPersistenceInFlight, !self.snapshotValidationInFlight,
+                  !self.outboundPersistenceInFlight else { self.schedulePresenceFlush(); return }
+            self.inboundPersistenceInFlight = true
+            let generation = self.activeConnectionGeneration
+            rs.flushPresenceCounters(on: self.persistenceExecutor) { [weak self] error in
+                guard let self, self.replayState === rs, self.activeConnectionGeneration == generation else { return }
+                self.inboundPersistenceInFlight = false
+                if error != nil { self.failClosedV3(Messages.syncPresenceReplayStateCouldNotBeSavedMessage()) }
+                else { self.scheduleInboundDrain() }
             }
         }
     }

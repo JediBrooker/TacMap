@@ -159,7 +159,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
         if (_messages.value.any { it.id == message.id }) return false
         // Retention follows authenticated local acceptance order. The sender's
         // createdAt value is display-only and must not control eviction.
-        val candidate = (_messages.value + message).takeLast(MAX_MESSAGES_PER_ROOM)
+        val candidate = (_messages.value + message)
         return persistAndPublish(candidate, replay, unreadInboundMessageIds)
     }
 
@@ -249,7 +249,7 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
         }
         // Retention follows authenticated local acceptance order. The sender's
         // createdAt value is display-only and must not control eviction.
-        val nextMessages = (_messages.value + message).takeLast(MAX_MESSAGES_PER_ROOM)
+        val nextMessages = (_messages.value + message)
         val nextUnread = unreadInboundMessageIds + message.id
         return if (persistAndPublish(nextMessages, nextReplay, nextUnread)) {
             TacMapChatInboundResult.ACCEPTED
@@ -391,26 +391,45 @@ internal class TacMapChatHistoryStore private constructor(private val directory:
         candidateReplay: List<TacMapChatReplayRecord>,
         candidateUnread: Set<String>,
     ): Pair<TacMapChatHistoryEnvelope, String>? {
-        var messages = candidateMessages.takeLast(ChatHistoryBudget.MAX_MESSAGES)
-        repeat(4) {
-            val envelope = TacMapChatHistoryEnvelope(
-                version = STORE_VERSION,
-                messages = messages,
-                replay = candidateReplay,
-                unreadInboundMessageIds = retainedUnreadInboundMessageIds(messages, candidateUnread),
-            )
-            val encoded = runCatching { json.encodeToString(envelope) }.getOrNull() ?: return null
-            val total = encoded.toByteArray(Charsets.UTF_8).size.toLong()
-            if (total <= ChatHistoryBudget.MAX_ENCODED_BYTES) return envelope to encoded
-            val sizes = messages.map { message ->
-                json.encodeToString(TacMapChatMessage.serializer(), message).toByteArray(Charsets.UTF_8).size
+        val envelope = TacMapChatHistoryEnvelope(
+            version = STORE_VERSION,
+            messages = candidateMessages,
+            replay = candidateReplay,
+            unreadInboundMessageIds = retainedUnreadInboundMessageIds(candidateMessages, candidateUnread),
+        )
+        val encoded = runCatching { json.encodeToString(envelope) }.getOrNull() ?: return null
+        var total = encoded.toByteArray(Charsets.UTF_8).size.toLong()
+        var drop = 0
+        if (total > ChatHistoryBudget.MAX_ENCODED_BYTES) {
+            // Count the exact encoded bytes removed from both arrays. Removing
+            // unread metadata too avoids pruning an extra message at the boundary.
+            val unread = envelope.unreadInboundMessageIds.toSet()
+            var unreadRemaining = unread.size
+            while (total > ChatHistoryBudget.PRUNE_TARGET_BYTES && drop < candidateMessages.size) {
+                val message = candidateMessages[drop]
+                total -= json.encodeToString(TacMapChatMessage.serializer(), message)
+                    .toByteArray(Charsets.UTF_8).size
+                if (candidateMessages.size - drop > 1) total -= 1
+                if (message.id in unread) {
+                    total -= json.encodeToString(message.id).toByteArray(Charsets.UTF_8).size
+                    if (unreadRemaining > 1) total -= 1
+                    unreadRemaining -= 1
+                }
+                drop += 1
             }
-            val overhead = total - ChatHistoryBudget.encodedSize(0L, 1, sizes)
-            val drop = ChatHistoryBudget.dropCount(overhead, 1, sizes)
-            if (drop == 0 || messages.isEmpty()) return null
-            messages = messages.drop(drop)
+            if (total > ChatHistoryBudget.PRUNE_TARGET_BYTES) return null
         }
-        return null
+        // Hysteresis applies to the complete candidate before the count cap;
+        // a 501st message must not hide a byte-limit crossing (section 15.2).
+        val messages = candidateMessages.drop(drop).takeLast(ChatHistoryBudget.MAX_MESSAGES)
+        if (messages.size == candidateMessages.size) return envelope to encoded
+        val retained = envelope.copy(
+            messages = messages,
+            unreadInboundMessageIds = retainedUnreadInboundMessageIds(messages, candidateUnread),
+        )
+        val retainedEncoded = runCatching { json.encodeToString(retained) }.getOrNull() ?: return null
+        if (retainedEncoded.toByteArray(Charsets.UTF_8).size > ChatHistoryBudget.MAX_ENCODED_BYTES) return null
+        return retained to retainedEncoded
     }
 
     private fun persistAndPublish(

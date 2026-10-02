@@ -24,7 +24,7 @@ enum PresenceFencePersistence {
 
     /// Highest counter that must still be rejected after loading `persisted`.
     static func loadFloor(persisted: Int64, exact: Bool) -> Int64 {
-        exact ? persisted : min(VersionStamp.maxCounter, persisted + crashFloorAdd)
+        exact ? persisted : persisted + min(VersionStamp.maxCounter - persisted, crashFloorAdd)
     }
 }
 
@@ -451,6 +451,33 @@ final class DispatchSyncOffMainExecutor: SyncOffMainExecutor {
     }
 }
 
+/// All replay seals share this queue, including clean-point writes during a
+/// lifecycle transition. Snapshot and live commits return without blocking UI.
+final class SyncPersistenceExecutor: SyncOffMainExecutor {
+    private static let queueLabel = "com.tacticalmaps.sync.persistence"
+    private static let queue = DispatchQueue(label: queueLabel, qos: .userInitiated)
+    private static let key = DispatchSpecificKey<Bool>()
+    private static let configured: Void = queue.setSpecific(key: key, value: true)
+
+    nonisolated static func write(_ data: Data, to url: URL, label: String) throws {
+        _ = configured
+        if DispatchQueue.getSpecific(key: key) == true {
+            try SafeStore.write(data, to: url, label: label)
+        } else {
+            try queue.sync { try SafeStore.write(data, to: url, label: label) }
+        }
+    }
+
+    @MainActor
+    func execute(_ work: @escaping () -> Void, then completion: @escaping @MainActor () -> Void) {
+        _ = Self.configured
+        Self.queue.async {
+            work()
+            Task { @MainActor in completion() }
+        }
+    }
+}
+
 /// Runs everything right away on the caller. Test seam only.
 @MainActor
 final class InlineSyncOffMainExecutor: SyncOffMainExecutor {
@@ -473,6 +500,9 @@ struct SnapshotValidationInput {
     let committedLayers: [DrawingLayer]
     let fallbackLayerID: UUID
     let waypointIDs: Set<UUID>
+    let modelHashes: [String: String]
+    let modelGenerations: [String: Int64]
+    let modelEpoch: UInt64
     let drawingIDs: Set<UUID>
     let knownWireIds: [UUID: String]
     let hasher: SyncWireIdHasher
@@ -521,7 +551,9 @@ enum SnapshotValidator {
                 result.validated.append(value)
                 if let parsed = value.parsed,
                    replay.canAcceptIgnoringWindow(value.mutation.wireObjectId, value.mutation.stamp)
-                    || replay.isExactPersistedMutation(value.mutation) {
+                    || replay.willApplyExact(value.mutation,
+                        currentHash: value.localId.flatMap { input.modelHashes[$0] },
+                        generation: value.localId.flatMap { input.modelGenerations[$0] } ?? 0) {
                     staging.adopt(parsed.newLayers)
                 }
             case .skip(.unverified, _):

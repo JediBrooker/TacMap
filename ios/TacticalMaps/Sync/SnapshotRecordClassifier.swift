@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import CryptoKit
 
 // Per-record verdicts for v3 snapshot items and live put/del (contract
@@ -95,6 +96,17 @@ enum SnapshotRecordClassifier {
             return unverified("kind_syntax_invalid")
         }
         guard deleted == (kind == "del") else { return unverified("type_and_deleted_inconsistent") }
+        if let rawType = rec["t"] {
+            guard let type = rawType as? String, type == (deleted ? "del" : "put") else {
+                return unverified("type_and_deleted_inconsistent")
+            }
+        }
+        if let rawDeleted = rec["deleted"] {
+            guard let flag = rawDeleted as? NSNumber,
+                  CFGetTypeID(flag) == CFBooleanGetTypeID(), flag.boolValue == deleted else {
+                return unverified("type_and_deleted_inconsistent")
+            }
+        }
         guard let ctBase64 = rec["ct"] as? String,
               ctBase64.utf8.count <= maxCiphertextChars,
               let blob = Data(base64Encoded: ctBase64),

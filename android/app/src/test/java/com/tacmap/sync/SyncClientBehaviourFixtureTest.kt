@@ -148,6 +148,10 @@ class SyncClientBehaviourFixtureTest {
 
         val receive = fixture.obj("receiveBudget")
         assertEquals(receive.long("windowMs"), SyncReceiveBudget.WINDOW_MS)
+        receive.obj("androidTransportQueue").let {
+            assertEquals(it.long("maxBytes"), SyncWebSocketTransport.MAX_OUTBOUND_QUEUE_BYTES)
+            assertEquals(it.int("maxFrames"), SyncWebSocketTransport.MAX_WIRE_FRAMES_PER_WINDOW)
+        }
         receive.obj("room").let {
             assertEquals(it.int("baseFrames"), SyncReceiveBudget.ROOM_BASE_FRAMES)
             assertEquals(it.int("perSessionFrames"), SyncReceiveBudget.ROOM_PER_SESSION_FRAMES)
@@ -877,14 +881,19 @@ class SyncClientBehaviourFixtureTest {
     @Test
     fun chatHistoryBytePrune() {
         val s = scenario("chat_history_byte_prune")
-        val given = s.obj("given")
-        val sizes = given.arr("messageEncodedBytes").map { it.jsonPrimitive.int }
-        val drop = ChatHistoryBudget.dropCount(given.long("fixedOverheadBytes"), given.int("separatorBytes"), sizes)
-        val expect = s.obj("expect")
-        assertEquals(expect.int("dropOldest"), drop)
-        assertEquals(expect.int("keep"), sizes.size - drop)
-        assertTrue(ChatHistoryBudget.encodedSize(given.long("fixedOverheadBytes"), given.int("separatorBytes"),
-            sizes.drop(drop)) <= expect.long("resultBytesAtMost"))
+        fun check(test: JsonObject) {
+            val given = test.obj("given")
+            val sizes = given.arr("messageEncodedBytes").map { it.jsonPrimitive.int }
+            val drop = ChatHistoryBudget.dropCount(given.long("fixedOverheadBytes"), given.int("separatorBytes"), sizes)
+            val expect = test.obj("expect")
+            val kept = sizes.drop(drop).takeLast(ChatHistoryBudget.MAX_MESSAGES)
+            assertEquals(expect.int("dropOldest"), drop)
+            assertEquals(expect.int("keep"), kept.size)
+            assertTrue(ChatHistoryBudget.encodedSize(given.long("fixedOverheadBytes"), given.int("separatorBytes"),
+                kept) <= expect.long("resultBytesAtMost"))
+        }
+        check(s)
+        check(s.obj("countBoundary"))
     }
 
     @Test
@@ -933,6 +942,7 @@ class SyncClientBehaviourFixtureTest {
             assertEquals(it.long("crashFloorAdd"), PresenceFencePersistence.CRASH_FLOOR_ADD)
         }
         fixture.obj("persistenceBatching").let {
+            assertTrue(it.getValue("splitBeforeRepeatedMutationWireId").jsonPrimitive.boolean)
             assertEquals(it.int("inboundBatchMaxFrames"), SyncManager.INBOUND_BATCH_MAX_FRAMES)
             assertEquals(it.int("inboundQueueMaxFrames"), SyncManager.INBOUND_QUEUE_MAX_FRAMES)
             assertEquals(it.long("inboundQueueMaxBytes"), SyncManager.INBOUND_QUEUE_MAX_BYTES)

@@ -584,6 +584,45 @@ class TacMapChatHistoryStoreTest {
         assertEquals(TacMapChatHistoryAvailability.UNAVAILABLE, store.availability.value)
     }
 
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @Test
+    fun byteHysteresisPrecedesCountCapAndUnreadMetadataTracksRetention() {
+        val room = canonical32(80)
+        val encoder = Json { encodeDefaults = true; explicitNulls = true }
+        val messages = (0 until ChatHistoryBudget.MAX_MESSAGES).map { index ->
+            message(room, TacMapChatIds.newMessageId(), false).copy(body = "x", sentAtMilliseconds = index.toLong())
+        }.toMutableList()
+        fun envelope() = TacMapChatHistoryEnvelope(2, messages, emptyList(), messages.map { it.id })
+        val overhead = encoder.encodeToString(envelope()).toByteArray().size - messages.sumOf { it.body.length }
+        val bodyBytes = ChatHistoryBudget.MAX_ENCODED_BYTES.toInt() - 500 - overhead
+        val perMessage = bodyBytes / messages.size
+        messages.indices.forEach { index -> messages[index] = messages[index].copy(body = "x".repeat(perMessage)) }
+        messages[0] = messages[0].copy(body = "x".repeat(perMessage + bodyBytes % messages.size))
+        val before = encoder.encodeToString(envelope())
+        assertEquals(ChatHistoryBudget.MAX_ENCODED_BYTES - 500, before.toByteArray().size.toLong())
+        SafeStore.writeAtomically(historyFile(room), "sync/chat/$room", before)
+        val store = TacMapChatHistoryStore.forTests(directory)
+        assertTrue(store.open(room))
+        val incoming = message(room, TacMapChatIds.newMessageId(), false).copy(body = "x".repeat(1000))
+        assertEquals(TacMapChatInboundResult.ACCEPTED, store.acceptInbound(
+            incoming, incoming.senderActorId, canonical32(81), canonical32(82),
+            "0000000000000001", canonical32(83),
+        ))
+        val retained = store.messages.value
+        // Removing the first message for the count cap alone would make it fit
+        // below 2 MiB and incorrectly retain 500 instead of pruning to 1.5 MiB.
+        assertTrue(retained.size < ChatHistoryBudget.MAX_MESSAGES)
+        assertEquals(incoming.id, retained.last().id)
+        assertEquals(retained.size, store.unreadCount.value)
+        val persisted = SafeStore.readOrQuarantine(historyFile(room), "sync/chat/$room") { it }
+        val encoded = (persisted as SafeStore.LoadResult.Loaded).value
+        assertTrue(encoded.toByteArray().size <= ChatHistoryBudget.PRUNE_TARGET_BYTES)
+        store.close()
+        assertTrue(store.open(room))
+        assertEquals(retained, store.messages.value)
+        assertEquals(retained.size, store.unreadCount.value)
+    }
+
     private fun message(
         room: String,
         id: String,
