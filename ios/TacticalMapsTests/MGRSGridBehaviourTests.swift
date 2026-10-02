@@ -199,7 +199,7 @@ final class MGRSGridBehaviourTests: XCTestCase {
         let gridView = view.subviews.compactMap { $0 as? MGRSGridOverlayView }.first
         XCTAssertNotNil(gridView)
 
-        coordinator.updateOverlays(drawings: [], gridVisible: true, peers: [:],
+        coordinator.updateOverlays(drawings: [], gridVisible: true,
                                    decorations: DrawingDecorationsOverlayView.Model(), handles: [],
                                    graphicsLocked: false)
         let landed = expectation(description: "grid installed")
@@ -212,7 +212,7 @@ final class MGRSGridBehaviourTests: XCTestCase {
         wait(for: [landed], timeout: 10)
         XCTAssertEqual(gridView?.grid.lod.drawn, [.km100, .km10, .km1])
 
-        coordinator.updateOverlays(drawings: [], gridVisible: false, peers: [:],
+        coordinator.updateOverlays(drawings: [], gridVisible: false,
                                    decorations: DrawingDecorationsOverlayView.Model(), handles: [],
                                    graphicsLocked: false)
         XCTAssertTrue(gridView?.grid.isEmpty ?? false)

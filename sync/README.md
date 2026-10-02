@@ -6,9 +6,11 @@ unit. The server is **E2E-blind**: it stores and forwards opaque ciphertext and
 never holds the keys.
 
 Newly generated join codes use protocol v3 (the `3:` code prefix) and connect
-through `/v3/room/<roomId>`. The `/room/<roomId>` v2 route remains available
-only for compatibility with existing `2:` rooms. The v3 design and
-cross-platform requirements are specified in
+through `/v3/room/<roomId>`. The `/room/<roomId>` v2 route is kept for legacy
+`2:` rooms. The apps only generate `3:` codes, but a user can still enter a
+legacy `2:` code after a warning, and the relay creates a v2 room on first use of
+an unknown v2 room ID (trust-on-first-use token pin). The
+v3 design and cross-platform requirements are specified in
 [`ADR-001`](../docs/security/ADR-001-sync-protocol-v3.md).
 
 ## Architecture
@@ -25,9 +27,12 @@ cross-platform requirements are specified in
   - **Last-write-wins merge**: an incoming change is kept only if it's newer than
     the stored one — `v` first, then client-id (`by`) as a deterministic
     tie-break. Accepted changes are broadcast to the other sockets.
-  - **Tombstones**: deletes are retained (`deleted: true`) for room lifetime and
-    count toward record and byte quotas, so they reach late joiners without
-    enabling unbounded storage.
+  - **Tombstones**: deletes are retained (`deleted: true`) and count toward
+    record and byte quotas, so they reach late joiners without enabling
+    unbounded storage. They survive idle expiry and are compacted only once
+    they are 30 days old and their author has been away for 30 days (v2: the
+    whole room unused for 30 days), and the whole room goes after 90 idle days
+    (see *Retention* below).
 
 Human-friendly room names are client-local display metadata. They are not part
 of the join code or derived room ID, are not sent in relay URLs, headers, or wire
@@ -41,7 +46,7 @@ Client → server:
 | msg | fields | meaning |
 |-----|--------|---------|
 | `put` | `id`, `v`, `by`, `kind`, `ct` | upsert object `id` with base64 ciphertext `ct` at version `v` |
-| `del` | `id`, `v`, `by` | tombstone object `id` at version `v` |
+| `del` | `id`, `v`, `by`, `ct` (`kind` optional, must be `del`) | tombstone object `id` at version `v`; the sealed, signed delete proof is required |
 | `ping` | — | keepalive; server replies `{t:"pong"}` |
 
 Server → client:
@@ -61,8 +66,16 @@ Server → client:
 
 Every snapshot is framed by `snapshot-begin {seq}` and matching
 `snapshot-end {seq}`. Mutations accepted after that fence carry a larger `seq`.
-Snapshot pages are capped at 900,000 encoded UTF-8 bytes as well as a
-100-record storage read page.
+Snapshot pages are capped at 900,000 encoded UTF-8 bytes; a page can hold any
+number of records under that cap. (Storage reads behind the snapshot adapt to
+the record sizes already seen and are not visible on the wire.) In a v2 room
+the member list rides on the first page; if it and the first record do not fit
+together, the first page carries only the member list.
+
+Writes that carry a `rid` get exactly one `op-ack` or `op-nack`. Codes, retry
+flags, leave variants, close codes and every limit are specified in ADR-001 §15
+and published in `testdata/sync_protocol_v3.json` under `relayLimits`, which the
+relay suite pins to `src/limits.ts`.
 
 ### Active v3 protocol
 
@@ -272,18 +285,106 @@ Documented so the trade-offs are explicit rather than surprising:
   A future increment could layer per-epoch ratcheting keyed off a rotation
   counter without changing the relay.
 - **Inbound resource ceilings.** The relay caps each WebSocket frame at 1 MiB
-  and each socket at 200 frames / 4 MiB per rolling 10-second window, including
-  malformed and unknown frames. A protocol `ping` must be exactly
+  and each socket at 200 frames / 4 MiB per *fixed* 10-second window (it opens
+  at the socket's first frame and resets on the first frame after it expires, so
+  up to 400 frames can pass across one boundary), including malformed and
+  unknown frames. Going over closes the socket with 4008 and drops its queued
+  frames without an ack or nack, so clients must pace below the window (the
+  fixture's `relayLimits.clientPacing` is 150 frames / 3 MiB). Across the whole
+  room at most 512 frames / 8 MiB may wait for processing; when that is hit the
+  socket with the largest backlog is closed, not whoever sent the next frame.
+  A room admits 64 open sockets; sockets the relay already closed do not count,
+  but all accepted sockets (open, or closed and never echoed) are hard-capped
+  at 128. When the room is full a v3 socket with no accepted `hello` by its
+  deadline (one still being verified counts as none) is closed with 1013 to
+  make room; the deadline is 60 s plus the
+  time to drain its snapshot at 100 KB/s, since clients say `hello` only after
+  `snapshot-end`. Insider caveat: shedding the largest backlog is a heuristic,
+  and a member running several device identities can arrange for an honest
+  peer's reconnect burst to be the largest (ADR-001 §15).
+- **Snapshot memory.** Builds run one at a time. Storage reads behind them
+  adapt to the average record size of the previous read (first read 4 records,
+  then about 4 MiB worth, at most 100). That is best effort, not a cap: with
+  uniformly large records the largest read measured 4.0 MB, but small records
+  sorting before large ones can still pull up to 100 large records in one read
+  (measured 40 MB), bounded only by the 50 MB byte quota, the same worst case
+  as before SP1. The pages themselves, up to ~50.4 MB for a full room, are
+  queued on the joining socket before the 101 and drain at the client's pace;
+  the relay can't see drain progress, so slow concurrent joiners of a full room
+  each hold a copy. Resume-from-seq (SP4) is the planned fix. A protocol `ping` must be exactly
   `{\"t\":\"ping\"}`; padded pings are ignored. Both clients also cap messages
   at 1 MiB and process them serially. Android rejects an oversized declared
   frame before allocating its payload, disables compression and redirects,
   caps fragmented messages at 128 frames, and bounds every raw data/control
-  frame during a bounded 512-frame initial-snapshot allowance. iOS configures
+  frame during an initial-snapshot allowance of 10,000 frames / 54,525,952 bytes,
+  lasting until `hello-ack`. This is separate from the 512-frame / 8 MiB
+  waiting queue. iOS configures
   the native WebSocket task's maximum message size and rejects redirects; its
   public API handles Ping/Pong internally, so individual control frames cannot
   be included in the app-level budget. Clients rely on transport keepalive
   where possible, because a valid protocol ping still wakes the Durable Object
   and costs a `pong`.
+
+## Retention
+
+The relay stores, per room: a hash of the admission token, the protocol, the
+room `seq` and counter `highWater`, record/byte counters, the last-activity
+time, the latest sealed record per object, tombstones, and one pin per v3 actor
+(public key, first-seen time, the hour of its latest hello, the latest signed
+hello). Relay-only bookkeeping rows (`tomb:<id>` delete hour,
+`meta:tombIndexAt`, `meta:expiredAt`, `meta:horizonSeq`,
+`meta:droppedPinsSeen`, and `meta:expiring` while an expiry pass is unfinished)
+are never sent to clients and never change the record shape in snapshots.
+`meta:tombIndexAt` is 0 in rooms this relay creates, so no creation time
+survives idle expiry (pin first-seen times go with the pins); rooms from
+before SP1 get the hour they were first indexed (about the deploy time). Presence, chat and chat keys are never stored.
+
+- **No write per frame.** `meta:lastActivity` is written at most once an hour
+  for joins, accepted writes and hellos, whenever the relay sees the last open socket go (its own
+  close, the client's close, or a transport error), and by the maintenance
+  alarm (daily while anyone is connected). Presence, chat and rejected frames
+  cause no storage write, and a failed activity write never closes a socket or
+  fails a join.
+- **Idle expiry.** About 7 days after the last recorded activity, with no
+  socket open, the relay deletes live object records and actor pins. It keeps
+  the token hash, protocol, `seq` (advanced), `highWater`, counters,
+  last-activity time, the bookkeeping rows and all tombstones, so returning
+  devices are not rolled back, not locked out by the 10,000 counter window,
+  and cannot resurrect deletes. These rows hold no mission content, but the
+  token hash still confirms join-code guesses like the room ID does, until the
+  idle purge takes them. A room that never accepted a write is deleted
+  entirely. A pass that fails half way has already advanced `seq`; the alarm
+  retries within an hour and a join in between recounts the counters.
+- **Idle purge.** About 90 days after the last recorded activity (after the
+  last expiry if none was ever recorded), with no socket open, the relay
+  deletes everything left for the room, meta rows and tombstones included, in
+  one atomic `deleteAll`, then its alarm. Any activity in between restarts the
+  clock, and a failed purge leaves the room whole and is retried within an
+  hour. So: objects and pins go after 7 idle days, counters and tombstones
+  after at most 90, then nothing. A device returning after the purge finds a
+  fresh room at `seq` 0, which shipped clients report as a rollback, and if
+  its counters had passed 10,000 its writes are nacked `counter-window`; it
+  has to move to a new join code (SP2 clients say so plainly). In v2
+  whoever connects first afterwards pins the fresh room, as before SP1. A join that
+  passed its auth check just before a wipe gets 503 `Room reset during join`
+  and its reconnect pins the fresh room. A room whose first join failed right
+  after pinning still gets an alarm and is wiped like any drive-by room.
+- **Tombstone compaction.** A tombstone is dropped once it is 30 days old and
+  its author has not said `hello` for 30 days and is not connected. A v3 author
+  whose pin was dropped at expiry counts as last seen at the newest hello among
+  the dropped pins (one stored hour, no per-device time survives expiry); v2
+  authors count as last seen at the room's last activity, so v2 tombstones only
+  go once the whole room has been unused for 30 days. Current clients resend
+  their own tombstones whenever a snapshot does not confirm them, so an active
+  author's tombstones are kept. A departed author that does come back resends
+  every compacted tombstone after `hello-ack`. Shipped clients send an unpaced
+  burst that trips the rate window about once per 200. SP2 clients pace the
+  resends below the relay budget; both versions store those tombstones again. A device offline for more than 30 days can resurrect an object whose
+  tombstone was compacted; see ADR-001 §16.
+- **Clients must not assume these rules.** Pre-SP1 relays (including older
+  self-hosted ones) wipe the whole room at idle expiry and there is no in-band
+  capability yet, so client behaviour that depends on this section has to be
+  gated on a negotiated capability (ADR-001 §16).
 
 ## Deployed instance
 
@@ -292,7 +393,7 @@ for legacy v2 and
 **`wss://tacmap-sync.christianbrooker.workers.dev/v3/room/<roomId>`** for v3.
 The health endpoint returns `ok` with a no-store
 `X-TacMap-Relay-Release` header. A release is not deployment-verified until
-that header matches `RELAY_RELEASE_ID` in `src/index.ts`; an `ok` body alone is
+that header matches `RELAY_RELEASE_ID` in `src/release.ts`; an `ok` body alone is
 only a liveness check.
 
 Verified end-to-end against the deployed Durable Object (two-client WebSocket
@@ -307,6 +408,10 @@ cd sync
 npm ci
 npm test          # required Workers/Vitest protocol suite
 npm run check     # wrangler deploy --dry-run — validate config + bundle (no deploy)
+npm run fixtures:check   # regenerate testdata/sync_protocol_v3.json vectors and diff
+npm run soak -- --spawn --clients 8 --seconds 90 --restart-at 30,60
+                  # real-crypto v3 soak against a local wrangler dev on :8799,
+                  # reports close causes and nack-triggered reconnects
 npm run dev       # local: ws://127.0.0.1:8787/room/<roomId>
 npm run deploy    # deploy to the configured Cloudflare account
 ```

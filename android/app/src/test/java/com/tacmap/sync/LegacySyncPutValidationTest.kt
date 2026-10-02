@@ -38,34 +38,48 @@ class LegacySyncPutValidationTest {
         assertFalse(isValidLegacySyncPut(id, "waypoint", result(waypoints = listOf(waypoint, waypoint.copy(name = "duplicate")))))
         assertFalse(isValidLegacySyncPut(id, "waypoint", result(waypoints = listOf(waypoint), drawings = listOf(drawing))))
         assertFalse(isValidLegacySyncPut(id, "waypoint", result(waypoints = listOf(waypoint.copy(id = "malicious")))))
-        assertFalse(isValidLegacySyncPut(id.uppercase(), "waypoint", result(waypoints = listOf(waypoint))))
-        assertFalse(isValidLegacySyncPut(id, "waypoint", result(waypoints = listOf(waypoint.copy(id = id.uppercase())))))
+        assertFalse(isValidLegacySyncPut("{$id}", "waypoint", result(waypoints = listOf(waypoint))))
+    }
+
+    // plans/04 section 16 (S3-01): shipped iOS v2 senders use uppercase ids, so
+    // either case is accepted and the embedded id matches case-insensitively.
+    // This used to pin lowercase-only, which made Android drop every iOS record.
+    @Test
+    fun acceptsEitherCaseAndMatchesTheEmbeddedIdCaseInsensitively() {
+        assertTrue(isValidLegacySyncPut(id.uppercase(), "waypoint", result(waypoints = listOf(waypoint))))
+        assertTrue(isValidLegacySyncPut(id, "waypoint", result(waypoints = listOf(waypoint.copy(id = id.uppercase())))))
+        assertEquals(id, canonicalLegacySyncId(id.uppercase()))
     }
 
     @Test
-    fun alternateCaseEnvelopeCannotBypassMonotonicVersionOrOverwrite() {
+    fun alternateCaseEnvelopeCannotBypassMonotonicVersionOrCreateASecondKey() {
         val versions = mutableMapOf(id to 7L)
+        val lastBy = mutableMapOf(id to "b0000000-0000-4000-8000-000000000000")
         var stored = waypoint.copy(name = "trusted")
 
-        fun apply(rawEnvelopeId: String, version: Long, incoming: Waypoint) {
-            val acceptedId = acceptedLegacySyncRecordId(rawEnvelopeId, version, versions) ?: return
+        fun apply(rawEnvelopeId: String, version: Long, by: String, incoming: Waypoint) {
+            val acceptedId = acceptedLegacySyncRecordId(rawEnvelopeId, version, by, versions, lastBy) ?: return
             val parsed = result(waypoints = listOf(incoming))
-            if (!isValidLegacySyncPut(acceptedId, "waypoint", parsed)) return
+            if (!isValidLegacySyncPut(rawEnvelopeId, "waypoint", parsed)) return
             versions[acceptedId] = version
+            lastBy[acceptedId] = by
             stored = incoming
         }
 
-        apply(id.uppercase(), 8L, waypoint.copy(name = "case-bypass"))
+        // same version replayed in the other case, smaller by: still rejected
+        apply(id.uppercase(), 7L, "a0000000-0000-4000-8000-000000000000", waypoint.copy(name = "case-replay"))
         assertEquals("trusted", stored.name)
         assertEquals(mapOf(id to 7L), versions)
-        assertNull(acceptedLegacySyncRecordId(id.uppercase(), 999L, versions))
 
-        apply(id, 7L, waypoint.copy(name = "same-version-replay"))
-        assertEquals("trusted", stored.name)
-
-        apply(id, 8L, waypoint.copy(name = "canonical-newer"))
-        assertEquals("canonical-newer", stored.name)
+        // newer in uppercase lands on the one lowercase key
+        apply(id.uppercase(), 8L, "a0000000-0000-4000-8000-000000000000", waypoint.copy(name = "ios-newer"))
+        assertEquals("ios-newer", stored.name)
         assertEquals(mapOf(id to 8L), versions)
+        assertNull(acceptedLegacySyncRecordId(id, 8L, "a0000000-0000-4000-8000-000000000000", versions, lastBy))
+
+        // equal version, larger by wins, same as the relay (S3-14)
+        apply(id, 8L, "c0000000-0000-4000-8000-000000000000", waypoint.copy(name = "tie-winner"))
+        assertEquals("tie-winner", stored.name)
     }
 
     private fun result(

@@ -9,13 +9,16 @@
     "deploy": "wrangler deploy",
     "typecheck": "wrangler types worker-configuration.d.ts --include-runtime=false --check && tsc --noEmit",
     "check": "wrangler deploy --dry-run",
-    "test": "vitest run"
+    "test": "vitest run",
+    "soak": "node scripts/soak.mjs",
+    "fixtures:check": "node scripts/gen_v3_fixtures.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.22.0",
     "@cloudflare/workers-types": "5.20260827.1",
     "typescript": "5.9.3",
     "vitest": "4.1.11",
-    "wrangler": "4.127.0"
+    "wrangler": "4.127.0",
+    "ws": "8.21.0"
   }
 }

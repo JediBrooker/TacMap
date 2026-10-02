@@ -100,6 +100,41 @@ class WaypointStore private constructor(
         )
     }
 
+    /**
+     * Unit Sync apply: every remote upsert and delete of one snapshot or live
+     * batch as one persisted write (plans/04 section 17). No undo entry, a
+     * remote change isn't something the user did here.
+     */
+    @Synchronized
+    fun applyRemoteBatch(
+        upserts: List<Waypoint>,
+        removals: Set<String>,
+        origin: ModelMutationOrigin = ModelMutationOrigin.REMOTE_SYNC,
+    ): Boolean {
+        if (upserts.isEmpty() && removals.isEmpty()) return true
+        val before = stableState()
+        val replacements = LinkedHashMap<String, Waypoint>()
+        for (wp in upserts) replacements[wp.id] = wp
+        val candidate = ArrayList<Waypoint>(before.size + replacements.size)
+        val changed = HashSet<String>()
+        for (wp in before) {
+            if (wp.id in removals) {
+                changed += wp.id
+                continue
+            }
+            val replacement = replacements.remove(wp.id)
+            if (replacement != null && replacement != wp) changed += wp.id
+            candidate += replacement ?: wp
+        }
+        for (wp in replacements.values) {
+            if (wp.id in removals) continue
+            candidate += wp
+            changed += wp.id
+        }
+        if (changed.isEmpty()) return true
+        return commit(before, candidate, changed, origin, recordUndo = false)
+    }
+
     @Synchronized
     fun remove(wp: Waypoint, origin: ModelMutationOrigin = ModelMutationOrigin.LOCAL): Boolean {
         val before = stableState()

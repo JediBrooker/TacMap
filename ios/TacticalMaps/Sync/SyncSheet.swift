@@ -23,6 +23,9 @@ private struct PendingUnitSyncJoin: Identifiable {
 struct SyncSheet: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var manager: SyncManager
+    /// peers live in their own observable (contract 20.2), the sheet still
+    /// wants to list them live
+    @ObservedObject private var presence: SyncPresenceModel
     let onOpenChat: (TacMapChatRoute) -> Void
     @ObservedObject private var opsec = OpsecSettings.shared
     @Environment(\.dismiss) private var dismiss
@@ -37,6 +40,7 @@ struct SyncSheet: View {
     init(manager: SyncManager,
          onOpenChat: @escaping (TacMapChatRoute) -> Void = { _ in }) {
         self.manager = manager
+        self._presence = ObservedObject(wrappedValue: manager.presence)
         self.onOpenChat = onOpenChat
     }
 
@@ -55,7 +59,12 @@ struct SyncSheet: View {
                         Text(error)
                             .font(.caption)
                             .foregroundStyle(.red)
-                        Button(L10n.text("Dismiss error")) { manager.acknowledgeLastError() }
+                        if manager.pausedForAction != nil {
+                            // parked on PAUSED_ACTION_REQUIRED, only Retry gets it going
+                            Button(L10n.text("Retry")) { manager.retryPausedConnection() }
+                        } else if !manager.mutationsPaused {
+                            Button(L10n.text("Dismiss error")) { manager.acknowledgeLastError() }
+                        }
                     }
                 }
 
@@ -224,15 +233,15 @@ struct SyncSheet: View {
                     }
                 }
 
-                Section(L10n.text("Shared map locations (%1$@)", manager.peers.count)) {
-                    if manager.peers.isEmpty {
+                Section(L10n.text("Shared map locations (%1$@)", presence.peers.count)) {
+                    if presence.peers.isEmpty {
                         Text(manager.status == .connected
                              ? L10n.text("No map locations received")
                              : L10n.text("Map locations appear while connected"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(manager.peers.values.sorted {
+                        ForEach(presence.peers.values.sorted {
                             let left = $0.callsign.isEmpty ? L10n.text("Unnamed location") : $0.callsign
                             let right = $1.callsign.isEmpty ? L10n.text("Unnamed location") : $1.callsign
                             if left.localizedCaseInsensitiveCompare(right) != .orderedSame {
@@ -262,6 +271,12 @@ struct SyncSheet: View {
             }
             .onChange(of: manager.room) { activeRoom in
                 if activeRoom != nil { roomName = manager.roomName ?? roomName }
+            }
+            .onChange(of: manager.roomName) { savedName in
+                // the room id (and so its saved name) only exists once the join
+                // code has been derived off main, a moment after room is set.
+                // Only fill an empty field, never fight someone typing in it.
+                if manager.room != nil, roomName.isEmpty, let savedName { roomName = savedName }
             }
             .alert(item: $pendingJoin) { pending in
                 Alert(

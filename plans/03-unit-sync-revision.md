@@ -34,6 +34,8 @@ audit scratch copies; they are re-created as real tests here.
    ciphertext of live objects and actor pins but keeps meta:auth, meta:protocol,
    meta:seq, meta:highWater and tombstones (opaque ids + stamps), so returning
    clients neither roll back nor get counter-window-locked nor resurrect deletes.
+   Bounded: after ROOM_PURGE_TTL_MS (90 days) of continuous idleness the room is
+   wiped outright (coordinator decision, owner confirms before deploy).
 3. Tombstone/record compaction (S1-08, S3-13, S4-05): tombstones older than
    TOMBSTONE_TTL (e.g. 30 days, recorded server-side without changing the stored
    record shape that snapshots send) are compacted; quotas count what is actually
@@ -72,6 +74,34 @@ audit scratch copies; they are re-created as real tests here.
   ordinary LWW race (stale) is not a SECURITY event and does not reconnect;
   counter-window stops the loop and surfaces once; backoff resets only after the
   session proved stable (first op-ack or N seconds), not at hello-ack.
+- Live counter-window rejection (SP1 review): after relay idle expiry or
+  compaction a fresh joiner's authenticated baseline can sit more than
+  ADVANCE_WINDOW below a returning actor (ADR-001 §9). A live put/del rejected
+  by the client's own window triggers a resync (reconnect for a snapshot)
+  instead of a silent drop; the client still never trusts the relay highWater.
+- Retention-dependent behaviour (not resending own tombstones older than
+  TOMBSTONE_TTL_MS, treating seq as non-rolling across expiry) only behind a
+  negotiated relay capability; pre-SP1 and self-hosted relays wipe rooms at
+  expiry (ADR-001 §16).
+- Departed-author tombstone burst (SP1 review, pacing requirement): an author
+  whose tombstones the relay compacted (30 days old, author away 30 days)
+  resends every own tombstone the snapshot doesn't confirm right after
+  hello-ack, unpaced, on both platforms today. Measured 250 resends -> 199
+  op-acks then 4008, so roughly one forced reconnect + full snapshot per ~200,
+  and the relay re-stores them all (compaction undone). Requirement: that
+  resend goes through the outbound pacer under relayLimits.clientPacing (never
+  more than maxFramesPerWindow / maxBytesPerWindow per window, pending ops
+  first), and behind the retention capability own tombstones older than
+  TOMBSTONE_TTL_MS are not resent at all. Test: 500 unconfirmed own tombstones
+  after hello-ack converge with zero 4008 against the local relay.
+- Fresh room after the 90-day idle purge (ADR-001 §10/§16): a device whose
+  join code points at a room the relay wiped sees seq 0 below its
+  lastSnapshotSeq and gets counter-window nacks if its counters passed
+  ADVANCE_WINDOW. The relay is untrusted for rollback, so a seq regression stays
+  a SECURITY-level "room reset suspected" notice (once per join, suggests a new
+  join code) and is never shown as a benign expiry; only a counter-window nack
+  (proof the relay cannot take this device's writes) pauses mutations. See
+  plans/04 section 5.
 - Watchdogs (S2-03, S3-05, S1 verifier note 1): progress-based on both platforms
   (re-armed per snapshot page), generous enough for slow links; Android gets a
   connect/upgrade timeout (S2-02).

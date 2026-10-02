@@ -1,0 +1,51 @@
+# Task 2 independent iOS stable-source follow-up review
+
+Status: **ACCEPTED. Independent iOS source review, successful final 770-test unit command and enabled native local/lifecycle/production-TLS interoperability are verified.**
+
+The reviewer authored only the opt-in native test harness extension and its host orchestration. The reviewer did not author any iOS production implementation, including FR-7 and FR-9. This review supplements the original whole-client independent review and the FR-1 through FR-6 source closure checkpoint in `TASK2_FINAL_REVIEW.md`; it directly inspected every current production iOS follow-up diff in SyncManager, SyncReplayState, SyncEfficiency, SnapshotRecordClassifier, PresencePeer, TacMapChatStore and SyncSheet, and the held-write/startup regressions.
+
+## Security and durability conclusions
+
+- FR-7 closes: the chat store's pruning callback now reads a distinct durable session-domain view. Initial verified decode/load establishes that view, successful persistence advances it, failed persistence leaves it unchanged, full load/repair restoration restores it, and clear removes it. Hello-only actors are represented without requiring a presence counter. The staged session map remains available to validate the next frame in the same ordered batch; it cannot retire a different sealed chat store's fence before replay durability.
+- The executed regression sends a genuinely signed replacement hello through the actual manager, holds and fails the real replay writer, invokes an actual chat-store `markRead` seal while held, then reloads both stores and rejects an older chat with a different message ID. The rejection therefore depends on the retained replay fence, rather than message-ID deduplication.
+- FR-9 closes: configure keeps the not-yet-loaded revision journal private to the serial worker, including real SafeStore plaintext migration and sealed-only barrier writes. Lifetime observers retain each local edit event in order. Startup drains those events durably before the v3 join resumes. A held startup read plus two local events preserves loaded generation 4 and produces generation 6. Superseded joins are fenced by the join token, room and connection intent. Queued startup seals wait through background and resume only in foreground; the regression covers that boundary. The journal has one configure owner for the manager lifetime.
+- The existing durability follow-ups remain coherent: the inbound worker and outbound reservation gates prevent concurrent protocol mutation of a replay state during its captured seal; clean points wait behind an in-flight persistence operation before changing the exact-floor flag. Stale socket/join/background completions cannot apply a model, publish authenticated membership/presence, or send a queued mutation. A new join waits for prior replay cleanups and the serial persistence barrier before loading the same room again.
+- Snapshot records retain binding, canonical encoding, AEAD/signature, strict type/deleted and authenticated unsupported classification. Model epoch/kinds/layers are recaptured when validation races local changes. Pending-model decisions recheck the current hash and generation after the seal, so a local edit during durability remains authoritative. Marker clear follows durable acceptance and batched store application/hash verification. Snapshot sequence regression remains a SECURITY issue and cannot become a verified-clean snapshot.
+- Presence stride bounds avoid overflow and preserve the conservative crash floor. Superseded RIDs settle the pacer window, and explicit leave spends the old socket's control budget. Paused changes retain the notice for the joined room. Chat history prunes bytes before count and retains its separate synchronous sealed-store scope; this review does not expand SP3 responsiveness claims to that store.
+
+A final source pass found and routed FR-12 (P2): an empty-event journal startup completing in background could let foreground reconciliation open a v3 socket before replay load. The repaired `connect()` now requires the revision journal ready and no longer loading, plus replay state and v3 keys bound to the current room. The test holds the actual startup and replay workers, exercises two background/foreground cycles, and completes a real manager handshake after release. Directly inspected old-source evidence shows socket counts 1 then 2 where 0 was required; the fixed 10-test asynchronous suite passes. The earlier queued-edit startup tests would not have exposed this empty-event path. FR-12 is closed in source and focused evidence. The production source introduces no wire-format change, trust bypass, new relay capability assumption, or background reconnect enablement.
+
+## Directly checked executed evidence
+
+- `ios-fr7-fr9-focused.log`: all 9 actual-worker asynchronous persistence tests passed.
+- `ios-startup-ready-oldsource.log`: new FR-12 regression fails the prior source at both early socket boundaries.
+- `ios-startup-ready-focused-final.log`: all 10 actual-worker tests passed.
+- `ios-startup-ready-full.log`: 768 tests, 0 failures, 2 opt-in live skips; result `iosDD/Logs/Test/Test-TacticalMaps-2026.10.02_09-49-32-+1000.xcresult`.
+- `ios-fr7-fr9-full.log`: 767 tests, 0 failures, 2 opt-in native-live skips; result `iosDD/Logs/Test/Test-TacticalMaps-2026.10.02_09-38-39-+1000.xcresult`.
+- The skipped tests are excluded from live interoperability claims. Separate enabled local/lifecycle/shipped-TLS native tests passed afterward, as recorded below.
+
+Both logs and results live under `/Users/cbrooker/.claude/jobs/10094e99/tmp/codex-sync/`.
+
+## Test-only lifecycle extension
+
+Normal full-mode native tests retain signed presence, both-way waypoint/drawing create/edit/delete and room/direct chat. Additional phases isolate persistence by random run ID, require exact two-platform waypoint/drawing name sets before joining after a physical process kill, and require authenticated peer sender IDs at each barrier. The resume phase requires new authenticated peer session domains after a host relay restart. Android then invokes its production manager's background detach transition; iOS observes signed longer retention and verifies direct chat is blocked, sends a room-chat/model challenge, and Android proves no reception/model application in background or reopened disk. Fresh foreground stores must converge the model from the snapshot without recovering the intentionally dropped ephemeral chat. Current new peer keys are used for final direct chat.
+
+This extension preserves the boundary documented in `TASK2_INTEROP.md`: actual process kills/relaunch and native manager networking are host/device actions, while background entry uses the production manager hook with test GPS fixes. It is not an OS foreground-service or physical GPS proof. Native execution followed explicit parent GO after both platforms' independent source acceptance and passed all final phases.
+
+
+## Native-discovered FR-13 supplemental review
+
+The native pair proved a real startup race: authenticated Android room chat arrived and production crypto opened it successfully, while the iOS manager had no actual peer keys and one published recipient. Independent review approves the narrow repair in `ios-early-peer-key-fix.diff`: initial local key establishment resets only local ephemeral authority and pending local sends, retaining peer keys already verified against the current active socket/session; every full teardown clears peer keys plus staged and published recipients. Connection initialization, relay/key rejection, persistence failure, leave/background/session endings retain full teardown, and replacement hello still removes corresponding peer keys. No verification, recipient binding, replay, wire shape, or relay assumption is relaxed.
+
+Both actual-manager tests fail against the unchanged prior source. The positive test sends a genuinely signed peer hello/key before own hello-ack, acknowledges local chat capability, sends a genuine signed/encrypted room frame, verifies actual peer-key identity, then requires the inbound message on disk after reopening. The negative test actually tears down with a matching chat-key-nack during an inbound drain, asserts no staged recipient resurrection/peer authority, and rejects a genuine later encrypted frame. The 12-test focused actual-worker suite passes. At this review checkpoint the full command and native acceptance were pending; both subsequently passed with the exact final evidence below. Threat-model wording accurately describes preserved early authenticated authority and full teardown consistency.
+
+Evidence: `ios-early-peer-key-red.log`, `ios-early-peer-key-focused.log`, `ios-early-peer-key-fix.diff`; native `interop/attempt9-stale-published-recipient-proof`.
+
+
+FR-13 broad verification clarification: `ios-early-peer-key-full.log` directly records the complete `TacticalMapsTests` suite: 770 tests, 0 failures, 2 opt-in live skips. That command then continued into UI tests and failed `LayerPersistenceTests.testPrivacyAndOpsecIsReachableFromMainMenu`, followed by an Xcode IDERunOperation failure. The whole command is not a passing full-run claim. Production sync unit-suite evidence is green; UI/device acceptance is separately outstanding.
+
+
+Final executed artifact: `ios-early-peer-key-units.log` completes successfully (`TEST SUCCEEDED`) with all 770 unit tests green, 2 opt-in live skips. Result `iosDD/Logs/Test/Test-TacticalMaps-2026.10.02_10-23-37-+1000.xcresult`. The separate focused privacy-title UI correction also passes (`ios-privacy-title-focused.log`, result `10-23-06`); it changes only the outdated navigation title assertion to the actual Settings title. FR-13 production and regression review is accepted, and the failed accidental broader invocation is retained transparently above.
+
+
+Final native follow-through accepted: local actual kill/relaunch, sealed prejoin recovery, physical relay restart, Android manager background challenge/foreground snapshot and both-way room/direct messages all pass; independent local and current production TLS full pairs each execute one test per platform with zero failures and no skips. Exact final evidence and OS/key-policy limits are in `TASK2_INTEROP.md`. No unresolved FR-13 source or live interoperability gate remains.

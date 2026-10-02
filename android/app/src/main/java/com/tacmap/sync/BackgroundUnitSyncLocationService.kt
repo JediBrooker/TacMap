@@ -272,5 +272,49 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
         fun stop(context: Context) {
             context.stopService(Intent(context, BackgroundUnitSyncLocationService::class.java))
         }
+
+        /**
+         * Background sharing stopped without the user asking (connection lost
+         * while screen-off). The ongoing notice goes away with the service, so
+         * leave a normal dismissable one in its place (plans/04 section 21.5).
+         */
+        fun postPausedNotification(context: Context, pausedAt: String) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            runCatching {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_ID,
+                        L10n.text("Background Unit Sync"),
+                        NotificationManager.IMPORTANCE_LOW,
+                    ).apply {
+                        description = L10n.text("Shown while TacMap can share location with Unit Sync when the screen is off.")
+                    }
+                )
+                val openApp = PendingIntent.getActivity(
+                    context,
+                    0,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val text = Messages.syncBackgroundPaused(pausedAt)
+                val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setContentTitle(Messages.syncBackgroundPausedTitle())
+                    .setContentText(text)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setContentIntent(openApp)
+                    .setOngoing(false)
+                    .setAutoCancel(true)
+                    .build()
+                manager.notify(PAUSED_NOTIFICATION_ID, notification)
+            }
+        }
+
+        fun cancelPausedNotification(context: Context) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            runCatching { manager.cancel(PAUSED_NOTIFICATION_ID) }
+        }
+
+        private const val PAUSED_NOTIFICATION_ID = 4203
     }
 }

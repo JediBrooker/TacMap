@@ -1,27 +1,6 @@
 import Foundation
 import CoreLocation
 
-struct SyncReconnectBackoff: Equatable {
-    static let baseDelay: TimeInterval = 1
-    static let maximumDelay: TimeInterval = 30
-    static let jitterFraction = 0.20
-
-    private(set) var attemptCount = 0
-
-    mutating func nextDelay(randomUnit: Double = Double.random(in: 0...1)) -> TimeInterval {
-        let exponent = min(attemptCount, 20)
-        let unjittered = min(Self.maximumDelay, Self.baseDelay * pow(2, Double(exponent)))
-        attemptCount = min(attemptCount + 1, 21)
-        let unit = min(1, max(0, randomUnit))
-        let multiplier = 1 + ((unit * 2 - 1) * Self.jitterFraction)
-        return min(Self.maximumDelay, max(0.001, unjittered * multiplier))
-    }
-
-    mutating func reset() {
-        attemptCount = 0
-    }
-}
-
 struct PresenceLocationFix: Equatable {
     let latitude: Double
     let longitude: Double

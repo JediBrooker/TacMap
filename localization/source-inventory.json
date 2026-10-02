@@ -696,6 +696,42 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Chat/TacMapChatRetention.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SnapshotRecordClassifier.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncConnectionPolicy.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncOutboundPolicy.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncTransport.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Sync/SyncEfficiency.swift",
+    "platform": "ios",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "ios/TacticalMaps/Util/AppLanguage.swift",
     "platform": "ios",
     "area": "localisation-infrastructure",
@@ -1694,6 +1730,84 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/sync/VersionStamp.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/HelloEpochPolicy.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SnapshotRecordClassifier.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncBackoffPolicy.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncClientPolicies.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SnapshotValidator.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncPresencePolicies.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/WireIdIndex.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncCloseClassifier.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncEnvironment.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncHandshakeWatchdog.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncNackPolicy.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncOutboundPacer.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/sync/SyncReceiveBudget.kt",
     "platform": "android",
     "area": "sync-chat",
     "reviewStatus": "manual-review-needed"

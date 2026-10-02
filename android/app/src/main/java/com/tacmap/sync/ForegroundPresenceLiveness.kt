@@ -80,12 +80,26 @@ internal class ForegroundPresenceLiveness {
                 secondsToNanos(MAX_REQUESTED_FIX_AGE_SECONDS)
         }
 
+        /**
+         * Screen-off bridge frame (plans/04 section 21.1): the newest real fix
+         * if it's at most two minutes old, the threat model's rebroadcast
+         * limit. Never a future fix, and the fix keeps its own timestamp.
+         */
+        fun isBridgeableFix(
+            candidateFixElapsedRealtimeNanos: Long,
+            nowElapsedRealtimeNanos: Long,
+        ): Boolean {
+            if (candidateFixElapsedRealtimeNanos > nowElapsedRealtimeNanos) return false
+            return nowElapsedRealtimeNanos - candidateFixElapsedRealtimeNanos <=
+                BackgroundPresencePolicy.BRIDGE_FIX_MAX_AGE_MS * 1_000_000L
+        }
+
         private fun secondsToNanos(seconds: Long): Long = seconds * 1_000_000_000L
     }
 }
 
 /** One in-flight, GPS-only foreground fix request. */
-internal class ForegroundGpsFixRequester(context: Context) {
+internal class ForegroundGpsFixRequester(context: Context) : ForegroundFixRequester {
     private val appContext = context.applicationContext
     private val locationManager =
         appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -98,7 +112,7 @@ internal class ForegroundGpsFixRequester(context: Context) {
     @Suppress("DEPRECATION")
     @SuppressLint("MissingPermission")
     @Synchronized
-    fun request(completion: (Location?) -> Unit): Boolean {
+    override fun request(completion: (Location?) -> Unit): Boolean {
         if (activeListener != null) return false
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) !=
             PackageManager.PERMISSION_GRANTED
@@ -139,7 +153,7 @@ internal class ForegroundGpsFixRequester(context: Context) {
     }
 
     @Synchronized
-    fun cancel() {
+    override fun cancel() {
         val listener = activeListener ?: return
         clear(listener)
     }

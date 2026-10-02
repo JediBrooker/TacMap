@@ -2,6 +2,32 @@ import Foundation
 import CryptoKit
 import Security
 
+#if DEBUG
+/// Debug-only cost counters so tests can count HMACs, exports and redraws
+/// instead of guessing from wall time. Not compiled into release builds.
+enum SyncCostCounters {
+    static let wireIdHmac = "wireIdHmac"
+    static let geoJSONExport = "geoJSONExport"
+    static let drawingsOverlayDisplay = "drawingsOverlayDisplay"
+
+    private static let lock = NSLock()
+    private static var values: [String: Int] = [:]
+
+    static func bump(_ key: String) {
+        lock.lock(); values[key, default: 0] += 1; lock.unlock()
+    }
+
+    static func value(_ key: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return values[key] ?? 0
+    }
+
+    static func reset() {
+        lock.lock(); values.removeAll(); lock.unlock()
+    }
+}
+#endif
+
 /// v3 room-scoped identity derivation and binary preimage construction.
 /// Pure + deterministic so it unit-tests against the shared fixture.
 enum SyncIdentity {
@@ -31,7 +57,15 @@ enum SyncIdentity {
     /// Wire object ID: HMAC-SHA256(metadataKey, "tacmap-wire-obj-v3\0" || localUUID_bytes)
     /// -> base64url no pad. The relay never sees the local UUID.
     static func wireObjectId(metadataKey: Data, localUuidBytes: Data) -> String {
-        let key = SymmetricKey(data: metadataKey)
+        wireObjectId(key: SymmetricKey(data: metadataKey), localUuidBytes: localUuidBytes)
+    }
+
+    /// Same thing with a key built once per room, the wire-id index and the
+    /// off-main snapshot validator reuse it instead of rebuilding per object.
+    static func wireObjectId(key: SymmetricKey, localUuidBytes: Data) -> String {
+        #if DEBUG
+        SyncCostCounters.bump(SyncCostCounters.wireIdHmac)
+        #endif
         var hmac = HMAC<SHA256>(key: key)
         hmac.update(data: Data("tacmap-wire-obj-v3\0".utf8))
         hmac.update(data: localUuidBytes)

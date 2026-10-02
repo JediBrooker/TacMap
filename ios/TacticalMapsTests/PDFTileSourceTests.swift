@@ -875,6 +875,7 @@ final class PDFDebugAndMemoTests: XCTestCase {
 
     /// (b): during a pinch the container never queues more than one rebuild,
     /// the newest request replaces the parked one and is the one installed
+    @MainActor
     func testGridBuildsAreLatestWins() {
         var cam = MapCamera(center: .init(latitude: 37.8, longitude: -122.45), zoom: 12, headingDegrees: 0,
                             viewportSize: CGSize(width: 393, height: 852))
@@ -883,7 +884,9 @@ final class PDFDebugAndMemoTests: XCTestCase {
         let coordinator = TileMapContainer.Coordinator()
         coordinator.attach(view: view, mapVM: MapViewModel())
         view.onCameraChange = { _ in coordinator.reprojectOverlays() }
-        coordinator.updateOverlays(drawings: [], gridVisible: true, peers: [:],
+        let presence = SyncPresenceModel()
+        coordinator.observePresence(presence)
+        coordinator.updateOverlays(drawings: [], gridVisible: true,
                                    decorations: DrawingDecorationsOverlayView.Model(), handles: [], graphicsLocked: false)
         XCTAssertTrue(coordinator.isGridBuildInFlight)
         // a pinch: lots of rebuild worthy zoom steps while the first build runs

@@ -1036,10 +1036,16 @@ final class SyncProtocolV3Tests: XCTestCase {
             actorId: actorA, pubkey: pubA, sessionDomain: sessionDomain,
             epochHex: "0000000000000001"),
             "the relay may replay the current signed hello after this client reconnects")
+        // SP3 / contract 17.1 (this used to pin the per-frame reseal and accept
+        // 6 here): no clean point ran, so the reload floors the persisted 5 at
+        // 5 + 15. Everything that could have been shown before the "crash" is
+        // still rejected, up to 15 genuine positions are skipped.
         XCTAssertFalse(try restarted.acceptPresence(
             actorId: actorA, sessionDomain: sessionDomain, counter: 5))
+        XCTAssertFalse(try restarted.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 20))
         XCTAssertTrue(try restarted.acceptPresence(
-            actorId: actorA, sessionDomain: sessionDomain, counter: 6))
+            actorId: actorA, sessionDomain: sessionDomain, counter: 21))
 
         let differentSession = Data(repeating: 0x33, count: 32).base64URLEncodedStringNoPad()
         XCTAssertFalse(try restarted.acceptHello(
@@ -1047,12 +1053,23 @@ final class SyncProtocolV3Tests: XCTestCase {
             epochHex: "0000000000000001"),
             "an equal epoch must never activate a different session domain")
 
+        // 21 was 16 past the persisted 5, so it was written before it was
+        // accepted; another crash floors that at 36
         let restartedAgain = SyncReplayState(roomId: room, containerURL: directory)
         XCTAssertTrue(restartedAgain.load())
         XCTAssertFalse(try restartedAgain.acceptPresence(
-            actorId: actorA, sessionDomain: sessionDomain, counter: 6))
+            actorId: actorA, sessionDomain: sessionDomain, counter: 36))
         XCTAssertTrue(try restartedAgain.acceptPresence(
-            actorId: actorA, sessionDomain: sessionDomain, counter: 7))
+            actorId: actorA, sessionDomain: sessionDomain, counter: 37))
+
+        // a clean point (leave / background entry) writes the exact counters
+        try restartedAgain.writeCleanPresenceFence()
+        let afterCleanPoint = SyncReplayState(roomId: room, containerURL: directory)
+        XCTAssertTrue(afterCleanPoint.load())
+        XCTAssertFalse(try afterCleanPoint.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 37))
+        XCTAssertTrue(try afterCleanPoint.acceptPresence(
+            actorId: actorA, sessionDomain: sessionDomain, counter: 38))
     }
 
     func testLegacyReplayFilenameMigratesWithoutLosingRollbackState() throws {
@@ -1905,10 +1922,13 @@ final class SyncProtocolV3Tests: XCTestCase {
             UnitSyncPresenceCadence.maximumLocationAge,
             PresenceExpiryPolicy.liveUpdateWindow
         )
+        // This used to require ping + 8 s + backoff < 45 s. The 8 s timeout
+        // killed sockets stuck behind one big frame on slow links, contract
+        // section 9 moved it to 30 s and lets any inbound frame count as life.
+        XCTAssertEqual(SyncConnectionWatchdogPolicy.heartbeatInterval, 20)
+        XCTAssertEqual(SyncConnectionWatchdogPolicy.heartbeatTimeout, 30)
         XCTAssertLessThan(
-            SyncConnectionWatchdogPolicy.heartbeatInterval
-                + SyncConnectionWatchdogPolicy.heartbeatTimeout
-                + SyncReconnectBackoff.baseDelay * (1 + SyncReconnectBackoff.jitterFraction),
+            SyncConnectionWatchdogPolicy.heartbeatInterval,
             PresenceExpiryPolicy.liveUpdateWindow
         )
 
@@ -2428,6 +2448,12 @@ final class SyncProtocolV3Tests: XCTestCase {
         XCTAssertTrue(OpsecSettings.shared.setRelayURL("ws://127.0.0.1:9"))
         manager.configure(waypointStore: WaypointStore(), drawingStore: DrawingStore())
         manager.join(joinCode)
+        // SP3 (contract 20.3): PBKDF2 runs off main now, the socket attempt
+        // follows once the derived key is back
+        let deadline = Date().addingTimeInterval(10)
+        while generatorCalls == 0, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
 
         XCTAssertEqual(generatorCalls, 1)
         XCTAssertEqual(manager.status, .offline)

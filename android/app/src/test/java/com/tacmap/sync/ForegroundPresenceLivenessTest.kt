@@ -52,6 +52,12 @@ class ForegroundPresenceLivenessTest {
         assertTrue(ForegroundPresenceLiveness.isGenuinelyRecentFix(seconds(110), now))
         assertFalse(ForegroundPresenceLiveness.isGenuinelyRecentFix(seconds(110) - 1L, now))
         assertFalse(ForegroundPresenceLiveness.isGenuinelyRecentFix(now + 1L, now))
+        // the bridge frame now takes the newest fix up to two minutes old
+        // (plans/04 section 21.1), the threat model's rebroadcast limit
+        val later = seconds(300)
+        assertTrue(ForegroundPresenceLiveness.isBridgeableFix(seconds(180), later))
+        assertFalse(ForegroundPresenceLiveness.isBridgeableFix(seconds(180) - 1L, later))
+        assertFalse(ForegroundPresenceLiveness.isBridgeableFix(later + 1L, later))
 
         val manager = sourceText(
             "android/app/src/main/java/com/tacmap/sync/SyncManager.kt",
@@ -61,7 +67,7 @@ class ForegroundPresenceLivenessTest {
             manager.indexOf("return true", manager.indexOf("internal fun enterBackgroundPresenceOnly(")),
         )
         assertTrue(transition.contains("LocationManager.GPS_PROVIDER"))
-        assertTrue(transition.contains("isGenuinelyRecentFix"))
+        assertTrue(transition.contains("isBridgeableFix"))
     }
 
     @Test
