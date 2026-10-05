@@ -354,8 +354,17 @@ enum LegacyV2Ids {
         return raw.lowercased()
     }
 
-    /// Android and the relay key v2 objects by the lowercase string.
-    static func outboundId(_ uuid: UUID) -> String { uuid.uuidString.lowercased() }
+    /// What every v2 per-id map is keyed by, whatever casing was on the wire.
+    static func stateKey(_ uuid: UUID) -> String { uuid.uuidString.lowercased() }
+
+    /// v2 frame id (and the AAD and sig message) is uuidString, uppercase, same
+    /// as 2.x iOS sent. Shipped 2.x iOS re-exports by the uppercase string, so a
+    /// lowercase id makes it echo a put UPPER plus a del of the lower id and the
+    /// object gets deleted room wide (gap-v2-room-2x-interop-1).
+    static func outboundId(_ uuid: UUID) -> String { uuid.uuidString }
+
+    /// Wire id for a state key, nil if the key isnt a UUID.
+    static func outboundId(stateKey: String) -> String? { UUID(uuidString: stateKey).map(outboundId) }
 
     /// Mirrors the relay's isNewer: higher v wins, equal v goes to the higher
     /// `by` compared as raw bytes (JS string order for these ASCII ids).
