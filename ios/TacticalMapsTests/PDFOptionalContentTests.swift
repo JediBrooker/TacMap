@@ -293,4 +293,164 @@ final class PDFOptionalContentTests: XCTestCase {
             XCTAssertLessThanOrEqual(file.objectLoads, PDFOptionalContent.maxObjectLoads + 1)
         }
     }
+
+    // MARK: 3.0.1 re-review: lexing itself was never budgeted
+
+    static func lex(_ s: Data) -> (PDFValue?, PDFLexer) {
+        s.withUnsafeBytes { buf in
+            var lx = PDFLexer(b: buf, pos: 0)
+            let v = lx.value()
+            return (v, lx)
+        }
+    }
+
+    /// [[/ /...] [/ /...]], n nodes in all counting the three arrays
+    static func slashTree(nodes: Int) -> Data {
+        let a = (nodes - 3) / 2
+        return Data("[[".utf8) + Data(repeating: 0x2F, count: a) + Data("] [".utf8)
+            + Data(repeating: 0x2F, count: nodes - 3 - a) + Data("]]".utf8)
+    }
+
+    /// every "/" was a boxed value of ~40 bytes and only each container was
+    /// capped, so one value could be tens of millions of nodes
+    func testOneLexedValueHasAHeapBudget() {
+        // the numbers THREAT_MODEL s3 quotes
+        XCTAssertEqual(PDFOptionalContent.maxValueBytes, 16 << 20)
+        XCTAssertEqual(PDFOptionalContent.nodeBytes, 64)
+        XCTAssertEqual(PDFOptionalContent.maxTokenBytes, 4096)
+        XCTAssertEqual(PDFOptionalContent.maxStringBytes, 1 << 20)
+        let fits = PDFOptionalContent.maxValueBytes / PDFOptionalContent.nodeBytes
+        XCTAssertEqual(fits, 262_144)
+        XCTAssertGreaterThan(fits, PDFOptionalContent.maxContainerItems, "one full container still lexes")
+
+        let (ok, lx) = Self.lex(Self.slashTree(nodes: fits))
+        XCTAssertNotNil(ok)
+        XCTAssertEqual(lx.heapLeft, 0)
+        XCTAssertFalse(lx.overBudget)
+        let (over, lx2) = Self.lex(Self.slashTree(nodes: fits + 1))
+        XCTAssertTrue(over == nil, "one node over")
+        XCTAssertTrue(lx2.overBudget)
+    }
+
+    /// the reviewer's file: one object stream, ~30 KB compressed, holding
+    /// [[/ x199000] x150]. that lexed into 1.28 GB with no budget firing
+    func testSlashTreeInAnObjectStreamIsSkipped() throws {
+        let inner = Data("[".utf8) + Data(repeating: 0x2F, count: 199_000) + Data("]".utf8)
+        var tree = Data("[".utf8)
+        for _ in 0..<150 { tree += inner }
+        tree += Data("]".utf8)
+        XCTAssertLessThanOrEqual(tree.count + 8, PDFOptionalContent.maxInflatedBytes, "inside the decode budgets")
+        let packed = try Self.zlib(Data("3 0 ".utf8) + tree)
+        var p = HostilePDF()
+        p.obj(1, Self.catalog)
+        p.stream(2, "/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode", packed)
+        let data = p.xrefStream(4, packed: [3: (2, 0)], dict: "/Root 1 0 R")
+        XCTAssertLessThan(data.count, 64 * 1024)
+        try data.withUnsafeBytes { buf in
+            let file = try XCTUnwrap(PDFFile(bytes: buf))
+            // not XCTAssertNil, a failure would print all 30 million nodes
+            XCTAssertTrue(file.object(3) == nil)
+            XCTAssertEqual(file.oversizedValues, 1)
+            XCTAssertLessThanOrEqual(file.lastValueBytes, PDFOptionalContent.maxValueBytes + PDFOptionalContent.nodeBytes)
+            XCTAssertLessThan(file.parsedBytes, 1 << 20, "stopped at the budget, not at the end of 30 MB")
+            XCTAssertNil(PDFOptionalContent.updateTail(file: file))
+            XCTAssertFalse(file.exhausted, "one oversized object is skipped, the pass goes on")
+        }
+    }
+
+    /// same tree in the catalog: it used to stay alive for the whole pass (and get
+    /// lexed again by the scan, and copied into the tail). now the catalog just
+    /// doesnt lex, so the plain file is drawn
+    func testGiantCatalogFallsBackToThePlainFile() throws {
+        func file(x: String) throws -> Data {
+            let body = "1 0 << /Type /Catalog /X \(x) /OCProperties << /OCGs [5 0 R] /D << /OFF [5 0 R] >> >> >>"
+            var p = HostilePDF()
+            p.stream(2, "/Type /ObjStm /N 1 /First 4 /Filter /FlateDecode", try Self.zlib(Data(body.utf8)))
+            p.obj(4, "<< /Type /OCMD /OCGs 5 0 R /P /AllOn >>")
+            p.obj(5, "<< /Type /OCG /Name (x) >>")
+            return p.xrefStream(6, packed: [1: (2, 0)], dict: "/Root 1 0 R")
+        }
+        // control: small /X, the hidden OCMD gets its tail
+        let small = try file(x: "[/a /b]")
+        XCTAssertNotNil(small.withUnsafeBytes { PDFOptionalContent.updateTail(for: $0) })
+
+        let big = try file(x: String(decoding: Self.slashTree(nodes: 300_000), as: UTF8.self))
+        try big.withUnsafeBytes { buf in
+            let f = try XCTUnwrap(PDFFile(bytes: buf))
+            XCTAssertNil(PDFOptionalContent.updateTail(file: f))
+            XCTAssertEqual(f.oversizedValues, 1)
+            XCTAssertEqual(f.objectLoads, 1, "gave up at the catalog")
+        }
+    }
+
+    /// keyword, name and string tokens were copied whole before anything looked
+    /// at them (a 200 MiB token peaked at 0.4 to 0.6 GB)
+    func testTokensAreCappedBeforeTheyAreCopied() {
+        let cap = PDFOptionalContent.maxTokenBytes
+        func keyword(_ n: Int) -> Int {
+            Data(repeating: 0x61, count: n).withUnsafeBytes { buf in
+                var lx = PDFLexer(b: buf, pos: 0)
+                let w = lx.keyword()
+                XCTAssertEqual(lx.pos, n, "still steps over the whole run")
+                return w.count
+            }
+        }
+        XCTAssertEqual(keyword(cap), cap)
+        XCTAssertEqual(keyword(cap + 1), 0)
+
+        func name(_ n: Int) -> PDFLexer { Self.lex(Data("/".utf8) + Data(repeating: 0x61, count: n)).1 }
+        XCTAssertFalse(name(cap).overBudget)
+        XCTAssertTrue(Self.lex(Data("/".utf8) + Data(repeating: 0x61, count: cap + 1)).0 == nil)
+        XCTAssertTrue(name(cap + 1).overBudget)
+
+        let s = PDFOptionalContent.maxStringBytes
+        func literal(_ n: Int) -> (PDFValue?, PDFLexer) { Self.lex(Data("(".utf8) + Data(repeating: 0x61, count: n) + Data(")".utf8)) }
+        if case .string(let got)? = literal(s).0 { XCTAssertEqual(got.count, s) } else { XCTFail("1 MiB literal") }
+        XCTAssertTrue(literal(s + 1).0 == nil)
+        XCTAssertTrue(literal(s + 1).1.overBudget)
+
+        func hex(_ digits: Int) -> (PDFValue?, PDFLexer) { Self.lex(Data("<".utf8) + Data(repeating: 0x41, count: digits) + Data(">".utf8)) }
+        if case .string(let got)? = hex(2 * s).0 { XCTAssertEqual(got.count, s) } else { XCTFail("1 MiB hex") }
+        XCTAssertTrue(hex(2 * s + 2).0 == nil)
+        XCTAssertTrue(hex(2 * s + 2).1.overBudget)
+    }
+
+    /// an oversized object costs only itself: the OCMD next to it still hides
+    func testOversizedObjectIsSkippedAndThePassGoesOn() throws {
+        var p = HostilePDF()
+        p.obj(1, "<< /Type /Catalog /OCProperties << /OCGs [5 0 R] /D << /OFF [5 0 R] >> >> >>")
+        p.obj(3, "(" + String(repeating: "a", count: PDFOptionalContent.maxStringBytes + 10) + ")")
+        p.obj(4, "<< /Type /OCMD /OCGs 5 0 R /P /AllOn >>")
+        p.obj(5, "<< /Type /OCG /Name (x) >>")
+        let data = p.classic("/Root 1 0 R")
+        try data.withUnsafeBytes { buf in
+            let file = try XCTUnwrap(PDFFile(bytes: buf))
+            XCTAssertNotNil(PDFOptionalContent.updateTail(file: file))
+            XCTAssertEqual(file.oversizedValues, 1)
+        }
+    }
+
+    /// evaluate keeps every level's array alive while it recurses, so a /VE
+    /// array that refs itself held 32 copies of a max size value (262 MB from an
+    /// 863 byte file). arrays loaded for one /VE share one value's budget now
+    func testVisibilityExpressionArraysShareOneHeapBudget() throws {
+        var p = HostilePDF()
+        p.obj(1, "<< /Type /Catalog /OCProperties << /OCGs [5 0 R] /D << /OFF [5 0 R] >> >> >>")
+        // ~6.5 MB a copy by the lexer's estimate, so the third one is over
+        p.obj(3, "[/Or 3 0 R " + String(repeating: "[/Or] ", count: 50_000) + "]")
+        p.obj(4, "<< /Type /OCMD /VE [/And 3 0 R] >>")
+        p.obj(5, "<< /Type /OCG /Name (x) >>")
+        let data = p.classic("/Root 1 0 R")
+        try data.withUnsafeBytes { buf in
+            let file = try XCTUnwrap(PDFFile(bytes: buf))
+            guard case .dict(let ocmd)? = file.object(4) else { return XCTFail("OCMD") }
+            _ = file.object(3)
+            let one = file.lastValueBytes
+            XCTAssertGreaterThan(one * 3, PDFOptionalContent.maxValueBytes)
+            XCTAssertLessThanOrEqual(one * 2, PDFOptionalContent.maxValueBytes)
+            let before = file.objectLoads
+            XCTAssertNil(PDFOptionalContent.visible(ocmd: ocmd, file: file, ocgOn: { _ in true }))
+            XCTAssertEqual(file.objectLoads - before, 3, "was 32, one a level")
+        }
+    }
 }

@@ -39,6 +39,16 @@ enum PDFOptionalContent {
     static let parseSlackBytes = 16 * 1024 * 1024
     static let maxDepth = 64
     static let maxContainerItems = 200_000
+    /// rough heap one lexed value may take, nodeBytes a node plus its name and
+    /// string bytes. a 1 byte "/" is a whole node, so the per container cap
+    /// alone let a 30 KB object stream lex into a gigabyte. fits one full
+    /// maxContainerItems array
+    static let maxValueBytes = 16 * 1024 * 1024
+    static let nodeBytes = 64
+    /// one keyword or name, real ones are a few bytes (the spec says 127)
+    static let maxTokenBytes = 4096
+    /// one literal or hex string, decoded
+    static let maxStringBytes = 1024 * 1024
 
     /// the document CoreGraphics should draw, or nil to draw the plain file
     static func document(url: URL) -> CGPDFDocument? {
@@ -143,7 +153,8 @@ enum PDFOptionalContent {
     /// ISO 32000 8.11.2.2: /VE wins over /OCGs + /P. nil = cant evaluate, leave it
     static func visible(ocmd d: PDFDict, file: PDFFile, ocgOn: (Int) -> Bool) -> Bool? {
         if case .array(let ve)? = d["VE"] {
-            return evaluate(ve: ve, file: file, ocgOn: ocgOn, depth: 0)
+            var held = 0
+            return evaluate(ve: ve, file: file, ocgOn: ocgOn, depth: 0, held: &held)
         }
         let groups: [Int]
         switch d["OCGs"] {
@@ -166,20 +177,27 @@ enum PDFOptionalContent {
         }
     }
 
-    private static func evaluate(ve: [PDFValue], file: PDFFile, ocgOn: (Int) -> Bool, depth: Int) -> Bool? {
+    /// held = heap of the arrays loaded by ref that are still alive up the stack.
+    /// each level keeps its array while it recurses, so 32 levels of a max size
+    /// array was 32 values at once. they share one value's budget now
+    private static func evaluate(ve: [PDFValue], file: PDFFile, ocgOn: (Int) -> Bool, depth: Int, held: inout Int) -> Bool? {
         guard depth < 32, case .name(let op)? = ve.first else { return nil }
         var operands: [Bool] = []
         for v in ve.dropFirst() {
             switch v {
             case .ref(let n, _):
                 if case .array(let inner)? = file.object(n) {
-                    guard let r = evaluate(ve: inner, file: file, ocgOn: ocgOn, depth: depth + 1) else { return nil }
+                    let bytes = file.lastValueBytes
+                    held += bytes
+                    defer { held -= bytes }
+                    guard held <= maxValueBytes,
+                          let r = evaluate(ve: inner, file: file, ocgOn: ocgOn, depth: depth + 1, held: &held) else { return nil }
                     operands.append(r)
                 } else {
                     operands.append(ocgOn(n))
                 }
             case .array(let inner):
-                guard let r = evaluate(ve: inner, file: file, ocgOn: ocgOn, depth: depth + 1) else { return nil }
+                guard let r = evaluate(ve: inner, file: file, ocgOn: ocgOn, depth: depth + 1, held: &held) else { return nil }
                 operands.append(r)
             default: return nil
             }
@@ -252,6 +270,22 @@ indirect enum PDFValue {
 struct PDFLexer {
     let b: UnsafeRawBufferPointer
     var pos: Int
+    /// heap left for the value being lexed, every top level value() starts over
+    var heapLeft = PDFOptionalContent.maxValueBytes
+    /// the last value() came back nil because it was too big, not malformed
+    var overBudget = false
+
+    private mutating func spend(_ n: Int) -> Bool {
+        heapLeft -= n
+        if heapLeft < 0 { overBudget = true }
+        return !overBudget
+    }
+
+    /// a finished name or string, nil if its over cap or the value's out of heap
+    private mutating func keep(_ bytes: [UInt8], cap: Int) -> [UInt8]? {
+        guard bytes.count <= cap else { overBudget = true; return nil }
+        return spend(bytes.count) ? bytes : nil
+    }
 
     static func isWhite(_ c: UInt8) -> Bool { c == 0 || c == 9 || c == 10 || c == 12 || c == 13 || c == 32 }
     static func isDelimiter(_ c: UInt8) -> Bool {
@@ -272,6 +306,8 @@ struct PDFLexer {
         skipWhite()
         let start = pos
         while let c = peek(), !Self.isWhite(c), !Self.isDelimiter(c) { pos += 1 }
+        // nothing we look for is that long, dont copy a 200 MB junk run
+        guard pos - start <= PDFOptionalContent.maxTokenBytes else { return [] }
         return Array(b[start..<pos])
     }
 
@@ -289,18 +325,20 @@ struct PDFLexer {
 
     mutating func value(depth: Int = 0) -> PDFValue? {
         guard depth < PDFOptionalContent.maxDepth else { return nil }
+        if depth == 0 { heapLeft = PDFOptionalContent.maxValueBytes; overBudget = false }
         skipWhite()
-        guard let c = peek() else { return nil }
+        guard let c = peek(), spend(PDFOptionalContent.nodeBytes) else { return nil }
         switch c {
         case 0x2F:
             pos += 1
             var out: [UInt8] = []
             while let d = peek(), !Self.isWhite(d), !Self.isDelimiter(d) {
+                guard out.count <= PDFOptionalContent.maxTokenBytes else { overBudget = true; return nil }
                 if d == 0x23, let h = peek(1), let l = peek(2), let x = UInt8(String(bytes: [h, l], encoding: .ascii) ?? "", radix: 16) {
                     out.append(x); pos += 3
                 } else { out.append(d); pos += 1 }
             }
-            return .name(out)
+            return keep(out, cap: PDFOptionalContent.maxTokenBytes).map(PDFValue.name)
         case 0x28: return literalString()
         case 0x3C:
             if peek(1) == 0x3C {
@@ -316,7 +354,11 @@ struct PDFLexer {
             }
             pos += 1
             var hex: [UInt8] = []
-            while let d = peek(), d != 0x3E { if !Self.isWhite(d) { hex.append(d) }; pos += 1 }
+            while let d = peek(), d != 0x3E {
+                guard hex.count <= 2 * PDFOptionalContent.maxStringBytes else { overBudget = true; return nil }
+                if !Self.isWhite(d) { hex.append(d) }
+                pos += 1
+            }
             guard peek() == 0x3E else { return nil }
             pos += 1
             if hex.count % 2 == 1 { hex.append(0x30) }
@@ -326,7 +368,7 @@ struct PDFLexer {
                 guard let x = UInt8(String(bytes: hex[i...i + 1], encoding: .ascii) ?? "", radix: 16) else { return nil }
                 out.append(x); i += 2
             }
-            return .string(out)
+            return keep(out, cap: PDFOptionalContent.maxStringBytes).map(PDFValue.string)
         case 0x5B:
             pos += 1
             var a: [PDFValue] = []
@@ -351,8 +393,9 @@ struct PDFLexer {
     private mutating func number() -> PDFValue? {
         let start = pos
         while let c = peek(), (c >= 0x30 && c <= 0x39) || c == 0x2B || c == 0x2D || c == 0x2E { pos += 1 }
+        // length check before the String, a 200 MB run of digits got copied first
+        guard pos - start <= 32 else { return nil }
         let s = String(decoding: b[start..<pos], as: UTF8.self)
-        guard s.count <= 32 else { return nil }
         if let i = Int(s) {
             // "n g R"
             if i >= 0 {
@@ -376,6 +419,7 @@ struct PDFLexer {
         pos += 1
         var out: [UInt8] = [], nest = 1
         while let c = peek() {
+            guard out.count <= PDFOptionalContent.maxStringBytes else { overBudget = true; return nil }
             pos += 1
             switch c {
             case 0x5C:
@@ -398,7 +442,7 @@ struct PDFLexer {
             case 0x28: nest += 1; out.append(c)
             case 0x29:
                 nest -= 1
-                if nest == 0 { return .string(out) }
+                if nest == 0 { return keep(out, cap: PDFOptionalContent.maxStringBytes).map(PDFValue.string) }
                 out.append(c)
             default: out.append(c)
             }
@@ -440,10 +484,22 @@ final class PDFFile {
     private(set) var objectLoads = 0
     /// a budget ran out (or the xref got too big), every read after this is nil
     private(set) var exhausted = false
+    /// objects that came back nil for being over maxValueBytes or a token cap.
+    /// that object is just skipped, the pass goes on
+    private(set) var oversizedValues = 0
+    /// what the last object() value takes on the heap, the lexer's estimate
+    private(set) var lastValueBytes = 0
 
     private func charge(parsed n: Int) {
         parsedBytes += max(0, n)
         if parsedBytes > PDFOptionalContent.parseSlackBytes + 2 * (bytes.count + decodedBytes) { exhausted = true }
+    }
+
+    private func lexValue(_ lx: inout PDFLexer) -> PDFValue? {
+        let v = lx.value()
+        lastValueBytes = PDFOptionalContent.maxValueBytes - lx.heapLeft
+        if lx.overBudget { oversizedValues += 1 }
+        return v
     }
 
     init?(bytes: UnsafeRawBufferPointer) {
@@ -563,7 +619,7 @@ final class PDFFile {
         guard !exhausted, off >= 0, off < bytes.count else { return nil }
         var lx = PDFLexer(b: bytes, pos: off)
         defer { charge(parsed: lx.pos - off) }
-        guard let n = lx.unsignedInt(), let g = lx.unsignedInt(), lx.expect("obj"), let v = lx.value() else { return nil }
+        guard let n = lx.unsignedInt(), let g = lx.unsignedInt(), lx.expect("obj"), let v = lexValue(&lx) else { return nil }
         guard wantStream else { return (n, g, v, nil) }
         let mark = lx.pos
         guard case .dict(let d) = v, lx.keyword() == Array("stream".utf8) else {
@@ -723,7 +779,7 @@ final class PDFFile {
             let v = stm.data.withUnsafeBytes { buf -> PDFValue? in
                 var lx = PDFLexer(b: buf, pos: at)
                 defer { lexed = lx.pos - at }
-                return lx.value()
+                return lexValue(&lx)
             }
             charge(parsed: lexed)
             return v
