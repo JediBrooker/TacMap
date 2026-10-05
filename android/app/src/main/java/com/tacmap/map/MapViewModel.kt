@@ -19,6 +19,7 @@ import com.tacmap.calibration.ImportedMapLibraryMigration
 import com.tacmap.calibration.ImportedMapLibraryStore
 import com.tacmap.calibration.InFlightImportFiles
 import com.tacmap.calibration.LegacyMapReader
+import com.tacmap.calibration.LibraryCommit
 import com.tacmap.calibration.LibraryEntryRules
 import com.tacmap.calibration.LibraryLoad
 import com.tacmap.calibration.LibraryReducer
@@ -212,6 +213,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         override fun detach(entryId: String?, bake: PersistedPdfBake): Boolean = detachBake(entryId, bake)
     }
 
+    /** set in onCleared: a bake or coroutine that outlives this view model never writes the library through it */
+    @Volatile private var cleared = false
+
     /** Default basemap: Esri Satellite when we have a key, else the one style
      *  that needs none (OpenTopoMap) so a keyless dev build still shows a map. */
     private val defaultStyle: BasemapStyle =
@@ -364,7 +368,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         tacticalApp.memoryPressure += trimListener
-        bakeManager.recorder = bakeRecorder
+        bakeManager.recorders.register(bakeRecorder)
         pdfRuntime.calibrating = { calibration.isActive }
         viewModelScope.launch {
             bakeManager.published.collect { onBakePublished(it) }
@@ -416,7 +420,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 val inputs = (read as LegacyMapReader.Read.Present).inputs
                 // null = something in there won't convert (a PDF outside our dirs): block, don't drop it (S3)
                 val result = ImportedMapLibraryMigration.build(inputs, filesDir, System.currentTimeMillis())
-                if (result == null || !library.write(result.state)) {
+                // create, not write: another screen that got its migration down first stands
+                if (result == null || library.create(result.state) !is LibraryCommit.Written) {
                     MigrationOutcome.Blocked
                 } else {
                     result.drafts.forEach { draftStore.save(it) }
@@ -428,7 +433,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             // clear, or it'd read as locked on every launch from here on
             RestoreMigration.WRITE_EMPTY_AND_CLEAR -> {
                 val empty = LibraryState(active = ActiveRef.online(defaultStyle.name), preferredOnlineStyle = defaultStyle.name)
-                if (!library.write(empty)) MigrationOutcome.Blocked
+                if (library.create(empty) !is LibraryCommit.Written) MigrationOutcome.Blocked
                 else {
                     legacyReader.clearAfterMigration()
                     MigrationOutcome.Migrated(null, null)
@@ -491,12 +496,14 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 libraryIssueShown = true
                 reportMapSelectionIssue(retry = { restoreLibrary(); true }, text = { Messages.mapLibraryLocked() })
             }
-            RestoreStatus.CORRUPT -> {
-                _libraryStatus.value = LibraryStatus.CORRUPT
-                if (_mapSource.value !is OnlineRasterMapSourceAndroid) publish(onlineBasemap(), frame = false)
-                reportCorruptLibrary()
-            }
+            RestoreStatus.CORRUPT -> onLibraryCorrupt()
         }
+    }
+
+    private fun onLibraryCorrupt() {
+        _libraryStatus.value = LibraryStatus.CORRUPT
+        if (_mapSource.value !is OnlineRasterMapSourceAndroid) publish(onlineBasemap(), frame = false)
+        reportCorruptLibrary()
     }
 
     private fun reportCorruptLibrary() {
@@ -505,9 +512,18 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         reportMapSelectionIssue(retry = { rebuildCorruptLibrary() }, text = { Messages.mapLibraryCorruptMessage() })
     }
 
-    /** MapScreen's back (it's only up with the mission key unlocked): a locked library gets another go (F3) */
+    /**
+     * MapScreen's back (it's only up with the mission key unlocked): a locked library gets
+     * another go (F3). This screen is the one in front now, so it records bakes again, and
+     * another one may have written the library while it sat in the back
+     */
     internal fun onMissionDataUnlocked() {
-        if (_libraryStatus.value == LibraryStatus.LOCKED) restoreLibrary()
+        bakeManager.recorders.register(bakeRecorder)
+        when (_libraryStatus.value) {
+            LibraryStatus.LOCKED -> restoreLibrary()
+            LibraryStatus.LOADED -> syncWithDurable()
+            else -> Unit
+        }
     }
 
     /** only ever with a state read back as Loaded, a genuine first launch, or one we just wrote */
@@ -522,9 +538,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         preferredBaseMap = styleOf(state.preferredOnlineStyle) ?: defaultStyle
         takeLaunchDecision(state)
         // R3-2 bake-only sweep on every authoritative restore, needs neither the PDF nor the selection
-        sweepOrphanBakes(state)
+        sweepOrphanBakes()
         restoreActive(state, frameActive)
-        reconcile(state)
+        reconcile()
         refreshDraftCounts()
         verifyActiveInBackground(state)
         sweepInterruptedImports()
@@ -557,8 +573,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private fun styleOf(name: String?): BasemapStyle? = BasemapStyle.entries.firstOrNull { it.name == name }
         ?.takeIf { !it.requiresEsriKey || com.tacmap.calibration.EsriKey.isAvailable }
 
-    /** s8.2 restore: size + mtime only, no hashing on main (D5-08) */
-    private fun restoreActive(state: LibraryState, frameActive: Boolean = false) {
+    /** s8.2 restore: size + mtime only, no hashing on main (D5-08). [reframe] false keeps the camera */
+    private fun restoreActive(state: LibraryState, frameActive: Boolean = false, reframe: Boolean = true) {
         val entry = state.activeEntry
         if (entry == null) {
             publish(baseMapSource(styleOf(state.active.style) ?: preferredBaseMap), frame = false)
@@ -573,7 +589,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             else -> null
         }
         if (source is PdfMapSource && holdBackSuspectPdf(source)) return
-        publish(source ?: onlineBasemap(), frame = source != null && !frameActive)
+        publish(source ?: onlineBasemap(), frame = reframe && source != null && !frameActive)
         if (frameActive) {
             // OD-F13: the first launch after the upgrade shows the migrated map itself, whole,
             // not wherever the first GPS fix happens to be (same as iOS)
@@ -739,12 +755,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 rebuilding = false
             }
             if (_libraryStatus.value != LibraryStatus.CORRUPT) return@launch
-            if (rebuilt == null || !library.write(rebuilt)) {
-                reportCorruptLibrary()
-                return@launch
+            when (val c = rebuilt?.let(library::create)) {
+                // Loaded from here: the recovery flag keeps cleanup disabled, including after restart.
+                is LibraryCommit.Written -> adoptLoaded(c.state)
+                // another screen got a library down first, that one stands
+                is LibraryCommit.Stale -> (c.current as? LibraryLoad.Loaded)?.let { adoptLoaded(it.state) } ?: reportCorruptLibrary()
+                else -> reportCorruptLibrary()
             }
-            // Loaded from here: the recovery flag keeps cleanup disabled, including after restart.
-            adoptLoaded(rebuilt)
         }
         return true
     }
@@ -761,13 +778,94 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             if (!same) return@launch
             val now = writableState() ?: return@launch
             val next = reduce(LibraryTransition.RefreshFileStamp(id, key, file.length(), file.lastModified()), now) ?: return@launch
-            if (library.write(next)) _libraryState.value = next
+            commit(next)?.let { _libraryState.value = it }
         }
     }
 
-    /** the state a transition may build on, null = locked/corrupt/still migrating */
-    private fun writableState(): LibraryState? =
-        _libraryState.value.takeIf { _libraryStatus.value == LibraryStatus.LOADED }
+    /**
+     * the state a transition may build on: the sealed library as it is right now, taken first
+     * if another screen or a bake wrote it since. null = locked/corrupt/still migrating, or
+     * this view model's been cleared
+     */
+    private fun writableState(): LibraryState? {
+        if (cleared) return null
+        syncWithDurable()
+        return _libraryState.value.takeIf { _libraryStatus.value == LibraryStatus.LOADED }
+    }
+
+    /**
+     * The sealed library is the authority, this view model only holds a copy. A second
+     * MainActivity's view model, or a bake recorded through another screen, can write it
+     * behind this one's back. Re-read it and take it when its generation moved on, before any
+     * transition and whenever the screen comes back to the front
+     */
+    private fun syncWithDurable() {
+        if (_libraryStatus.value != LibraryStatus.LOADED) return
+        val cached = _libraryState.value ?: return
+        val current = library.loadCurrent()
+        if (current is LibraryLoad.Loaded && current.state.generation == cached.generation) return
+        takeDurable(current)
+    }
+
+    /** what's on disk now, for a copy that turned out to be behind. locked or still unwritten changes nothing */
+    private fun takeDurable(current: LibraryLoad) {
+        val cached = _libraryState.value ?: return
+        when (current) {
+            is LibraryLoad.Loaded -> adoptNewer(cached, current.state)
+            // it went bad under us: same as finding it corrupt at launch, nothing's written or deleted from here
+            LibraryLoad.Corrupt -> onLibraryCorrupt()
+            LibraryLoad.Locked, LibraryLoad.Empty -> Unit
+        }
+    }
+
+    /**
+     * Someone else wrote the library: take theirs as it is (nothing's written or deleted from
+     * here) and put its active map up if that changed. Not while calibrating, Finish checks
+     * the entry again anyway
+     */
+    private fun adoptNewer(before: LibraryState, current: LibraryState) {
+        _libraryState.value = current
+        preferredBaseMap = styleOf(current.preferredOnlineStyle) ?: defaultStyle
+        _hashMismatch.value = _hashMismatch.value.filterTo(HashSet()) { current.entry(it) != null }
+        if (_pdfRecovery.value?.entryId?.let(current::entry) == null) _pdfRecovery.value = null
+        // MBTiles handles for entries that are gone or point at another file now
+        val moved = offlineSources.keys.filter { id -> current.entry(id)?.fileName != before.entry(id)?.fileName }
+        val dropped = moved.mapNotNull { offlineSources.remove(it) }
+        if (!calibration.isActive && (before.active != current.active || before.activeEntry != current.activeEntry)) {
+            previewReturn = null
+            restoreActive(current, reframe = before.active != current.active)
+        }
+        closeSupersededOfflineSources(candidates = dropped, stillReferenced = listOf(_mapSource.value))
+        refreshDraftCounts()
+    }
+
+    /**
+     * The one way a transition writes (ImportedMapLibraryStore.commit). null = nothing went
+     * down: the write failed, or the sealed library moved on since [next] was reduced, and
+     * then the sealed one's taken first so a Retry builds on it
+     */
+    private fun commit(next: LibraryState): LibraryState? = when (val c = library.commit(next)) {
+        is LibraryCommit.Written -> c.state
+        is LibraryCommit.Stale -> {
+            takeDurable(c.current)
+            null
+        }
+        LibraryCommit.Failed -> null
+    }
+
+    /**
+     * What cleanup keeps by: the sealed library as it is right now, never this view model's
+     * copy. A genuine first launch hasn't written one yet, the empty library stands for it.
+     * null = no authoritative read, skip. Called with the managed files lock held
+     */
+    private fun durableForCleanup(): LibraryState? {
+        if (cleared || _libraryStatus.value != LibraryStatus.LOADED) return null
+        return when (val load = library.load()) {
+            is LibraryLoad.Loaded -> load.state
+            LibraryLoad.Empty -> _libraryState.value?.takeIf { it.generation == 0L && it.entries.isEmpty() }
+            else -> null
+        }
+    }
 
     // ------------------------------------------------------------------ entries -> sources
 
@@ -888,17 +986,17 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun transition(next: LibraryState, retry: () -> Boolean, publishAfter: () -> Unit): Boolean {
         val previous = _libraryState.value
-        if (!library.write(next)) {
+        val written = commit(next) ?: run {
             reportWriteFailed(retry)
             return false
         }
-        previous?.let { removeKnownSupersededBakes(it, next) }
-        _libraryState.value = next
+        previous?.let { removeKnownSupersededBakes(it, written) }
+        _libraryState.value = written
         _libraryStatus.value = LibraryStatus.LOADED
         pendingRetry = null
         _mapSelectionPersistenceIssue.value = null
         publishAfter()
-        reconcile(next)
+        reconcile()
         return true
     }
 
@@ -998,14 +1096,14 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val next = reduce(t, state) ?: return false
         val updated = next.entry(target.entryId) ?: return false
         // no retry lambda: a failed commit stays in calibration with its own Retry (s2.6)
-        if (!library.write(next)) return false
-        removeKnownSupersededBakes(state, next)
-        _libraryState.value = next
+        val written = commit(next) ?: return false
+        removeKnownSupersededBakes(state, written)
+        _libraryState.value = written
         pendingRetry = null
         _mapSelectionPersistenceIssue.value = null
         previewReturn = null
         effectiveGeoref(updated)?.let { g -> pdfSourceFor(updated, g)?.let { _mapSource.value = it } }
-        reconcile(next)
+        reconcile()
         refreshDraftCounts()
         return true
     }
@@ -1036,12 +1134,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         gone.forEach { e -> if (e.isPdf) bakeManager.cancelFor(library.fileOf(e)) }
         val goneIds = gone.map { it.id }.toSet()
         val wasActive = state.active.entryId in goneIds
-        val next = reduced.state
-        if (!library.write(next)) {
+        val written = commit(reduced.state) ?: run {
             reportWriteFailed { deleteImportedMap(id) }
             return false
         }
-        _libraryState.value = next
+        _libraryState.value = written
         pendingRetry = null
         _mapSelectionPersistenceIssue.value = null
         val showingGone = shownEntryId() in goneIds
@@ -1065,15 +1162,18 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             // and its baked tiles, straight away (plaintext AO, M11). name checked there
             e.pdf?.bake?.fileName?.let { name -> runCatching { LibraryMapFiles.deleteBake(filesDir, name) } }
         }
-        reconcile(next)
-        sweepOrphanBakes(next)
+        reconcile()
+        sweepOrphanBakes()
         refreshDraftCounts()
         return true
     }
 
     // ------------------------------------------------------------------ WP2 bake record (M3, M6, M7)
 
-    /** the bake publish, main thread: one library write onto the entry it was made from */
+    /**
+     * the bake publish, main thread: one library write onto the entry it was made from, on the
+     * sealed library as it is now (writableState), whichever screen started the bake
+     */
     internal fun attachBake(entryId: String?, contentKey: String?, token: String, bake: PersistedPdfBake): PdfBakeAttach {
         val state = writableState() ?: return PdfBakeAttach.WriteFailed(null)
         val id = entryId ?: return PdfBakeAttach.SourceChanged
@@ -1083,11 +1183,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 return if (r.error == com.tacmap.calibration.LibraryTransitionError.INVALID_BAKE) PdfBakeAttach.WriteFailed(null)
                 else PdfBakeAttach.SourceChanged
         }
-        if (!library.write(next)) return PdfBakeAttach.WriteFailed(null)
-        removeKnownSupersededBakes(state, next)
-        _libraryState.value = next
+        val written = commit(next) ?: return PdfBakeAttach.WriteFailed(null)
+        removeKnownSupersededBakes(state, written)
+        _libraryState.value = written
         // the previous bake (if any) is unreferenced now, the reconcile reaps it
-        reconcile(next)
+        reconcile()
         return PdfBakeAttach.Attached
     }
 
@@ -1096,9 +1196,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val state = writableState() ?: return false
         val id = entryId ?: return false
         val next = reduce(LibraryTransition.ClearBake(id, bake.fileName), state) ?: return false
-        if (!library.write(next)) return false
-        removeKnownSupersededBakes(state, next)
-        _libraryState.value = next
+        val written = commit(next) ?: return false
+        removeKnownSupersededBakes(state, written)
+        _libraryState.value = written
         return true
     }
 
@@ -1124,11 +1224,11 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val state = writableState() ?: return false
         val name = state.entry(id)?.pdf?.bake?.fileName ?: return false
         val next = reduce(LibraryTransition.ClearBake(id, name), state) ?: return false
-        if (!library.write(next)) {
+        val written = commit(next) ?: run {
             reportWriteFailed { removePdfBake() }
             return false
         }
-        _libraryState.value = next
+        _libraryState.value = written
         pendingRetry = null
         _mapSelectionPersistenceIssue.value = null
         pdfRuntime.detachBake()
@@ -1138,25 +1238,23 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             val deleted = withContext(Dispatchers.IO) { LibraryMapFiles.deleteBake(filesDir, name) }
             if (!deleted) android.util.Log.w("MapViewModel", "bake file didn't go, the next sweep gets it")
             // D5: the library as it is now, a write that landed during the IO hop wins
-            val latest = writableState() ?: return@launch
-            sweepOrphanBakes(latest)
-            reconcile(latest)
+            writableState() ?: return@launch
+            sweepOrphanBakes()
+            reconcile()
         }
         return true
     }
 
     /**
      * R3-2 bake-only sweep (M7): bake files in offline_tiles no PDF entry names. Only off a
-     * Loaded library (the caller has one), the read happens under the managed files lock on IO
+     * Loaded library, the sealed one read under the managed files lock on IO
      */
-    private fun sweepOrphanBakes(state: LibraryState) {
-        if (_libraryStatus.value != LibraryStatus.LOADED || !state.permitsCleanup) return
+    private fun sweepOrphanBakes() {
+        if (_libraryStatus.value != LibraryStatus.LOADED) return
         viewModelScope.launch(Dispatchers.IO) {
             val r = runCatching {
-                // the newest Loaded library we know of, a write since this was queued wins
-                LibraryMapFiles.sweepBakes(filesDir) {
-                    if (_libraryStatus.value == LibraryStatus.LOADED) _libraryState.value ?: state else null
-                }
+                // the sealed library once the lock's held, a write since this was queued wins
+                LibraryMapFiles.sweepBakes(filesDir) { durableForCleanup() }
             }.getOrNull()
             if (r == false) android.util.Log.w("MapViewModel", "bake sweep left something it wouldn't touch")
         }
@@ -1179,15 +1277,15 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Keep = every entry's file (+ sidecars) and whatever an import or bake is still
-     * writing. Never while locked/corrupt or still migrating (the caller only has a
-     * state once Loaded). Drafts for files no longer in the library go too.
+     * writing. Never while locked/corrupt or still migrating. Drafts for files no longer in
+     * the library go too. Both off the sealed library read under the lock, not this view
+     * model's copy: a stale copy must never decide what gets deleted
      */
-    private fun reconcile(state: LibraryState) {
-        if (_libraryStatus.value != LibraryStatus.LOADED || !state.permitsCleanup) return
+    private fun reconcile() {
+        if (_libraryStatus.value != LibraryStatus.LOADED) return
         onReconcileForTests?.invoke()
         // keep set includes each PDF's bake, same lock the bake publish and Remove take (M5, R2-S2)
-        runCatching { LibraryMapFiles.reconcile(filesDir, state) }
-        draftStore.prune(state.entries.mapNotNull { it.contentKey }.toSet())
+        runCatching { LibraryMapFiles.reconcile(filesDir, pruneDrafts = { draftStore.prune(it) }) { durableForCleanup() } }
     }
 
     /** instrumented tests only: sees each reconcile as it starts (which thread it's on) */
@@ -1320,6 +1418,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /** "Map change not saved" with Retry, the one every failed library write shows */
     private fun reportWriteFailed(retry: () -> Boolean) {
+        // a library that went corrupt under the write keeps its own issue up
+        if (_libraryStatus.value != LibraryStatus.LOADED) return
         val message = Messages.displayTheBasemapChoiceCouldNotBeSavedThePrevious420c88c7Message()
         reportMapSelectionIssue(retry) { message.text }
     }
@@ -1510,8 +1610,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     override fun onCleared() {
+        cleared = true
         tacticalApp.memoryPressure -= trimListener
-        if (bakeManager.recorder === bakeRecorder) bakeManager.recorder = null
+        // a screen still alive under this one takes the bakes back
+        bakeManager.recorders.unregister(bakeRecorder)
         pdfRuntime.release()
         headingService.stop()
         locationService.stop()

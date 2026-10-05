@@ -84,7 +84,7 @@ class LibraryBakeFilesTest {
         assertTrue("$attached", attached is LibraryReduction.Ok)
         val s = (attached as LibraryReduction.Ok).state
 
-        assertTrue(LibraryMapFiles.reconcile(files, s))
+        assertEquals(true, LibraryMapFiles.reconcile(files) { s })
         assertTrue("the PDF stays", pdf.isFile)
         assertTrue("the entry's bake stays with its PDF", bakeFile.isFile)
         stale.forEach { assertFalse("${it.name}: a bake nothing names is reaped", it.exists()) }
@@ -92,7 +92,7 @@ class LibraryBakeFilesTest {
         // Remove Offline Tiles: the entry drops it, the next reconcile takes the file
         val cleared = (LibraryReducer.apply(LibraryTransition.ClearBake("a", bakeFile.name), s) as LibraryReduction.Ok).state
         assertNull(cleared.entry("a")!!.pdf!!.bake)
-        assertTrue(LibraryMapFiles.reconcile(files, cleared))
+        assertEquals(true, LibraryMapFiles.reconcile(files) { cleared })
         assertTrue(pdf.isFile)
         assertFalse(bakeFile.exists())
     }
@@ -218,13 +218,57 @@ class LibraryBakeFilesTest {
     }
 
     @Test
+    fun noAuthoritativeReadSkipsTheReconcileAndTheDraftPrune() {
+        // same rule as the sweep: no sealed library to keep by, nothing is deleted on a guess
+        val pdf = pdfFile("a")
+        val orphan = plantBake()
+        var pruned = false
+        assertNull(LibraryMapFiles.reconcile(files, pruneDrafts = { pruned = true }) { null })
+        assertTrue(pdf.isFile)
+        orphan.forEach { assertTrue("${it.name} deleted on a guess", it.isFile) }
+        assertFalse(pruned)
+    }
+
+    @Test
     fun aBakeThatsMovedInButNotRecordedYetIsInFlightAndSurvives() {
         // the publish registers the moved-in file until its record lands (M5)
         val publishing = plantBake()
         publishing.forEach(InFlightImportFiles::register)
         assertEquals(true, LibraryMapFiles.sweepBakes(files) { state() })
-        assertTrue(LibraryMapFiles.reconcile(files, state()))
+        assertEquals(true, LibraryMapFiles.reconcile(files) { state() })
         publishing.forEach { assertTrue("${it.name} reaped mid publish", it.isFile) }
+    }
+
+    @Test
+    fun aBakeMovedInWhileTheReconcileWaitedOnTheLockSurvivesIt() {
+        // wp4-android-4: the publish holds the lock while it moves the bake in and registers it.
+        // a reconcile queued behind it must take its in flight snapshot once it has the lock,
+        // one taken before it blocked doesn't know the new file and reaps it
+        val out = File(files, "offline_tiles/tacmap-bake-${UUID.randomUUID()}.mbtiles")
+        val holding = java.util.concurrent.CountDownLatch(1)
+        val go = java.util.concurrent.CountDownLatch(1)
+        val publish = kotlin.concurrent.thread {
+            ActiveMapSelectionStore.withManagedFilesLock {
+                holding.countDown()
+                go.await()
+                InFlightImportFiles.register(out)
+                out.parentFile!!.mkdirs()
+                out.writeText("tiles")
+            }
+        }
+        holding.await()
+        var result: Boolean? = null
+        val reconcile = kotlin.concurrent.thread { result = LibraryMapFiles.reconcile(files) { state() } }
+        val end = System.currentTimeMillis() + 10_000
+        while (reconcile.state != Thread.State.BLOCKED) {
+            assertTrue("reconcile never queued on the lock", System.currentTimeMillis() < end)
+            Thread.sleep(1)
+        }
+        go.countDown()
+        publish.join()
+        reconcile.join()
+        assertEquals(true, result)
+        assertTrue("the bake the publish just moved in got reaped", out.isFile)
     }
 
     @Test

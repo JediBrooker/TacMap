@@ -15,6 +15,16 @@ internal sealed class LibraryLoad {
     data object Corrupt : LibraryLoad()
 }
 
+/** what a guarded library write got */
+internal sealed class LibraryCommit {
+    /** on disk, with its new generation */
+    data class Written(val state: LibraryState) : LibraryCommit()
+    /** the sealed library isn't what the write was built on (or can't be read): nothing written, [current] is what's there */
+    data class Stale(val current: LibraryLoad) : LibraryCommit()
+    /** the write itself failed, nothing changed */
+    data object Failed : LibraryCommit()
+}
+
 /**
  * filesDir/imported_map_library.json, sealed (SafeStore). Contract s8.2: the one
  * authority for the active selection and every imported map. Synchronous on
@@ -34,7 +44,10 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
         }
         json.decodeFromString<LibraryState>(raw)
     }) {
-        is SafeStore.LoadResult.Loaded -> LibraryLoad.Loaded(r.value)
+        is SafeStore.LoadResult.Loaded -> {
+            newestGeneration.accumulateAndGet(r.value.generation) { a, b -> maxOf(a, b) }
+            LibraryLoad.Loaded(r.value)
+        }
         // gone is only empty if we never wrote one. a quarantined copy next to it, or our own
         // record that it was written, means it vanished: corrupt, never "start fresh" (S1)
         SafeStore.LoadResult.Empty -> when {
@@ -56,6 +69,45 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
     fun write(state: LibraryState): Boolean = runCatching {
         SafeStore.writeAtomically(file, LABEL, json.encodeToString(state.copy(schemaVersion = LibraryState.SCHEMA_VERSION)))
     }.onFailure { QuietLog.w(TAG, "Imported map library write failed") }.isSuccess
+
+    /** load() under the managed files lock, so it can't land in the middle of someone's commit */
+    fun loadCurrent(): LibraryLoad = ActiveMapSelectionStore.withManagedFilesLock { loadOrLocked() }
+
+    /** a key store hiccup reads as locked here, the old write path swallowed those too. nothing goes down on it */
+    private fun loadOrLocked(): LibraryLoad = runCatching { load() }.getOrElse { LibraryLoad.Locked }
+
+    /**
+     * How every transition writes. Under the managed files lock the sealed library is read
+     * again and [next] only goes down if that's still the generation [next] was reduced from.
+     * Anyone holding an older copy (a second MainActivity's view model, a bake that outlived
+     * its screen) gets Stale and has to rebase, so it can never put an older library back
+     * over newer entries or calibrations. The unwritten first launch library is generation 0
+     */
+    fun commit(next: LibraryState): LibraryCommit = ActiveMapSelectionStore.withManagedFilesLock {
+        when (val current = loadOrLocked()) {
+            is LibraryLoad.Loaded ->
+                if (current.state.generation == next.generation) writeNext(next) else LibraryCommit.Stale(current)
+            LibraryLoad.Empty -> if (next.generation == 0L) writeNext(next) else LibraryCommit.Stale(current)
+            else -> LibraryCommit.Stale(current)
+        }
+    }
+
+    /**
+     * First write of a library that doesn't load: the migration, the S4 empty library, the S2
+     * rebuild. Never over one that does, whoever got there first stands and this says Stale
+     */
+    fun create(state: LibraryState): LibraryCommit = ActiveMapSelectionStore.withManagedFilesLock {
+        when (val current = loadOrLocked()) {
+            is LibraryLoad.Loaded, LibraryLoad.Locked -> LibraryCommit.Stale(current)
+            else -> writeNext(state)
+        }
+    }
+
+    /** above every generation this process has seen, so a re-created library never matches an old copy */
+    private fun writeNext(state: LibraryState): LibraryCommit {
+        val written = state.copy(generation = newestGeneration.updateAndGet { maxOf(it, state.generation) + 1 })
+        return if (write(written)) LibraryCommit.Written(written) else LibraryCommit.Failed
+    }
 
     fun exists(): Boolean = file.exists()
 
@@ -108,6 +160,9 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
         private const val TAG = "ImportedMapLibrary"
         val MANAGED_DIRECTORIES = listOf("pdf_maps", "mbtiles", "offline_tiles")
         val SQLITE_SIDECARS = listOf("-wal", "-shm", "-journal")
+
+        /** highest library generation this process has read or written, one library per app */
+        private val newestGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
         /** opaque relative path -> file under filesDir/<pdf_maps|mbtiles|offline_tiles>/, no escapes */
         fun resolveManaged(filesDir: File, relative: String): File? {

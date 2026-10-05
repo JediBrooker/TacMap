@@ -16,6 +16,11 @@ internal data class LibraryState(
     val entries: List<ImportedMapEntry> = emptyList(),
     // A rebuilt index cannot prove which unreferenced files or drafts are disposable.
     val recoveryPreservesOrphans: Boolean? = null,
+    /**
+     * goes up on every write (ImportedMapLibraryStore.commit), so a writer can tell the sealed
+     * library moved on since it read its copy. older builds never wrote it, that reads as 0
+     */
+    val generation: Long = 0,
 ) {
     val permitsCleanup: Boolean get() = recoveryPreservesOrphans != true
 

@@ -82,10 +82,11 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
-     * the library side of a publish (M3), MapViewModel plugs itself in while it's alive.
-     * nothing plugged in = a finished bake can't be recorded and fails closed
+     * the library side of a publish (M3): every live MapViewModel registers, the one that came
+     * to the front last records. nobody registered = a finished bake can't be recorded and
+     * fails closed
      */
-    @Volatile var recorder: PdfBakeRecorder? = null
+    internal val recorders = PdfBakeRecorders()
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -303,8 +304,9 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
             val bakeKey = PdfBakePlan.bakeKey(georefJson, src.tilePx)
             armBakeSlot(gen, token)
             src.session.claimBake(gen)
+            // who records it is looked up when it publishes, not now: the screen that started it can be gone by then
             PdfBaker.bake(
-                app, src, pdf, choice.option.maxZoom, bakeKey, recorder,
+                app, src, pdf, choice.option.maxZoom, bakeKey, recorders.atPublish,
                 onProgress = { done, total -> setStateIf(gen, State.Running(done, total, token)) },
                 // straight from inside the publish: it's attached, so the view model hears about
                 // it even if a cancel lands a moment later (F1)
@@ -368,5 +370,37 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
             PdfRenderFailure.CANNOT_OPEN, PdfRenderFailure.PASSWORD_PROTECTED,
             PdfRenderFailure.PAGE_MISSING, PdfRenderFailure.PAGE_GEOMETRY, PdfRenderFailure.BLANK,
         )
+    }
+}
+
+/**
+ * Who records a finished bake. Every live MapViewModel registers (again each time its screen
+ * comes back to the front) and the latest one still registered is [current]. A bake can
+ * outlive the view model that started it, so it never gets that one: it gets [atPublish],
+ * which looks [current] up at the attach. Closing a second screen just hands recording back
+ * to the one under it
+ */
+internal class PdfBakeRecorders {
+    private val live = ArrayList<PdfBakeRecorder>()
+
+    fun register(recorder: PdfBakeRecorder) {
+        synchronized(live) {
+            live.remove(recorder)
+            live.add(recorder)
+        }
+    }
+
+    fun unregister(recorder: PdfBakeRecorder) {
+        synchronized(live) { live.remove(recorder) }
+    }
+
+    val current: PdfBakeRecorder? get() = synchronized(live) { live.lastOrNull() }
+
+    /** what PdfBaker gets: whoever is [current] when the publish attaches or detaches */
+    val atPublish: PdfBakeRecorder = object : PdfBakeRecorder {
+        override fun attach(entryId: String?, contentKey: String?, renderGuardToken: String, bake: PersistedPdfBake): PdfBakeAttach =
+            current?.attach(entryId, contentKey, renderGuardToken, bake) ?: PdfBakeAttach.WriteFailed(null)
+
+        override fun detach(entryId: String?, bake: PersistedPdfBake): Boolean = current?.detach(entryId, bake) == true
     }
 }

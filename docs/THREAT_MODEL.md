@@ -579,7 +579,16 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
   migration (a quarantined legacy store included), the sweep is skipped. The same rule
   holds for the managed-file reconcile and the calibration-draft prune: none of them ever
-  runs from a library state the app made up to stand in for one it couldn't read. A bake record the app would not have written names nothing, and nothing
+  runs from a library state the app made up to stand in for one it couldn't read. Nor
+  from an older copy of the library a screen kept in memory: on Android the reconcile's
+  keep set, its list of files still being written, the bake sweep and the draft prune all
+  come from the sealed library read under the managed-files lock, and every library write
+  is checked under that lock against the sealed library's write counter. A second copy of
+  the map screen, or a bake that finishes after the screen that started it has closed,
+  therefore can't write back an older library or get another screen's imports,
+  calibrations or baked tiles deleted; it re-reads the library and applies its change on
+  top, or the change is refused. The Unit Sync notification brings the running app to the
+  front instead of opening a second copy of it. A bake record the app would not have written names nothing, and nothing
   treats a name outside the `tacmap-bake-<id>.mbtiles` form as a bake. It does not
   depend on the PDF being present, so plaintext tiles left by a failed delete don't
   outlive the next launch. Files from the pre-WP2 tiler (`tacmap-<uuid>.mbtiles`) and

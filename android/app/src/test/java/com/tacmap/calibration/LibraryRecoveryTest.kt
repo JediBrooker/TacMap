@@ -230,14 +230,14 @@ class LibraryRecoveryTest {
         assertTrue(drafts.save(CalibrationDraft("sha256:" + "9".repeat(64), 0, "gone-id")))
         assertTrue(store.write(rebuilt))
         val loaded = (store.load() as LibraryLoad.Loaded).state
-        assertTrue(LibraryMapFiles.reconcile(dir, loaded))
+        assertEquals(true, LibraryMapFiles.reconcile(dir) { loaded })
         assertNull(LibraryMapFiles.sweepBakes(dir) { loaded })
         assertFalse(LibraryRestoreRules.plan(LibraryLoad.Loaded(loaded), LegacyLibraryState.NONE).authoritative)
         if (loaded.permitsCleanup) drafts.prune(loaded.entries.mapNotNull { it.contentKey }.toSet())
         assertTrue(store.write(loaded.copy(active = ActiveRef.online("OSM_STANDARD"))))
         val relaunched = (ImportedMapLibraryStore(dir).load() as LibraryLoad.Loaded).state
         assertFalse(relaunched.permitsCleanup)
-        assertTrue(LibraryMapFiles.reconcile(dir, relaunched))
+        assertEquals(true, LibraryMapFiles.reconcile(dir) { relaunched })
         assertNull(LibraryMapFiles.sweepBakes(dir) { relaunched })
         for (f in listOf(geo, pack, broken, badPack, slow, busy)) assertTrue("${f.name} kept", f.isFile)
         assertTrue("recovery keeps orphan bakes", bake.isFile)
