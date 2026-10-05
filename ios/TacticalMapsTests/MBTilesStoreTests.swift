@@ -268,12 +268,18 @@ final class MBTilesStoreTests: XCTestCase {
     }
 
     func testSharedMetadataAdmissionCasesUseActualSQLiteReader() throws {
+        try runSharedMetadataAdmissionCases(variant: nil)
+    }
+
+    private func runSharedMetadataAdmissionCases(variant: [String: Any]?) throws {
         let fixture = try metadataAdmissionFixture()
         XCTAssertEqual(fixture["maxRows"] as? Int, 64)
         let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
         XCTAssertEqual(cases.count, 12)
+        let variantSQL = variant?["sql"] as? [String] ?? []
+        let suffix = (variant?["id"] as? String).map { "/" + $0 } ?? ""
         for vector in cases {
-            let id = try XCTUnwrap(vector["id"] as? String)
+            let id = try XCTUnwrap(vector["id"] as? String) + suffix
             let url = try makeSampleMBTiles(metadataValueType: "")
             defer { try? FileManager.default.removeItem(at: url) }
             try execute("DELETE FROM metadata", on: url)
@@ -297,6 +303,7 @@ final class MBTilesStoreTests: XCTestCase {
                 XCTAssertEqual(try sqliteScalarText("SELECT typeof(value) FROM metadata ORDER BY rowid DESC LIMIT 1", on: url),
                     row["integerValue"] == nil ? "text" : "integer", id)
             }
+            for statement in variantSQL { try execute(statement, on: url) }
             let store = MBTilesStore(url: url)
             XCTAssertEqual(store != nil, try XCTUnwrap(vector["accepted"] as? Bool), id)
             if let name = vector["name"] as? String { XCTAssertEqual(store?.metadata.name, name, id) }
@@ -305,13 +312,19 @@ final class MBTilesStoreTests: XCTestCase {
     }
 
     func testSharedTileZoomStorageClassesUseActualSQLiteAggregate() throws {
+        try runSharedTileZoomCases(variant: nil)
+    }
+
+    private func runSharedTileZoomCases(variant: [String: Any]?) throws {
         let fixture = try metadataAdmissionFixture()
         XCTAssertEqual(fixture["tileZoomMin"] as? Int, 0)
         XCTAssertEqual(fixture["tileZoomMax"] as? Int, MBTilesStore.maximumZoom)
         let cases = try XCTUnwrap(fixture["tileZoomCases"] as? [[String: Any]])
         XCTAssertEqual(cases.count, 7)
+        let variantSQL = variant?["sql"] as? [String] ?? []
+        let suffix = (variant?["id"] as? String).map { "/" + $0 } ?? ""
         for vector in cases {
-            let id = try XCTUnwrap(vector["id"] as? String)
+            let id = try XCTUnwrap(vector["id"] as? String) + suffix
             let url = try makeSampleMBTiles(tileZoomType: "")
             defer { try? FileManager.default.removeItem(at: url) }
             let type = try XCTUnwrap(vector["storageType"] as? String)
@@ -324,6 +337,7 @@ final class MBTilesStoreTests: XCTestCase {
             } else { expression = sqlText(Data(try XCTUnwrap(vector["value"] as? String).utf8)) }
             try execute("DELETE FROM metadata; UPDATE tiles SET zoom_level=\(expression),tile_column=0,tile_row=0", on: url)
             XCTAssertEqual(try sqliteScalarText("SELECT typeof(zoom_level) FROM tiles LIMIT 1", on: url), type, id)
+            for statement in variantSQL { try execute(statement, on: url) }
             let store = MBTilesStore(url: url)
             let accepted = try XCTUnwrap(vector["accepted"] as? Bool)
             XCTAssertEqual(store != nil, accepted, id)
@@ -354,11 +368,17 @@ final class MBTilesStoreTests: XCTestCase {
     }
 
     func testSharedConsumedExtensionCasesUseActualLazyReader() throws {
+        try runSharedConsumedExtensionCases(variant: nil)
+    }
+
+    private func runSharedConsumedExtensionCases(variant: [String: Any]?) throws {
         let fixture = try metadataAdmissionFixture()
         let cases = try XCTUnwrap(fixture["extensionCases"] as? [[String: Any]])
         XCTAssertEqual(cases.count, 9)
+        let variantSQL = variant?["sql"] as? [String] ?? []
+        let suffix = (variant?["id"] as? String).map { "/" + $0 } ?? ""
         for vector in cases {
-            let id = try XCTUnwrap(vector["id"] as? String)
+            let id = try XCTUnwrap(vector["id"] as? String) + suffix
             let url = try makeSampleMBTiles(metadataValueType: "")
             defer { try? FileManager.default.removeItem(at: url) }
             try execute("DELETE FROM metadata", on: url)
@@ -375,11 +395,165 @@ final class MBTilesStoreTests: XCTestCase {
                 XCTAssertEqual(try sqliteScalarText("SELECT typeof(value) FROM metadata ORDER BY rowid DESC LIMIT 1", on: url),
                     row["integerValue"] == nil ? "text" : "integer", id)
             }
+            for statement in variantSQL { try execute(statement, on: url) }
             let store = MBTilesStore(url: url)
             XCTAssertEqual(store != nil, try XCTUnwrap(vector["mapAccepted"] as? Bool), id)
             XCTAssertEqual(store?.extensionMetadata(try XCTUnwrap(vector["requestedKey"] as? String)),
                 vector["expected"] as? String, id)
         }
+    }
+
+    // A4 (3.0.1): tiles and metadata can be views. These used to be refused
+    // outright by the old table-only check.
+
+    private func relationVariant(_ id: String) throws -> [String: Any] {
+        let variants = try XCTUnwrap(try metadataAdmissionFixture()["relationVariants"] as? [[String: Any]])
+        return try XCTUnwrap(variants.first { $0["id"] as? String == id }, id)
+    }
+
+    func testSharedRelationVariantsGiveTheTableVerdicts() throws {
+        let fixture = try metadataAdmissionFixture()
+        let ids = try XCTUnwrap(fixture["relationVariants"] as? [[String: Any]]).compactMap { $0["id"] as? String }
+        XCTAssertEqual(ids, ["metadataView", "tilesView", "bothViews"])
+        for id in ["metadataView", "bothViews"] {
+            try runSharedMetadataAdmissionCases(variant: try relationVariant(id))
+            try runSharedConsumedExtensionCases(variant: try relationVariant(id))
+        }
+        for id in ["tilesView", "bothViews"] {
+            try runSharedTileZoomCases(variant: try relationVariant(id))
+        }
+    }
+
+    private func makePack(_ statements: [String]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("relation-\(UUID().uuidString).mbtiles")
+        for statement in statements { try execute(statement, on: url) }
+        return url
+    }
+
+    private func hex(_ data: Data?) -> String? {
+        data.map { $0.map { String(format: "%02x", $0) }.joined() }
+    }
+
+    func testSharedRelationCasesUseActualSQLiteReader() throws {
+        let fixture = try metadataAdmissionFixture()
+        XCTAssertEqual(fixture["relationTypes"] as? [String], ["table", "view"])
+        XCTAssertEqual(fixture["admissionBudgetMs"] as? Int, MBTilesStore.admissionBudgetMs)
+        XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
+        let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 14)
+        var seen: Set<String> = []
+        for vector in cases {
+            let id = try XCTUnwrap(vector["id"] as? String)
+            seen.insert(id)
+            let url = try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+            defer { try? FileManager.default.removeItem(at: url) }
+            let expect = try XCTUnwrap(vector["expect"] as? [String: Any], id)
+            let budget = vector["testBudgetMs"] as? Int ?? MBTilesStore.admissionBudgetMs
+
+            let started = Date()
+            let store = MBTilesStore(url: url, admissionBudgetMs: budget)
+            if vector["testBudgetMs"] != nil {
+                XCTAssertLessThan(Date().timeIntervalSince(started), 10, "\(id): the budget has to stop the aggregate")
+            }
+            let accepted = try XCTUnwrap(expect["accepted"] as? Bool, id)
+            XCTAssertEqual(store != nil, accepted, id)
+            guard accepted, let store else { continue }
+
+            XCTAssertEqual(store.metadata.minZoom, expect["minZoom"] as? Int, id)
+            XCTAssertEqual(store.metadata.maxZoom, expect["maxZoom"] as? Int, id)
+            XCTAssertEqual(store.metadata.name, expect["name"] as? String, id)
+            XCTAssertEqual(store.metadata.format, expect["format"] as? String, id)
+            // the prevalidated reader opens lazily and has to learn the
+            // relation types itself, so probe both
+            let lazy = MBTilesStore(prevalidatedURL: url, metadata: store.metadata)
+            for probe in expect["tiles"] as? [[String: Any]] ?? [] {
+                let z = try XCTUnwrap(probe["z"] as? Int), x = try XCTUnwrap(probe["x"] as? Int)
+                let y = try XCTUnwrap(probe["y"] as? Int)
+                let want = probe["hex"] as? String
+                XCTAssertEqual(hex(store.tileData(z: z, x: x, y: y)), want, "\(id) \(z)/\(x)/\(y)")
+                XCTAssertEqual(hex(lazy.tileData(z: z, x: x, y: y)), want, "\(id) lazy \(z)/\(x)/\(y)")
+            }
+            for (key, value) in expect["extensions"] as? [String: Any] ?? [:] {
+                XCTAssertEqual(store.extensionMetadata(key), value as? String, "\(id) \(key)")
+                XCTAssertEqual(lazy.extensionMetadata(key), value as? String, "\(id) lazy \(key)")
+            }
+            store.closeForDeletion()
+            lazy.closeForDeletion()
+        }
+        XCTAssertTrue(seen.isSuperset(of: ["nodeMbtilesDedup", "bothViews", "tilesViewEndless", "tilesIsAnIndex"]))
+    }
+
+    func testDeduplicatedViewPackPassesImportAdmissionAndDrawsTiles() async throws {
+        let fixture = try metadataAdmissionFixture()
+        let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
+        let dedup = try XCTUnwrap(cases.first { $0["id"] as? String == "nodeMbtilesDedup" })
+        let source = try makePack(try XCTUnwrap(dedup["sql"] as? [String]))
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let original = ImportedMapStorage.applicationSupportProvider
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mbtiles-view-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        ImportedMapStorage.applicationSupportProvider = { root }
+        defer {
+            ImportedMapStorage.applicationSupportProvider = original
+            try? FileManager.default.removeItem(at: root)
+        }
+        let payload = try await MapImportPipeline.prepareMBTiles(url: source, entryCount: 0, libraryLoaded: true,
+                                                                 isCancelled: { false }, progress: { _ in })
+        XCTAssertEqual(payload.metadata.name, "Sample")
+        XCTAssertEqual(payload.metadata.minZoom, 0)
+        XCTAssertEqual(payload.metadata.maxZoom, 1)
+        XCTAssertEqual(payload.entry()?.kind, .mbtiles)
+
+        let sourceMap = OfflineTileMapSource(prevalidatedURL: payload.copy.url, metadata: payload.metadata)
+        XCTAssertEqual(sourceMap.store.tileData(z: 0, x: 0, y: 0), Data([0x01]))
+        XCTAssertEqual(sourceMap.store.tileData(z: 1, x: 0, y: 0), Data([0x02, 0x03]))
+        XCTAssertNil(sourceMap.store.tileData(z: 1, x: 1, y: 1))
+    }
+
+    func testViewReadsAfterAdmissionAreBudgetedPerStatement() throws {
+        // The prevalidated path skips admission, so an endless view that was
+        // swapped in later must still come back as a missing tile/extension
+        // instead of wedging the renderer under the store lock.
+        let url = try makePack([
+            "CREATE VIEW metadata AS WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) " +
+                "SELECT 'extension_' || i AS name, 'v' AS value FROM n",
+            // i * 0 so the planner can't fold zoom_level=1 to false up front
+            "CREATE VIEW tiles AS WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) " +
+                "SELECT i * 0 AS zoom_level, i * 0 AS tile_column, i * 0 AS tile_row, X'01' AS tile_data FROM n"
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
+            name: "Endless", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+
+        // lower bound proves the scan really ran until the budget cut it
+        let budget = Double(MBTilesStore.viewQueryBudgetMs) / 1000
+        var started = Date()
+        XCTAssertNil(store.tileData(z: 1, x: 0, y: 0))
+        var elapsed = Date().timeIntervalSince(started)
+        XCTAssertGreaterThanOrEqual(elapsed, budget * 0.9)
+        XCTAssertLessThan(elapsed, 10)
+        started = Date()
+        XCTAssertNil(store.extensionMetadata("tacmap_bake_key"))
+        elapsed = Date().timeIntervalSince(started)
+        XCTAssertGreaterThanOrEqual(elapsed, budget * 0.9)
+        XCTAssertLessThan(elapsed, 10)
+        // the matching row comes first so this one still answers
+        XCTAssertEqual(store.tileData(z: 0, x: 0, y: 0), Data([0x01]))
+        XCTAssertNil(MBTilesStore(url: url, admissionBudgetMs: 250))
+    }
+
+    func testAdmissionConstantsMatchTheSharedFixture() throws {
+        // test-integrity-4: these used to be inline literals nobody checked
+        let fixture = try metadataAdmissionFixture()
+        XCTAssertEqual(fixture["maxRows"] as? Int, MBTilesStore.maximumMetadataRows)
+        XCTAssertEqual(fixture["maxKeyCharacters"] as? Int, MBTilesStore.maximumKeyCharacters)
+        XCTAssertEqual(fixture["utf8PrefixBytesPerCharacter"] as? Int, MBTilesStore.utf8PrefixBytesPerCharacter)
+        XCTAssertEqual(fixture["knownValueMaxCharacters"] as? [String: Int], MBTilesStore.knownValueMaximumCharacters)
+        XCTAssertEqual(fixture["consumedBakeExtensionMaxCharacters"] as? Int,
+                       MBTilesStore.consumedBakeExtensionMaximumCharacters)
+        XCTAssertEqual(fixture["tileZoomMax"] as? Int, MBTilesStore.maximumZoom)
     }
 
     func testAbsentZoomMetadataUsesValidatedTileRange() throws {
