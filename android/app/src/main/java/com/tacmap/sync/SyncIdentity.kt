@@ -34,6 +34,7 @@ object SyncIdentity {
     internal enum class LocalStoreDomain(val value: String) {
         CHAT("tacmap-chat"),
         REPLAY("sync-replay"),
+        LEGACY_V2_IDS("sync-v2-ids"),
     }
 
     /**

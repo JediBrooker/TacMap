@@ -49,6 +49,8 @@ internal object OutboundSizeCheck {
  * v2 legacy ids (plans/04 section 16, S3-01 / S3-14). Accept either case on
  * the way in, verify with the raw id, then key everything by lowercase. Ties
  * on `v` go to the larger `by` compared as ASCII bytes, same as the relay.
+ * Outbound reuses the casing a 2.x iOS sender used for the object (3.0.1
+ * amendment), since 2.x iOS echo-deletes an edit that comes back lowercase.
  */
 internal object LegacyV2Ids {
     private val PATTERN = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -59,7 +61,20 @@ internal object LegacyV2Ids {
         return runCatching { UUID.fromString(lower).toString() }.getOrNull()?.takeIf { it == lower }
     }
 
-    fun outboundId(localId: String): String = localId.lowercase()
+    /** Frame id for a v2 put or del. The remembered raw id only counts when it folds to the same object. */
+    fun outboundId(localId: String, remembered: String?): String =
+        remembered?.takeIf { stateKey(it) != null && stateKey(it) == stateKey(localId) } ?: localId
+
+    /**
+     * What's remembered after an accepted inbound record carrying [raw]. The
+     * first raw id with an uppercase letter sticks, lowercase never replaces it.
+     */
+    fun remember(current: String?, raw: String): String? = when {
+        current != null -> current
+        stateKey(raw) == null -> null
+        raw.any { it in 'A'..'F' } -> raw
+        else -> null
+    }
 
     fun embeddedMatches(recordId: String, embeddedId: String): Boolean =
         stateKey(recordId) != null && stateKey(embeddedId) == stateKey(recordId)

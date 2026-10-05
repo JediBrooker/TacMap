@@ -315,6 +315,8 @@ class SyncManager internal constructor(
     private val suppressedUntilLocalEdit = HashMap<String, Long>() // localId -> journal generation
     private var mutationsPaused = false
     private val lastByV2 = HashMap<String, String>()
+    // v2 casing a 2.x iOS sender used per object, sticky and sealed per room (plans/04 section 16)
+    private var legacyV2Ids: LegacyV2IdStore? = null
     private var observeJob: Job? = null
     private var revisionJob: Job? = null
     private val modelRevisionJournal = LocalModelRevisionJournal(appFilesDir)
@@ -734,6 +736,7 @@ class SyncManager internal constructor(
         get() = surfacedIssueKeys.mapTo(HashSet()) { it.substringBefore('|') }
     internal fun skippedCategoryForTests(wireId: String): SnapshotRecordCategory? = skippedWireIds[wireId]
     internal val lastSnapshotVerifiedCleanForTests: Boolean get() = pendingVerifiedClean
+    internal fun rememberedV2IdForTests(stateKey: String): String? = legacyV2Ids?.remembered(stateKey)
     internal val mutationsPausedForTests: Boolean get() = mutationsPaused
 
     /** The dialog's Retry after a stop. Clears every failure counter and connects. */
@@ -1421,7 +1424,15 @@ class SyncManager internal constructor(
                 )
                 return
             }
+            // learned 2.x iOS casing goes in before the first diff can send anything
+            val v2Ids = LegacyV2IdStore(File(appFilesDir, LegacyV2IdStore.DIRECTORY_NAME), keys.roomId)
+            withContext(env.persistenceDispatcher) { v2Ids.load() }
+            if (lifecycleGate.isDisposed || token != joinToken) {
+                wipeDerived(keys)
+                return
+            }
             protocolVersion = 2
+            legacyV2Ids = v2Ids
             chatHistoryStore.close()
             clearChatTransport(markPendingFailed = true)
             roomKey = keys.roomKey
@@ -1481,6 +1492,7 @@ class SyncManager internal constructor(
         versions.clear(); lastContent.clear(); kindById.clear(); exportCache.clear()
         forcedLocalDiff.clear(); resolvingPendingModel = false
         forcedLegacyDeletes.clear()
+        legacyV2Ids = null
         clearOutboundDeliveries(markForReconciliation = false)
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
@@ -1650,6 +1662,7 @@ class SyncManager internal constructor(
         versions.clear(); lastContent.clear(); kindById.clear(); exportCache.clear()
         forcedLocalDiff.clear(); resolvingPendingModel = false
         forcedLegacyDeletes.clear()
+        legacyV2Ids = null
         clearOutboundDeliveries(markForReconciliation = false)
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
@@ -1941,6 +1954,18 @@ class SyncManager internal constructor(
             }
         }
         flushLiveBatch()
+        persistLegacyV2Ids()
+    }
+
+    /** At most one sealed write per inbound batch (a v2 snapshot lands in one), and only if something new was learned. */
+    private suspend fun persistLegacyV2Ids() {
+        val store = legacyV2Ids ?: return
+        // nothing durable behind the key lock, it stays dirty for the next batch after unlock
+        if (lifecycleGate.isDisposed || backgroundPresenceOnly || awaitingForegroundStores) return
+        val text = store.takePendingWrite() ?: return
+        withContext(kotlinx.coroutines.NonCancellable) {
+            withContext(env.persistenceDispatcher) { store.write(text) }
+        }
     }
 
     private fun onSocketOpened(webSocket: SyncWebSocket, connectionGeneration: Long) {
@@ -2724,40 +2749,51 @@ class SyncManager internal constructor(
         }
     }
 
+    /**
+     * v2 frame id for a local object. An object that reached us under a 2.x
+     * iOS uppercase id goes back out under that exact id, AAD and signature
+     * included, or 2.x iOS echoes a put plus a del of our casing and the
+     * object is gone room wide (gap-v2-room-2x-interop-2).
+     */
+    private fun legacyV2WireId(localId: String): String =
+        LegacyV2Ids.outboundId(localId, LegacyV2Ids.stateKey(localId)?.let { legacyV2Ids?.remembered(it) })
+
     private fun sendPut(id: String, v: Long, kind: String, content: String) {
         val key = roomKey ?: return
+        val wireId = legacyV2WireId(id)
         // Sign the write, then seal {content, pub, sig} together. The signature
         // rides INSIDE the sealed blob so the relay stays E2E-blind to device
         // identity; a receiver proves room-key possession by opening it and
         // device authorship by verifying the sig against the pinned key.
-        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, kind, clientId, content))
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(wireId, v, kind, clientId, content))
         val inner = JSONObject().apply { put("c", content); put("pub", myPublicKey); put("sig", sig) }
-        val aad = SyncCrypto.aad(id, v, kind)
+        val aad = SyncCrypto.aad(wireId, v, kind)
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
         val rid = newDeliveryRequestId()
         val frame = JSONObject().apply {
-            put("t", "put"); put("id", id); put("v", v); put("by", clientId); put("kind", kind); put("ct", ct)
+            put("t", "put"); put("id", wireId); put("v", v); put("by", clientId); put("kind", kind); put("ct", ct)
             put("rid", rid)
         }.toString()
         queueDelivery(PendingOutboundDelivery(
-            id, rid, activeConnectionGeneration, clientId, null, id, v.toString(), kind,
+            id, rid, activeConnectionGeneration, clientId, null, wireId, v.toString(), kind,
             ciphertextHash(ct), contentHash(content), content, frame,
         ))
     }
 
     private fun sendDel(id: String, v: Long) {
         val key = roomKey ?: return
-        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, "del", clientId, ""))
+        val wireId = legacyV2WireId(id)
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(wireId, v, "del", clientId, ""))
         val inner = JSONObject().apply { put("pub", myPublicKey); put("sig", sig) }
-        val aad = SyncCrypto.aad(id, v, "del")
+        val aad = SyncCrypto.aad(wireId, v, "del")
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
         val rid = newDeliveryRequestId()
         val frame = JSONObject().apply {
-            put("t", "del"); put("id", id); put("v", v); put("by", clientId); put("ct", ct)
+            put("t", "del"); put("id", wireId); put("v", v); put("by", clientId); put("ct", ct)
             put("rid", rid)
         }.toString()
         queueDelivery(PendingOutboundDelivery(
-            id, rid, activeConnectionGeneration, clientId, null, id, v.toString(), "del",
+            id, rid, activeConnectionGeneration, clientId, null, wireId, v.toString(), "del",
             ciphertextHash(ct), null, null, frame,
         ))
     }
@@ -3945,6 +3981,8 @@ class SyncManager internal constructor(
             )
         }.getOrNull() ?: return
         if (!isValidLegacySyncPut(rawId, kind, imported)) return
+        // accepted, applied or not, so learn the casing a 2.x iOS sender used
+        legacyV2Ids?.learn(rawId)
         // the local object lives under the lowercase key too, otherwise the next
         // diff would see two ids and echo a delete back (S3-01 in reverse)
         val parsed = imported.copy(
@@ -4017,6 +4055,8 @@ class SyncManager internal constructor(
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(rawId, v, "del", by, ""))) return
+        // same as a put: accepted is enough, the entry outlives the delete so an undo keeps the casing
+        legacyV2Ids?.learn(rawId)
         val recovery = forcedLegacyDeletes[id]
         if (recovery != null) {
             val exactSnapshotConfirmation = snapshotGeneration != null &&

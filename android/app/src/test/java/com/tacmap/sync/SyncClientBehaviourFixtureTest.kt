@@ -920,6 +920,43 @@ class SyncClientBehaviourFixtureTest {
                 incoming.long("v"), incoming.str("by"), last.long("v"), last.str("by"),
             ))
         }
+
+        // 3.0.1: android sends the remembered 2.x iOS casing, else its own lowercase id
+        val outbound = vectors.arr("outbound").map { it.jsonObject }.filter { it.str("platform") == "android" }
+        assertEquals(3, outbound.size)
+        for (case in outbound) {
+            val frameId = LegacyV2Ids.outboundId(case.str("localId"), case.strOrNull("rememberedRawId"))
+            assertEquals(case.str("id"), case.str("expectFrameId"), frameId)
+            assertEquals(case.str("id"), case.str("expectStateKey"), LegacyV2Ids.stateKey(frameId))
+            // the local object never changes id, only the wire does
+            assertEquals(case.str("id"), case.str("expectStateKey"), case.str("localId"))
+            case.strOrNull("expectEmbeddedId")?.let { embedded ->
+                val wp = com.tacmap.waypoints.Waypoint(id = case.str("localId"), name = "W", latitude = 1.0, longitude = 2.0)
+                val doc = Json.parseToJsonElement(
+                    com.tacmap.export.GeoJsonExporter.export(listOf(wp), emptyList(), emptyList(), density = 1f)
+                ).jsonObject
+                assertEquals(case.str("id"), embedded, doc.arr("features").single().jsonObject.str("id"))
+            }
+        }
+        // a remembered id for some other object never leaks onto this one
+        assertEquals(
+            "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+            LegacyV2Ids.outboundId("3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b", "A1B2C3D4-0000-4000-8000-000000000001"),
+        )
+
+        val remember = vectors.arr("remember").map { it.jsonObject }
+        assertEquals(7, remember.size)
+        for (case in remember) {
+            var remembered: String? = null
+            for (event in case.arr("events").map { it.jsonObject }) {
+                val raw = event.str("raw")
+                // the rule itself refuses anything that isnt a canonical id
+                if (LegacyV2Ids.stateKey(raw) == null) assertNull(LegacyV2Ids.remember(null, raw))
+                if (!event.getValue("accepted").jsonPrimitive.boolean) continue
+                remembered = LegacyV2Ids.remember(remembered, raw)
+            }
+            assertEquals(case.str("id"), case.strOrNull("expectRemembered"), remembered)
+        }
     }
 
     // ---- SP3 (plans/04 sections 17-21) ---------------------------------------

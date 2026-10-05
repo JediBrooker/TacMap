@@ -1759,6 +1759,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/sync/LegacyV2IdStore.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/sync/SnapshotValidator.kt",
     "platform": "android",
     "area": "sync-chat",

@@ -247,6 +247,11 @@ class SyncClientScenarioFixtureTest {
             "SyncClientBehaviourFixtureTest#v2CasingAndTie",
             "SyncManagerScenarioTest#v2AcceptsAnIosUppercaseRecordId",
             "SyncManagerScenarioTest#v2EqualVersionGoesToTheLargerBy",
+            "SyncManagerScenarioTest#v2EditAndMoveOfA2xIosObjectGoOutUnderItsUppercaseIdWithNoEcho",
+            "SyncManagerScenarioTest#v2DeleteAndUndoOfA2xIosObjectKeepItsUppercaseId",
+            "SyncManagerScenarioTest#v2RememberedUppercaseIdSurvivesARestart",
+            "SyncManagerScenarioTest#v2RememberVectorsLearnThroughTheRealManager",
+            "LegacyV2IdStoreTest#learningStopsAtTenThousandEntries",
         ),
     )
 
