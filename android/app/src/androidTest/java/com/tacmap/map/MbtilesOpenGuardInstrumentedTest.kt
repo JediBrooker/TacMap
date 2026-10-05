@@ -9,7 +9,15 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tacmap.app.TacticalApp
+import android.os.Looper
 import com.tacmap.calibration.ActiveRef
+import com.tacmap.calibration.AdmittedMbtiles
+import com.tacmap.calibration.MBTilesStore
+import com.tacmap.calibration.MbtilesPlaceholderSource
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import org.junit.Assert.assertFalse
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.CalibrationDraftStore
 import com.tacmap.calibration.ImportedMapEntry
@@ -58,10 +66,29 @@ class MbtilesOpenGuardInstrumentedTest {
     private val guardFile = File(context.cacheDir, "mbtiles-guard-${System.nanoTime()}.json")
     private lateinit var appGuard: MbtilesOpenGuard
     private var wasForeground = true
+    private val defaultAdmission = admitMbtilesPack
+    private val gates = mutableListOf<CountDownLatch>()
+
+    /** what the off main admission saw: was it on main, what was armed then, what it opened */
+    private class Admission(val path: String, val onMain: Boolean, val armedAtOpen: List<String>, val source: OfflineTileMapSourceAndroid?)
+
+    /** records every admission, the ones [hold] names wait on their gate first */
+    private fun recordAdmissions(guard: () -> MbtilesOpenGuard, hold: Map<String, CountDownLatch> = emptyMap()): MutableList<Admission> {
+        gates += hold.values
+        val seen = Collections.synchronizedList(mutableListOf<Admission>())
+        admitMbtilesPack = { path, name ->
+            val onMain = Looper.myLooper() == Looper.getMainLooper()
+            val armedNow = armed(guard())
+            hold.entries.firstOrNull { path.endsWith(it.key) }?.value?.await(5, TimeUnit.SECONDS)
+            OfflineTileMapSourceAndroid.open(path, name).also { seen += Admission(path, onMain, armedNow, it) }
+        }
+        return seen
+    }
 
     @Before
     fun setUp() {
         appGuard = app.mbtilesOpenGuard
+        AdmittedMbtiles.clearForTesting()
         wasForeground = PdfRenderExecutor.foreground
         PdfRenderExecutor.foreground = true
         backup.mkdirs()
@@ -75,7 +102,9 @@ class MbtilesOpenGuardInstrumentedTest {
 
     @After
     fun tearDown() {
+        gates.forEach { it.countDown() }
         instrumentation.runOnMainSync { stores.forEach { it.clear() } }
+        admitMbtilesPack = defaultAdmission
         app.mbtilesOpenGuard = appGuard
         PdfRenderExecutor.foreground = wasForeground
         guardFile.delete()
@@ -178,10 +207,11 @@ class MbtilesOpenGuardInstrumentedTest {
 
         // Open Anyway: resolved, then the normal guarded open, armed until its first draw settles
         onMain { vm.openSuspectPdfAnyway() }
-        val shown = vm.mapSource.value as OfflineTileMapSourceAndroid
         assertNull(vm.pdfRecovery.value)
         assertNull(suspect(guard))
         assertEquals(listOf(pack.id), armed(guard))
+        waitUntil(what = "opened anyway") { vm.mapSource.value is OfflineTileMapSourceAndroid }
+        val shown = vm.mapSource.value as OfflineTileMapSourceAndroid
         // the map view's first read comes back, then it's quiet
         runBlocking { shown.renderTileSource().loadTile(TileIndex(8, 234, 103)) }
         waitUntil(what = "first draw settled") { armed(guard).isEmpty() }
@@ -189,11 +219,12 @@ class MbtilesOpenGuardInstrumentedTest {
         // next launch restores it like any other map
         val third = relaunch()
         assertEquals(MbtilesLaunchDecision.NONE, MbtilesOpenGuard(guardFile).launchDecision(pack.id))
+        AdmittedMbtiles.clearForTesting()
         val vm3 = viewModel()
-        assertTrue(vm3.mapSource.value is OfflineTileMapSourceAndroid)
         assertNull(vm3.pdfRecovery.value)
         // armed for this restore too, every time, and done once nothing's asked for
         assertEquals(listOf(pack.id), armed(third))
+        waitUntil(what = "restored") { vm3.mapSource.value is OfflineTileMapSourceAndroid }
         waitUntil(what = "no read settle") { armed(third).isEmpty() }
     }
 
@@ -219,11 +250,12 @@ class MbtilesOpenGuardInstrumentedTest {
         assertTrue(ok)
         assertNull(suspect(guard))
         assertNull(vm.pdfRecovery.value)
+        waitUntil(what = "picked pack up") { vm.shownEntryId() == pack.id && activeId() == pack.id }
         assertTrue(vm.mapSource.value is OfflineTileMapSourceAndroid)
         // that screen goes (its source with it, which is the end of the window too)
         onMain { stores.forEach { it.clear() } }
         stores.clear()
-        assertEquals(emptyList<String>(), armed(guard))
+        waitUntil(what = "markers gone") { armed(guard).isEmpty() }
 
         // and Delete Map on a held back one resolves it deleted
         MbtilesOpenGuard(guardFile).arm(pack.id, foreground = true)
@@ -238,13 +270,108 @@ class MbtilesOpenGuardInstrumentedTest {
     }
 
     @Test
+    fun theSavedPackIsAdmittedOffMainBehindABlankThatAsksForNothing() {
+        // s14.2 (F3): the restore used to open + aggregate the whole pack on main at launch
+        val pack = packEntry()
+        seed(pack)
+        val guard = relaunch()
+        val gate = CountDownLatch(1)
+        val seen = recordAdmissions({ guard }, mapOf(pack.fileName to gate))
+        val vm = viewModel()
+        // still being checked: blank, no tiles and no online provider, nothing written
+        val blank = vm.mapSource.value
+        assertTrue("not a blank while it's checked: $blank", blank is MbtilesPlaceholderSource)
+        assertNull(blank.coverage)
+        assertEquals(pack.id, activeId())
+        gate.countDown()
+        waitUntil(what = "pack up") { vm.mapSource.value is OfflineTileMapSourceAndroid }
+        assertEquals(pack.id, vm.shownEntryId())
+        assertEquals(1, seen.size)
+        assertFalse("admitted on main", seen.single().onMain)
+        assertEquals("guard armed on disk before the open", listOf(pack.id), seen.single().armedAtOpen)
+
+        // the same bytes on another screen this process go up straight away, no second admission
+        val second = viewModel()
+        assertTrue(second.mapSource.value is OfflineTileMapSourceAndroid)
+        assertEquals(1, seen.size)
+    }
+
+    @Test
+    fun aQuickSecondPickWinsAndTheFirstPackIsClosedUnwritten() {
+        val a = packEntry()
+        val b = packEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.online(BasemapStyle.OSM_TOPO.name), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(a, b),
+        )))
+        val guard = relaunch()
+        val gateA = CountDownLatch(1)
+        val seen = recordAdmissions({ guard }, mapOf(a.fileName to gateA))
+        val vm = viewModel()
+        var ok = false
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        // A's being checked: the map that was up stays and nothing's written yet
+        assertTrue(vm.mapSource.value is OnlineRasterMapSourceAndroid)
+        assertEquals(null, activeId())
+        onMain { ok = vm.activateImportedMap(b.id) }
+        assertTrue(ok)
+        waitUntil(what = "B up") { vm.shownEntryId() == b.id }
+        assertEquals(b.id, activeId())
+
+        // A comes back late: closed, never written or shown, its marker gone
+        gateA.countDown()
+        waitUntil(what = "A closed") { seen.firstOrNull { it.path.endsWith(a.fileName) }?.source?.isClosedForTesting() == true }
+        onMain { }
+        assertEquals(b.id, vm.shownEntryId())
+        assertEquals(b.id, activeId())
+        assertFalse("A still armed", a.id in armed(guard))
+        assertTrue("admitted on main", seen.none { it.onMain })
+    }
+
+    @Test
+    fun aScreenThatGoesMidCheckClosesThePackAndDropsItsMarker() {
+        val pack = packEntry()
+        seed(pack)
+        val guard = relaunch()
+        val gate = CountDownLatch(1)
+        val seen = recordAdmissions({ guard }, mapOf(pack.fileName to gate))
+        viewModel()
+        assertEquals(listOf(pack.id), armed(guard))
+        onMain { stores.forEach { it.clear() } }
+        stores.clear()
+        gate.countDown()
+        waitUntil(what = "closed") { seen.singleOrNull()?.source?.isClosedForTesting() == true }
+        waitUntil(what = "marker gone") { armed(guard).isEmpty() }
+    }
+
+    @Test
+    fun anImportedPackGoesUpOnTheWorkersAdmissionWithoutAnother() {
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.online(BasemapStyle.OSM_TOPO.name), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name,
+        )))
+        val guard = relaunch()
+        val seen = recordAdmissions({ guard })
+        val vm = viewModel()
+        // made once the screen's up, like an import's copy (its launch reconcile would take an orphan)
+        val pack = packEntry()
+        val admitted = requireNotNull(MBTilesStore.open(File(files, pack.fileName).path)).use { it.metadata }
+        var ok = false
+        onMain { ok = vm.addImportedEntry(pack, activate = true, admitted = admitted) }
+        assertTrue(ok)
+        val shown = vm.mapSource.value as OfflineTileMapSourceAndroid
+        assertEquals(pack.id, activeId())
+        assertEquals("admitted again", 0, seen.size)
+        assertEquals("010203", shown.tileData(8, 234, 103)?.joinToString("") { "%02x".format(it) })
+    }
+
+    @Test
     fun aRestoreInTheBackgroundNeverArms() {
         val pack = packEntry()
         seed(pack)
         val guard = relaunch()
         PdfRenderExecutor.foreground = false
         val vm = viewModel()
-        assertTrue(vm.mapSource.value is OfflineTileMapSourceAndroid)
+        waitUntil(what = "restored") { vm.mapSource.value is OfflineTileMapSourceAndroid }
         assertEquals(emptyList<String>(), armed(guard))
         assertEquals(MbtilesLaunchDecision.NONE, MbtilesOpenGuard(guardFile).launchDecision(pack.id))
     }

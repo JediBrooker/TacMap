@@ -941,7 +941,7 @@ internal fun MapScreen(
                         }
                     } else {
                         MapImportPipeline.mbtilesEntry(prepared, context.filesDir, System.currentTimeMillis())
-                            ?.let { vm.addImportedEntry(it, activate = true) }
+                            ?.let { vm.addImportedEntry(it, activate = true, admitted = prepared.metadata) }
                     }
                     InFlightImportFiles.release(prepared.file)
                 }

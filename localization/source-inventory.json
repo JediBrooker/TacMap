@@ -1348,6 +1348,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/map/MbtilesOpenRequests.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/map/MeasureSession.kt",
     "platform": "android",
     "area": "map-navigation",

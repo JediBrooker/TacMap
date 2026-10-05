@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import com.tacmap.BuildConfig
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.EsriKey
-import com.tacmap.calibration.MBTilesStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -252,7 +251,7 @@ class OnlineRasterTileSource(private val style: BasemapStyle) : TileSource {
 
 /** Offline MBTiles raster pyramid, read locally with zero network. */
 class OfflineRasterTileSource(
-    private val store: MBTilesStore,
+    private val pack: com.tacmap.calibration.OfflineTileMapSourceAndroid,
     override val minZoom: Int,
     override val maxZoom: Int,
     key: String = "",
@@ -260,7 +259,7 @@ class OfflineRasterTileSource(
     private val reads: () -> TileReadWatch? = { null },
 ) : TileSource {
     override val tileSizePx = 256
-    override val cacheKey: String = "offline:$key:${System.identityHashCode(store)}"
+    override val cacheKey: String = "offline:$key:${System.identityHashCode(pack)}"
 
     override suspend fun loadTile(tile: TileIndex): Bitmap? {
         val watch = reads()
@@ -272,7 +271,8 @@ class OfflineRasterTileSource(
         var decoded: Bitmap? = null
         return try {
             val delivered = withContext(Dispatchers.IO) {
-                val data = store.tileData(tile.z, tile.x, tile.y) ?: return@withContext null
+                // a prevalidated pack opens in here on its first read, never on main (s14.2)
+                val data = pack.tileData(tile.z, tile.x, tile.y) ?: return@withContext null
                 decodeBoundedTile(data).also { decoded = it }
             }
             decoded = null

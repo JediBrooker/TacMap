@@ -107,6 +107,25 @@ internal fun closeSupersededOfflineSources(
 /** how often the open guard looks at a pack's first draw window, well under firstDrawQuietMs */
 private const val FIRST_DRAW_POLL_MS = 100L
 
+/**
+ * the MBTiles admission a restore or activation runs on IO (s14.2). a seam so a test can see
+ * which thread runs it and hold it up
+ */
+@androidx.annotation.VisibleForTesting
+@Volatile
+internal var admitMbtilesPack: (path: String, displayName: String) -> OfflineTileMapSourceAndroid? =
+    { path, name -> OfflineTileMapSourceAndroid.open(path, name) }
+
+/** how an MBTiles open ends up on screen (s14.2) */
+private sealed interface PackOpen {
+    /** launch, unlock, Retry, an import, another screen's write: blank till it's checked */
+    data class Restore(val frameActive: Boolean, val reframe: Boolean) : PackOpen
+    /** Open Anyway on the held back pack, durable already: the online map stays meanwhile */
+    data object Reopen : PackOpen
+    /** Layers: the map that's up stays till it's checked, then the one write */
+    data class Activate(val frame: Boolean) : PackOpen
+}
+
 /** where the imported-map library is at, Layers + the import pre-check read it */
 internal enum class LibraryStatus { LOADING, LOADED, LOCKED, CORRUPT }
 
@@ -298,6 +317,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /** open MBTiles handles by entry, closed when the entry goes */
     private val offlineSources = HashMap<String, OfflineTileMapSourceAndroid>()
+
+    /** the MBTiles open running off main, if any, and what's newest (s14.2) */
+    private val mbtilesOpens = MbtilesOpenRequests()
 
     /** while a no-georef PDF is shown for calibration: the durable map to go back to */
     private var previewReturn: MapSource? = null
@@ -583,11 +605,15 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
         // a pack the open guard blamed for the last crash isn't opened again on its own
         if (entry.isMbtiles && holdBackSuspectMbtiles(entry)) return
+        if (entry.isMbtiles && canBeActive(entry)) {
+            openMbtiles(entry, PackOpen.Restore(frameActive, reframe))
+            return
+        }
         // OD-F4 (M8): a PDF whose stored file is missing or changed keeps the selection and
         // goes up anyway, the render session checks the bytes against contentKey on open and
         // fails it as cannotOpen (Try Again, Use Online Map). nothing ever draws other bytes
         val source = when {
-            canBeActive(entry) -> if (entry.isMbtiles) openMbtilesGuarded(entry) else sourceFor(entry)
+            canBeActive(entry) -> sourceFor(entry)
             entry.isPdf && entryAllowsActive(entry) -> sourceFor(entry)
             else -> null
         }
@@ -624,15 +650,127 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * A restore or activation opening [entry]'s pack: the open guard's armed (foreground only,
-     * on disk) before the open, and done with it right away when the pack's refused. A published
-     * one stays armed till its first draw settles (see [publish])
+     * s14.1 + s14.2: [entry]'s pack goes up. The open guard's armed first (foreground only, on
+     * disk), then this screen's open handle or one these bytes were admitted as earlier this
+     * process goes up right away. Anything else is admitted on IO and only goes up if nothing
+     * newer was asked for meanwhile. A published one stays armed till its first draw settles
+     * (see [publish]). false = an activation that couldn't even start
      */
-    private fun openMbtilesGuarded(entry: ImportedMapEntry): MapSource? {
+    private fun openMbtiles(entry: ImportedMapEntry, how: PackOpen): Boolean {
+        val ready = readyMbtiles(entry)
+        val placeholder = if (how is PackOpen.Restore && ready == null) {
+            com.tacmap.calibration.MbtilesPlaceholderSource(entry.id, entry.displayName)
+        } else null
+        // whatever was opening is superseded before this one's armed, it may well be the same pack
+        if (placeholder != null) publish(placeholder, frame = false) else mbtilesOpens.supersede()
         mbtilesGuard.arm(entry.id, foreground = com.tacmap.map.render.pdf.PdfRenderExecutor.foreground)
-        val source = sourceFor(entry)
-        if (source == null) mbtilesGuard.complete(entry.id)
-        return source
+        if (ready != null) return putUp(entry.id, ready, how)
+        val file = library.fileOf(entry)
+        val generation = _libraryState.value?.generation
+        if (file == null || generation == null) {
+            releaseOpenGuard(entry.id)
+            if (placeholder != null) publish(onlineBasemap(), frame = false)
+            return false
+        }
+        val ticket = mbtilesOpens.begin(entry.id, generation)
+        admitOffMain(entry, file) { pack -> onAdmitted(entry.id, ticket, pack, how, placeholder) }
+        return true
+    }
+
+    /** the admission on IO. a screen that goes meanwhile closes whatever it opened */
+    private fun admitOffMain(entry: ImportedMapEntry, file: File, done: (OfflineTileMapSourceAndroid?) -> Unit) {
+        val id = entry.id
+        viewModelScope.launch {
+            var opened: OfflineTileMapSourceAndroid? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    // stat'd first, bytes that change under the open never match this key again
+                    val size = file.length()
+                    val modified = file.lastModified()
+                    opened = admitMbtilesPack(file.path, entry.displayName)
+                    opened?.let { com.tacmap.calibration.AdmittedMbtiles.put(id, entry.contentKey, size, modified, it.metadata) }
+                }
+            } catch (c: kotlinx.coroutines.CancellationException) {
+                opened?.close()
+                releaseOpenGuard(id)
+                throw c
+            }
+            done(opened)
+        }
+    }
+
+    /** back on main with what the admission gave (null = refused) */
+    private fun onAdmitted(
+        id: String,
+        ticket: MbtilesOpenRequests.Ticket,
+        pack: OfflineTileMapSourceAndroid?,
+        how: PackOpen,
+        placeholder: MapSource?,
+    ) {
+        val generation = when {
+            cleared || _libraryStatus.value != LibraryStatus.LOADED -> null
+            // the activation writes, so it wants the key and the library as it is on disk now
+            how is PackOpen.Activate -> if (com.tacmap.util.DataKey.isUnlocked) writableState()?.generation else null
+            else -> _libraryState.value?.generation
+        }
+        var verdict = mbtilesOpens.finish(ticket, generation)
+        // a restore's blank stands in for it, anything else up there came later
+        if (placeholder != null && _mapSource.value !== placeholder) verdict = MbtilesOpenRequests.Verdict.SUPERSEDED
+        when {
+            verdict != MbtilesOpenRequests.Verdict.CURRENT -> {
+                pack?.close()
+                releaseOpenGuard(id)
+            }
+            pack == null -> {
+                // refused, nothing written. a restore goes online in memory, the rest keep what's up
+                releaseOpenGuard(id)
+                if (how is PackOpen.Restore) publish(onlineBasemap(), frame = false)
+            }
+            else -> {
+                offlineSources.put(id, pack)?.let { old -> closeSupersededOfflineSources(listOf(old), listOf(_mapSource.value, pack)) }
+                putUp(id, pack, how)
+            }
+        }
+        restoreIfLeftBlank()
+    }
+
+    /** the pack goes up the way [how] says. an activation's write failing = false, nothing's up */
+    private fun putUp(id: String, pack: OfflineTileMapSourceAndroid, how: PackOpen): Boolean = when (how) {
+        is PackOpen.Restore -> {
+            publish(pack, frame = how.reframe && !how.frameActive)
+            // OD-F13: the first launch after the upgrade shows the migrated map itself, whole,
+            // not wherever the first GPS fix happens to be (same as iOS)
+            if (how.frameActive) pack.coverage?.let { fitCoverage(it); hasInitialFix = true }
+            true
+        }
+        PackOpen.Reopen -> {
+            publish(pack, frame = true)
+            true
+        }
+        is PackOpen.Activate -> {
+            // re-reduced from the library as it is now, one write, then up
+            val next = writableState()?.let { reduce(LibraryTransition.ActivateEntry(id), it) }
+            val done = next != null && transition(next, retry = { activateImportedMap(id, how.frame) }) {
+                previewReturn = null
+                publish(pack, how.frame)
+            }
+            // opened but never put up: nothing will draw it
+            if (!done) releaseOpenGuard(id)
+            done
+        }
+    }
+
+    /** done with [id]'s open guard marker, unless an open or a first draw of the same pack still needs it */
+    private fun releaseOpenGuard(id: String) {
+        if (mbtilesOpens.pending?.entryId == id || firstDraw?.first == id) return
+        mbtilesGuard.complete(id)
+    }
+
+    /** a restore's blank still up with nothing coming for it (library moved, lock): the durable map again */
+    private fun restoreIfLeftBlank() {
+        if (cleared || _libraryStatus.value != LibraryStatus.LOADED || mbtilesOpens.pending != null) return
+        if (_mapSource.value !is com.tacmap.calibration.MbtilesPlaceholderSource) return
+        _libraryState.value?.let { restoreActive(it, reframe = false) }
     }
 
     /** the guard's first draw window for a freshly published pack, or the end of the old one */
@@ -658,7 +796,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         firstDrawJob?.cancel()
         firstDrawJob = null
         pack.readWatch = null
-        mbtilesGuard.complete(token)
+        releaseOpenGuard(token)
     }
 
     /** Open Anyway */
@@ -688,7 +826,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val state = _libraryState.value ?: return
         if (_mapSource.value !is OnlineRasterMapSourceAndroid || state.active.entryId != suspect.entryId) return
         val entry = state.entry(suspect.entryId)?.takeIf(::canBeActive) ?: return
-        openMbtilesGuarded(entry)?.let { publish(it, frame = true) }
+        openMbtiles(entry, PackOpen.Reopen)
     }
 
     /** Not Now: keep the suspect so the next launch asks again */
@@ -1036,17 +1174,29 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         return pdfSourceFor(entry, provisional, preview = true)
     }
 
+    /** never admits an MBTiles pack, that's [openMbtiles]'s job off main (s14.2) */
     private fun sourceFor(entry: ImportedMapEntry): MapSource? = when {
         entry.isPdf -> effectiveGeoref(entry)?.let { pdfSourceFor(entry, it) }
-        entry.isMbtiles -> offlineSources[entry.id] ?: library.fileOf(entry)
-            ?.let { OfflineTileMapSourceAndroid.open(it.path, entry.displayName) }
-            ?.also { offlineSources[entry.id] = it }
+        entry.isMbtiles -> readyMbtiles(entry)
         else -> null
+    }
+
+    /**
+     * a pack that can go up without admitting it here: this screen's open handle, or a
+     * prevalidated one when these bytes passed admission earlier this process (a stat, no open)
+     */
+    private fun readyMbtiles(entry: ImportedMapEntry): OfflineTileMapSourceAndroid? {
+        offlineSources[entry.id]?.let { return it }
+        val file = library.fileOf(entry) ?: return null
+        val metadata = com.tacmap.calibration.AdmittedMbtiles.get(entry.id, entry.contentKey, file) ?: return null
+        return OfflineTileMapSourceAndroid.prevalidated(file.path, entry.displayName, metadata)
+            .also { offlineSources[entry.id] = it }
     }
 
     private fun entryIdOf(source: MapSource): String? = when (source) {
         is PdfMapSource -> source.entryId
         is OfflineTileMapSourceAndroid -> offlineSources.entries.firstOrNull { it.value === source }?.key
+        is com.tacmap.calibration.MbtilesPlaceholderSource -> source.entryId
         else -> null
     }
 
@@ -1054,6 +1204,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     internal fun shownEntryId(): String? = entryIdOf(_mapSource.value)
 
     private fun publish(source: MapSource, frame: Boolean) {
+        // something else going up supersedes an MBTiles open still running (s14.2)
+        mbtilesOpens.supersede()
         _mapSource.value = source
         if (frame) frameCameraFor(source)
         onPublishedForOpenGuard(source)
@@ -1088,15 +1240,19 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val state = writableState() ?: return false
         val entry = state.entry(id) ?: return false
         if (!canBeActive(entry)) return false
-        val held = _pdfRecovery.value
-        if (entry.isMbtiles && held is CrashSuspect.Mbtiles && held.entryId == id) {
-            // picking the held back pack in Layers is Open Anyway, resolved before it's opened
-            mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
-            _pdfRecovery.value = null
+        if (entry.isMbtiles) {
+            val held = _pdfRecovery.value
+            if (held is CrashSuspect.Mbtiles && held.entryId == id) {
+                // picking the held back pack in Layers is Open Anyway, resolved before it's opened
+                mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
+                _pdfRecovery.value = null
+            }
+            // checked off main, written + up when it comes back. true = started (s14.2)
+            return openMbtiles(entry, PackOpen.Activate(frame))
         }
-        val source = (if (entry.isMbtiles) openMbtilesGuarded(entry) else sourceFor(entry)) ?: return false
+        val source = sourceFor(entry) ?: return false
         val next = reduce(LibraryTransition.ActivateEntry(id), state)
-        val done = next != null && transition(next, retry = { activateImportedMap(id, frame) }) {
+        return next != null && transition(next, retry = { activateImportedMap(id, frame) }) {
             val suspect = _pdfRecovery.value
             if (suspect is CrashSuspect.Pdf && suspect.entryId == id) {
                 // picking it in Layers is an explicit open, same as Open Anyway
@@ -1106,22 +1262,31 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             previewReturn = null
             publish(source, frame)
         }
-        // opened but never put up (no transition, or the write failed): nothing will draw it
-        if (entry.isMbtiles && !done) mbtilesGuard.complete(id)
-        return done
     }
 
-    /** import commit: the entry, plus active when it has a georef or is MBTiles */
-    internal fun addImportedEntry(entry: ImportedMapEntry, activate: Boolean, frame: Boolean = true): Boolean {
+    /**
+     * import commit: the entry, plus active when it has a georef or is MBTiles. [admitted] is
+     * what the import worker's admission of the pack gave, so it goes up without another one
+     */
+    internal fun addImportedEntry(
+        entry: ImportedMapEntry,
+        activate: Boolean,
+        frame: Boolean = true,
+        admitted: com.tacmap.calibration.MBTilesStore.Metadata? = null,
+    ): Boolean {
         val state = writableState() ?: return false
         val t = if (entry.derivedFromId != null) LibraryTransition.AddDerived(entry) else LibraryTransition.AddEntry(entry, activate)
         val next = reduce(t, state) ?: return false
         val shown = next.active.entryId == entry.id
-        return transition(next, retry = { addImportedEntry(entry, activate, frame) }) {
+        return transition(next, retry = { addImportedEntry(entry, activate, frame, admitted) }) {
+            if (admitted != null && entry.isMbtiles) {
+                com.tacmap.calibration.AdmittedMbtiles.put(entry.id, entry.contentKey, entry.byteCount, entry.fileModifiedAtMs, admitted)
+            }
             if (shown) {
                 previewReturn = null
-                val source = if (entry.isMbtiles) openMbtilesGuarded(entry) else sourceFor(entry)
-                source?.let { publish(it, frame && entry.derivedFromId == null) }
+                val reframe = frame && entry.derivedFromId == null
+                if (entry.isMbtiles) openMbtiles(entry, PackOpen.Restore(frameActive = false, reframe = reframe))
+                else sourceFor(entry)?.let { publish(it, reframe) }
             }
         }
     }
@@ -1715,6 +1880,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         pdfRuntime.release()
         headingService.stop()
         locationService.stop()
+        // an open still running closes what it got when it comes back, its marker goes then
+        mbtilesOpens.supersede()
         // the source goes before its first draw settled, done with it all the same
         finishFirstDraw()
         closeSupersededOfflineSources(

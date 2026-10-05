@@ -76,6 +76,8 @@ internal data class PreparedMbtilesImport(
     val duplicate: ImportedMapEntry? = null,
     /** the duplicate was unavailable: [file] is kept and the entry re-linked to it (E9) */
     val relink: Boolean = false,
+    /** what the admission on the worker gave, so the commit puts it up without another (s14.2) */
+    val metadata: MBTilesStore.Metadata? = null,
 )
 
 internal sealed class PreparedOutcome {
@@ -109,8 +111,8 @@ internal class MapImportPipeline(
     private val clock: () -> Long = System::currentTimeMillis,
     private val freeBytes: () -> Long = { StatFs(context.filesDir.path).availableBytes },
     private val onStage: (ImportStage) -> Unit = {},
-    /** the MBTiles admission, a seam so a test can look at the marker while it runs */
-    private val validateMbtiles: (File) -> Boolean = { f -> MBTilesStore.open(f.path)?.let { it.close(); true } ?: false },
+    /** the MBTiles admission, a seam so a test can look at the marker while it runs. null = refused */
+    private val validateMbtiles: (File) -> MBTilesStore.Metadata? = { f -> MBTilesStore.open(f.path)?.use { it.metadata } },
 ) {
     private val stages = PdfImportStages(journal, inspect, clock, onStage)
 
@@ -143,13 +145,14 @@ internal class MapImportPipeline(
         val size = sourceSize(uri)
         precheck(library, ImportedMapKind.MBTILES, size)?.let { return PreparedOutcome.Failed(it) }
         val name = displayStem(uri, ".mbtiles")
+        var admitted: MBTilesStore.Metadata? = null
         val copied = try {
             copy(uri, operationKey, "mbtiles", "mbtiles", ImportLimits.MBTILES_MAX_BYTES, size, progress) { f ->
                 // s9.8 / s14.1: the admission reads a hostile file, so it runs under the same
                 // durable marker as a PDF parse. a crash in there gets swept at the next launch
                 markInspecting(operationKey, clock())
                 try {
-                    validateMbtiles(f)
+                    validateMbtiles(f).also { admitted = it } != null
                 } finally {
                     markInspecting(operationKey, null)
                 }
@@ -167,7 +170,7 @@ internal class MapImportPipeline(
             if (!relink) discard(file)
             return PreparedOutcome.Mbtiles(PreparedMbtilesImport(file, key, existing.displayName, existing, relink))
         }
-        return PreparedOutcome.Mbtiles(PreparedMbtilesImport(file, key, name))
+        return PreparedOutcome.Mbtiles(PreparedMbtilesImport(file, key, name, metadata = admitted))
     }
 
     /**

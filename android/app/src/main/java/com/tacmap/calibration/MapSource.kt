@@ -133,3 +133,14 @@ class OnlineRasterMapSourceAndroid(val style: BasemapStyle) : MapSource {
     override val coverage: Wgs84Bounds? = null
     override val calibration: Calibration? = null
 }
+
+/**
+ * What's up while the saved MBTiles pack is checked off main at a restore (s14.2): blank,
+ * asks for no tiles at all, so nothing goes to an online provider the user didn't pick
+ */
+class MbtilesPlaceholderSource(val entryId: String, override val displayName: String) : MapSource {
+    override val id: String = UUID.randomUUID().toString()
+    override val kind = MapSourceKind.OFFLINE_TILES
+    override val coverage: Wgs84Bounds? = null
+    override val calibration: Calibration? = null
+}

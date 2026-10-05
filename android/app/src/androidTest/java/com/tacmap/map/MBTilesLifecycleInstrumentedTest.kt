@@ -194,7 +194,7 @@ class MBTilesLifecycleInstrumentedTest {
         var during: DocumentImportCopyState? = null
         val pipeline = MapImportPipeline(context, journal, validateMbtiles = { f ->
             during = journal.state(op)
-            MBTilesStore.open(f.path)?.let { it.close(); true } ?: false
+            MBTilesStore.open(f.path)?.use { it.metadata }
         })
         val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
         val outcome = runBlocking { pipeline.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
@@ -208,7 +208,7 @@ class MBTilesLifecycleInstrumentedTest {
         assertTrue(MapImportPipeline.sweepInterrupted(journal))
         assertFalse("the copy goes", prepared.file.exists())
         var admitted = false
-        val replay = MapImportPipeline(context, journal, validateMbtiles = { admitted = true; true })
+        val replay = MapImportPipeline(context, journal, validateMbtiles = { admitted = true; null })
         val again = runBlocking { replay.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
         assertEquals(ImportError.INTERRUPTED, (again as PreparedOutcome.Failed).failure.error)
         assertFalse("the replay opened it again", admitted)
@@ -315,6 +315,40 @@ class MBTilesLifecycleInstrumentedTest {
         }
         assertNull(MBTilesStore.open(file.path, 1L))
         requireNotNull(MBTilesStore.open(file.path)).close()
+    }
+
+    @Test
+    fun aPrevalidatedPackOpensOnItsFirstReadAndStillRefusesAHostileSchema() {
+        // s14.2 r2: the import worker's metadata puts a pack up with no second admission, the first
+        // tile read opens it (hardening, relation, shape and base checks, no aggregate)
+        val file = makeMBTiles("prevalidated")
+        val admitted = requireNotNull(MBTilesStore.open(file.path)).use { it.metadata }
+        val source = OfflineTileMapSourceAndroid.prevalidated(file.path, "Prevalidated", admitted)
+        assertEquals(admitted.maxZoom, source.maxZoom)
+        assertFalse("opened before any read", source.refusedForTesting())
+        assertEquals("010203", source.tileData(8, 0, 255)?.hex())
+        source.close()
+        assertTrue(source.isClosedForTesting())
+        assertNull("closed serves nothing", source.tileData(8, 0, 255))
+
+        // the same metadata claimed for bytes whose tiles view runs SQL: refused on the lazy open, no tile ever
+        val hostile = makeMBTiles("prevalidated-hostile")
+        SQLiteDatabase.openDatabase(hostile.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("ALTER TABLE tiles RENAME TO tiles_base")
+            it.execSQL("CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, " +
+                "CASE WHEN date('now') > '2000-01-01' THEN tile_data END AS tile_data FROM tiles_base")
+        }
+        val lazy = OfflineTileMapSourceAndroid.prevalidated(hostile.path, "Hostile", admitted)
+        assertNull(lazy.tileData(8, 0, 255))
+        assertTrue("lazy open didn't refuse it", lazy.refusedForTesting())
+        assertNull(lazy.tileData(8, 0, 255))
+        lazy.close()
+
+        // a close while nothing's been read yet never opens it
+        val untouched = OfflineTileMapSourceAndroid.prevalidated(file.path, "Untouched", admitted)
+        untouched.close()
+        assertNull(untouched.tileData(8, 0, 255))
+        assertFalse(untouched.refusedForTesting())
     }
 
     @Test

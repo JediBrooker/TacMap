@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class MBTilesStore private constructor(
     private val db: SQLiteDatabase,
     admissionBudgetMs: Long,
+    /** metadata an earlier admission of these bytes gave, so the aggregate's skipped (s14.2) */
+    prevalidated: Metadata? = null,
 ) : Closeable {
 
     data class Metadata(
@@ -65,7 +67,7 @@ class MBTilesStore private constructor(
         }
         metadataIsView = types[0] == "view"
         tilesIsView = types[1] == "view"
-        if (metadataIsView || tilesIsView) {
+        if (prevalidated == null && (metadataIsView || tilesIsView)) {
             admissionDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(admissionBudgetMs)
         }
     }
@@ -87,7 +89,7 @@ class MBTilesStore private constructor(
     }
 
     private val rows = linkedMapOf<String, String>()
-    val metadata: Metadata = loadMetadata()
+    val metadata: Metadata = prevalidated ?: loadMetadata()
     private val closed = AtomicBoolean(false)
 
     /** Only the two provenance fields consumed by our bake reader are read.
@@ -377,14 +379,24 @@ class MBTilesStore private constructor(
 
         /** the budget seam, tests shorten it so an endless view gives up quickly */
         @VisibleForTesting
-        internal fun open(path: String, admissionBudgetMs: Long): MBTilesStore? {
+        internal fun open(path: String, admissionBudgetMs: Long): MBTilesStore? =
+            open(path, admissionBudgetMs, null)
+
+        /**
+         * the lazy open of a pack admitted before (import worker or the in-memory cache, s14.2):
+         * hardening + relation, shape and base table checks, no aggregate. null = serve nothing
+         */
+        internal fun openPrevalidated(path: String, metadata: Metadata): MBTilesStore? =
+            open(path, ADMISSION_BUDGET_MS, metadata)
+
+        private fun open(path: String, admissionBudgetMs: Long, prevalidated: Metadata?): MBTilesStore? {
             val db = try {
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
             } catch (_: Throwable) {
                 return null
             }
             return try {
-                MBTilesStore(db, admissionBudgetMs)
+                MBTilesStore(db, admissionBudgetMs, prevalidated)
             } catch (_: Throwable) {
                 runCatching { db.close() }
                 null
