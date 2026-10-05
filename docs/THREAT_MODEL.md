@@ -129,9 +129,10 @@ ciphertext.
 **What the relay stores, and for how long.** Per room the relay stores a hash of
 the admission token, the protocol version, the room's sequence and counter
 high-water values, record/byte counters, the time of last activity (written at
-most hourly while devices send anything, when the last connection goes, and
-daily while anyone is connected; never more than once an hour, whatever the
-traffic), the latest sealed record of each
+most hourly while devices send anything, each time the last connection goes,
+and daily while anyone is connected; no message traffic writes it more than
+once an hour, but a device that keeps reconnecting writes it on each
+disconnect), the latest sealed record of each
 synced object, tombstones (the sealed, signed delete proof with its signer's
 public key and session ID), and one pin per device actor (public key, first-seen
 time, the hour of its latest session announcement, and that signed

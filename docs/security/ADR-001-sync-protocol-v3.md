@@ -749,8 +749,11 @@ runs at least every `MAINTENANCE_INTERVAL_MS` while any socket is open. While
 devices send anything it is therefore at most `ACTIVITY_PERSIST_MS` behind, also
 when a deploy or restart drops their sockets without a close callback (only a
 socket that sends nothing at all relies on the daily alarm). Rejected frames
-never write it, and no traffic writes it more than once per
-`ACTIVITY_PERSIST_MS`.
+never write it, and no frame traffic writes it more than once per
+`ACTIVITY_PERSIST_MS`. The last-socket-gone write is not throttled that way:
+it is only skipped when the stored value is under a minute old and nothing
+newer is pending, so a device that keeps connecting and disconnecting writes
+it on each disconnect (bounded by the per-IP connection limit).
 
 **Idle expiry.** About `IDLE_TTL_MS` (7 days) after the last persisted
 activity, with no socket open, the relay deletes every live object record and

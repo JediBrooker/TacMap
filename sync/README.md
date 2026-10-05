@@ -354,9 +354,11 @@ chat and chat keys are never stored.
   alarm (daily while anyone is connected). So while devices are sending
   anything it is at most an hour behind, even if a deploy or restart then drops
   their sockets without a close callback. Rejected frames never write it, no
-  traffic writes it more than once an hour, presence and chat cause no other
-  storage write, and a failed activity write never closes a socket or fails a
-  join.
+  frame traffic writes it more than once an hour, presence and chat cause no
+  other storage write, and a failed activity write never closes a socket or
+  fails a join. The last-socket-gone write is only skipped when the stored
+  value is under a minute old with nothing newer pending, so a device that
+  keeps reconnecting writes it once per disconnect.
 - **Idle expiry.** About 7 days after the last recorded activity, with no
   socket open, the relay deletes live object records and swaps every actor pin
   for its epoch floor. It keeps the token hash, protocol, `seq` (advanced),
