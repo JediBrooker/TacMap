@@ -111,8 +111,8 @@ object DataKey {
 
     private lateinit var appContext: Context
 
-    /** Unwrapped DEK, held for the process lifetime. Cleared by [lock]. */
-    @Volatile private var cached: ByteArray? = null
+    /** Unwrapped DEK for the process lifetime. [lock] wipes it and keeps it wiped till [unlock]. */
+    private val cache = DataKeyCache()
 
     /**
      * Call once from Application.onCreate, before any store is constructed.
@@ -158,16 +158,30 @@ object DataKey {
     /** True when a store can read/write right now without a user auth prompt. */
     val isUnlocked: Boolean
         get() = activeRecord()?.let {
-            cached != null || it.mode != DataKeyProtectionMode.AUTH
+            cache.isCached || (it.mode != DataKeyProtectionMode.AUTH && !cache.isRelocked)
         } == true
+
+    /** instrumented tests only: is the DEK sitting in the general cache right now */
+    internal val isKeyCachedForTests: Boolean get() = cache.isCached
 
     /**
      * The DEK. Throws [LockedException] in AUTH mode when the user hasn't
      * authenticated recently, and [UnrecoverableException] if the KEK is gone.
+     * After [lock] it throws [LockedException] in both modes until [unlock],
+     * it never unwraps again behind the lock.
      */
     @Synchronized
-    fun key(): ByteArray {
-        cached?.let { return it.copyOf() }
+    fun key(): ByteArray = cache.get(::unwrapActive)
+
+    /**
+     * The app's explicit unlock after [lock]: device-mode resume, the App Lock PIN or a
+     * confirmed platform credential. Background callers never get here, they just fail.
+     */
+    @Synchronized
+    fun unlock() = cache.unlock(::unwrapActive)
+
+    /** Opens the active wrapper. Hands back a fresh DEK array the cache zeroes. */
+    private fun unwrapActive(): ByteArray {
         val record = activeRecord() ?: throw UnrecoverableException(null)
         val recordKek = kek(
             create = false,
@@ -205,35 +219,41 @@ object DataKey {
                 }
                 finalizeAnchoredAuthProtection(record.slot)
             }
-            cached?.fill(0)
-            cached = dek.copyOf()
-            return dek.copyOf()
-        } finally {
+            return dek
+        } catch (t: Throwable) {
             dek.fill(0)
+            throw t
         }
     }
 
-    /** Drop the in-memory DEK. AUTH mode will need a fresh auth after this. */
+    /**
+     * Drop the in-memory DEK and keep it dropped. Nothing unwraps it again till [unlock],
+     * so a write still running behind an Activity pause fails instead of re-caching it.
+     */
     @Synchronized
     fun lock() {
         com.tacmap.waypoints.CustomSymbolStore.clear()
-        cached?.fill(0)
-        cached = null
+        cache.lock()
     }
 
     /**
      * Move the DEK between device-bound and auth-bound KEKs. Files are untouched.
      * In AUTH mode the caller must have authenticated already, otherwise the
      * unwrap of the current DEK throws [LockedException].
+     *
+     * Only ever runs off a confirmed credential (or the unlocked settings screen),
+     * so it counts as the explicit [unlock] too. The credential screen's pause
+     * relocked the key and this needs it.
      */
     @Synchronized
     fun setAuthBound(enabled: Boolean) {
         if (enabled == isAuthBound) {
             // A pre-anchor AUTH record or interrupted cleanup is completed only
             // after its wrapper has been opened with the authenticated KEK.
-            if (enabled) key().fill(0)
+            if (enabled) unlock()
             return
         }
+        unlock()
         if (enabled) enableAuthBound() else disableAuthBound()
     }
 
@@ -298,14 +318,17 @@ object DataKey {
             check(result.completed) {
                 "Could not enable auth-bound mission-key protection at ${result.failedAt}"
             }
-            cached?.fill(0)
-            cached = dek.copyOf()
+            cache.store(dek)
             completed = true
         } finally {
             // Once the Keystore anchor exists, keeping a DEVICE-derived cached
             // copy after a failed transition would make failure look weaker
-            // than the durable state. Force a fresh authenticated unwrap.
-            if (!completed && authModeAnchorPresent()) lock()
+            // than the durable state. Force a fresh authenticated unwrap. Not the
+            // lifecycle relock though, the next key() is allowed to unwrap again.
+            if (!completed && authModeAnchorPresent()) {
+                com.tacmap.waypoints.CustomSymbolStore.clear()
+                cache.drop()
+            }
             dek.fill(0)
         }
     }
@@ -365,8 +388,7 @@ object DataKey {
             } == true) {
                 "Device-bound mission-data key was not selected"
             }
-            cached?.fill(0)
-            cached = dek.copyOf()
+            cache.store(dek)
         } finally {
             dek.fill(0)
         }
@@ -441,8 +463,7 @@ object DataKey {
                 prefs().getBoolean(KEY_SENTINEL_REQUIRED, false)) {
                 L10n.text("Could not persist mission-key sentinel state")
             }
-            cached?.fill(0)
-            cached = dek.copyOf()
+            cache.store(dek)
         } finally {
             dek.fill(0)
         }

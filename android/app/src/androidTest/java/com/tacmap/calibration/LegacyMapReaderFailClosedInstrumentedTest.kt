@@ -10,9 +10,11 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.tacmap.util.MissionKeyUnlockRule
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -24,6 +26,7 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class LegacyMapReaderFailClosedInstrumentedTest {
+    @get:Rule val missionKey = MissionKeyUnlockRule()
     private val app: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val root = File(app.cacheDir, "legacy-reader-${System.nanoTime()}").apply { mkdirs() }
     private val prefix = "legacy-reader-test-${System.nanoTime()}-"

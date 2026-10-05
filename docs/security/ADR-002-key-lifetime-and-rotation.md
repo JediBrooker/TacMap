@@ -266,7 +266,7 @@ which is the fail-closed choice.
 | Truthful recording states | Awaiting permission, starting, recording, interrupted, idle | Awaiting permission, starting, recording, interrupted, idle |
 | `REC` publication | After foreground service and GPS listener acknowledge the prepared generation | After durable recorder start and background updates are enabled |
 | Background append key source | Explicit recorder-owned `ByteArray` copy | Explicit recorder-owned `Data` value |
-| General-key behavior at lock | Activity pause clears cache in both modes; device mode can unwrap locally again | Cache clears on inactive/App Lock only in auth-bound mode |
+| General-key behavior at lock | Activity pause (onStop behind TacMap's own share sheet) clears cache in both modes after a bounded Unit Sync write drain; nothing unwraps it again until the foreground unlock, which device mode does locally | Cache clears on inactive/App Lock only in auth-bound mode |
 | Retained-key termination | Explicit zero-fill and release | Reference release; byte overwrite is not guaranteed |
 | Location authorization | Precise only; approximate/denied guidance | When-In-Use or Always; denied/restricted guidance |
 | Background mechanism | Location foreground service; no background-location grant | `allowsBackgroundLocationUpdates` and system indicator |

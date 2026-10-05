@@ -1825,6 +1825,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/util/DataKeyCache.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/util/DataKeyPayload.kt",
     "platform": "android",
     "area": "shared-data-security",

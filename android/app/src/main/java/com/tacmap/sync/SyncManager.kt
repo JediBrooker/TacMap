@@ -27,6 +27,9 @@ import com.tacmap.util.SealedEnvelope
 import com.tacmap.util.DurablePreferenceCommit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -2553,11 +2556,15 @@ class SyncManager internal constructor(
                     if (!revisionJournalAvailable) { persistenceFailure(); return@collect }
                     if (event.origin != ModelMutationOrigin.REMOTE_SYNC &&
                         !modelRevisionJournal.bumpAllOffMain(event.localIds, env.persistenceDispatcher)) {
+                        // the bump is NonCancellable, so it comes back here even after a pause
+                        // detached the stores and relocked the key it needed. thats not a
+                        // security stop and must not kill background presence, the foreground
+                        // attach reloads the journal from disk
+                        if (!currentCoroutineContext().isActive || lifecycleGate.isDisposed ||
+                            waypointStoreRef !== observedWaypoints || drawingStoreRef !== observedDrawings) return@collect
                         revisionJournalAvailable = false
-                        if (!lifecycleGate.isDisposed) {
-                            reportError(Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(), SyncIssueKind.SECURITY)
-                            persistenceFailure()
-                        }
+                        reportError(Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(), SyncIssueKind.SECURITY)
+                        persistenceFailure()
                         return@collect
                     }
                 }
@@ -3192,6 +3199,8 @@ class SyncManager internal constructor(
         private const val MAX_SNAPSHOT_ITEMS = 10_000
         private const val MAX_SNAPSHOT_AGGREGATE_BYTES = 54_525_952L
         internal const val V2_SNAPSHOT_TIMEOUT_MS = 10_000L
+        /** How long the pause holds the main thread for sealed writes before the DEK locks. */
+        internal const val KEY_LOCK_DRAIN_MS = 2_000L
         private const val CHAT_KEY_RETRY_DELAY_MS = 2_000L
         private const val CHAT_KEY_MAX_ATTEMPTS = 4
         private const val MAX_VERSION = 1_000_000_000_000L   // matches relay MAX_V
@@ -3409,6 +3418,23 @@ class SyncManager internal constructor(
         scope.launch(kotlinx.coroutines.NonCancellable, start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             replay.persistExactPresenceOffMain(env.persistenceDispatcher)
         }
+    }
+
+    /**
+     * Parks the caller until every sealed write already handed to the persistence worker has
+     * landed, at most [timeoutMs]. UnitSyncRuntime runs this right before MainActivity locks
+     * the DEK, so the clean point a pause queues seals with the key that's still cached
+     * instead of hitting the lock. The worker is a single FIFO lane, so a marker posted now
+     * runs after all of it. Writes still waiting on the owner thread can't move while it's
+     * parked here; they fail closed after the lock and a failed clean point keeps the safe floor.
+     */
+    internal fun awaitPersistenceWorkerIdle(timeoutMs: Long): Boolean {
+        val worker = env.persistenceDispatcher
+        // same dispatcher as the owner = withContext(io) ran inline, nothing can be queued
+        if (worker === env.dispatcher) return true
+        val drained = java.util.concurrent.CountDownLatch(1)
+        worker.asExecutor().execute { drained.countDown() }
+        return drained.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
     }
 
     /** Peers as this frame should see them: the open batch's staged copy, or live. */

@@ -158,6 +158,42 @@ class UnitSyncSettingsContractTest {
         assertTrue(manager.contains("PresenceRetentionV3.SIGNATURE_FIELD"))
     }
 
+    @Test
+    fun pauseDrainsSealedWritesBeforeTheKeyLockAndOnlyAnExplicitUnlockReopensIt() {
+        val activity = sourceText(
+            "android/app/src/main/java/com/tacmap/app/MainActivity.kt"
+        )
+        val runtime = sourceText(
+            "android/app/src/main/java/com/tacmap/sync/UnitSyncRuntime.kt"
+        )
+
+        // lockForBackground: Unit Sync pauses (and drains) before the DEK locks
+        val lockForBackground = activity.indexOf("private fun lockForBackground()")
+        val pausing = activity.indexOf("unitSyncRuntime.onActivityPausing()", startIndex = lockForBackground)
+        val keyLock = activity.indexOf("DataKey.lock()", startIndex = pausing)
+        assertTrue(lockForBackground >= 0)
+        assertTrue(pausing > lockForBackground)
+        assertTrue(keyLock > pausing)
+
+        // onActivityPausing waits for the worker on every path, after the manager has paused
+        val onPausing = runtime.indexOf("fun onActivityPausing()")
+        val pause = runtime.indexOf("pauseForKeyLock(current)", startIndex = onPausing)
+        val drain = runtime.indexOf(
+            "current.awaitPersistenceWorkerIdle(SyncManager.KEY_LOCK_DRAIN_MS)",
+            startIndex = pause,
+        )
+        val pauseBody = runtime.indexOf("private fun pauseForKeyLock(", startIndex = onPausing)
+        assertTrue(onPausing >= 0)
+        assertTrue(pause > onPausing)
+        assertTrue(drain > pause)
+        assertTrue("drain sits in onActivityPausing itself", drain < pauseBody)
+
+        // after the relock a plain key() is refused, so every foreground unlock is explicit
+        assertFalse(activity.contains("DataKey.key()"))
+        assertTrue(activity.contains("runCatching { DataKey.unlock(); true }"))
+        assertTrue(activity.contains("runCatching { DataKey.unlock() }"))
+    }
+
     private fun sourceText(relativePath: String): String {
         var directory = File(System.getProperty("user.dir") ?: ".").absoluteFile
         repeat(8) {

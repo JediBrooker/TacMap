@@ -120,7 +120,8 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         releaseOrphanedImportGrants(pendingImportCoordinator.current())
         credentialLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode != Activity.RESULT_OK) return@registerForActivityResult
-            runCatching { DataKey.key() }
+            // a confirmed credential is the explicit unlock, plain key() stays shut after the pause
+            runCatching { DataKey.unlock() }
                 .onSuccess {
                     (application as TacticalApp).trackRecorder.reloadAfterUnlock()
                     missionKeyError.value = null
@@ -135,8 +136,14 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
             val completion = authBoundChangeController.completeCredential(result.resultCode == Activity.RESULT_OK)
             completion.pendingError?.let { missionKeyError.value = it }
             if (result.resultCode == Activity.RESULT_OK && completion.error == null) {
-                missionKeyError.value = null
-                missionKeyReady.value = true
+                // setAuthBound already unlocked if it ran. a recreated Activity has no pending
+                // change tho, and the credential screen's pause still relocked the key
+                runCatching { DataKey.unlock() }
+                    .onSuccess {
+                        missionKeyError.value = null
+                        missionKeyReady.value = true
+                    }
+                    .onFailure { missionKeyError.value = it.displayMessage }
             }
         }
         // These launchers belong to the Activity because the document picker
@@ -379,16 +386,18 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
 
     private fun lockForBackground() {
         // Reduce an eligible v3 client to egress-only presence before the
-        // mission key and its screen-owned stores are torn down.
+        // mission key and its screen-owned stores are torn down. It also waits
+        // (bounded) for the sealed writes it queued, so they use the key that's
+        // still cached instead of failing against the lock below.
         (application as TacticalApp).unitSyncRuntime.onActivityPausing()
         // Never retain the mission DEK behind an App Lock/background boundary.
-        // Device-bound mode can unwrap again locally; auth-bound mode requires
-        // a fresh platform authentication window.
+        // Device-bound mode unwraps again locally on resume; auth-bound mode requires
+        // a fresh platform authentication window. Both go through DataKey.unlock(),
+        // anything that asks for the key before that is refused.
         (application as TacticalApp).trackRecorder.onMissionKeyLock()
         DataKey.lock()
-        // Tear down MapScreen and its observers for both key modes. Otherwise
-        // device-bound mode could automatically unwrap the DEK again from a
-        // retained background sync/store callback immediately after lock().
+        // Tear down MapScreen and its observers for both key modes, a retained
+        // background sync/store callback would only fail against the lock now.
         missionKeyReady.value = false
         // re-arm app lock so coming back requires PIN again
         if (appLock.isEnabled) locked.value = true
@@ -557,7 +566,8 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
     }
 
     private fun prepareMissionKey() {
-        missionKeyReady.value = runCatching { DataKey.key(); true }.getOrElse {
+        // foreground unlock (device-mode resume, App Lock PIN, launch), reopens the relocked key
+        missionKeyReady.value = runCatching { DataKey.unlock(); true }.getOrElse {
             missionKeyError.value = it.displayMessage
             false
         }

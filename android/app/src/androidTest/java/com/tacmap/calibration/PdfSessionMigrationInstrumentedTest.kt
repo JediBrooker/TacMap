@@ -16,8 +16,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.tacmap.util.MissionKeyUnlockRule
 import java.io.File
 
 /**
@@ -28,6 +30,7 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class PdfSessionMigrationInstrumentedTest {
+    @get:Rule val missionKey = MissionKeyUnlockRule()
     private val app: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val assets = InstrumentationRegistry.getInstrumentation().context.assets
     private val root = File(app.cacheDir, "pdf-migration-${System.nanoTime()}")

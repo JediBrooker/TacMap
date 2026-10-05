@@ -30,12 +30,15 @@ import com.tacmap.calibration.PdfPageRenderer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.tacmap.util.MissionKeyUnlockRule
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PdfImportSmokeTest {
+    @get:Rule val missionKey = MissionKeyUnlockRule()
 
     @Test
     fun importsAndRendersPdfMapPipeline() {

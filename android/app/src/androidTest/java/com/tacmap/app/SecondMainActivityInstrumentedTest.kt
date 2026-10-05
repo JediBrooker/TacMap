@@ -26,12 +26,15 @@ import com.tacmap.localization.Messages
 import com.tacmap.map.FirstRunTips
 import com.tacmap.map.MapViewModel
 import com.tacmap.sync.BackgroundUnitSyncLocationService
+import com.tacmap.util.DataKey
+import com.tacmap.util.MissionKeyUnlockRule
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -44,6 +47,7 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class SecondMainActivityInstrumentedTest {
+    @get:Rule val missionKey = MissionKeyUnlockRule()
     private val instr = InstrumentationRegistry.getInstrumentation()
     private val app: Context = instr.targetContext
     private val device = UiDevice.getInstance(instr)
@@ -73,6 +77,8 @@ class SecondMainActivityInstrumentedTest {
         waitUntil("activities gone") { mainActivities().isEmpty() }
         BackgroundUnitSyncLocationService.cancelPausedNotification(app)
         device.pressHome()
+        // finishing them relocked the mission key, the restore below writes the library
+        DataKey.unlock()
         val lib = ImportedMapLibraryStore.FILE_NAME
         files.listFiles().orEmpty().filter { it.name.startsWith("$lib.corrupt-") && !File(backup, it.name).exists() }.forEach { it.delete() }
         File(files, "dbg").deleteRecursively()
