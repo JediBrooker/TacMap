@@ -1973,9 +1973,12 @@ class SyncManager internal constructor(
         // nothing durable behind the key lock, it stays dirty for the next batch after unlock
         if (lifecycleGate.isDisposed || backgroundPresenceOnly || awaitingForegroundStores) return
         val text = store.takePendingWrite() ?: return
-        withContext(kotlinx.coroutines.NonCancellable) {
+        val written = withContext(kotlinx.coroutines.NonCancellable) {
             withContext(env.persistenceDispatcher) { store.write(text) }
         }
+        // key locked in between, full disk: keep it dirty so the next batch tries again. otherwise
+        // a session that learns nothing new never writes it and a restart sends lowercase
+        if (!written) store.writeFailed()
     }
 
     private fun onSocketOpened(webSocket: SyncWebSocket, connectionGeneration: Long) {

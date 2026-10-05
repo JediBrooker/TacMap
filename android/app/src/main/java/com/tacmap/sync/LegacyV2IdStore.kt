@@ -62,10 +62,15 @@ internal class LegacyV2IdStore(private val directory: File, private val roomId: 
             .toString()
     }
 
-    /** File only. False on a locked key or a failed write, the next learned id tries again. */
+    /** File only. False on a locked key or a failed write, the caller hands that back through writeFailed. */
     fun write(text: String): Boolean = runCatching {
         SafeStore.writeAtomically(file(), storeLabel, text)
     }.isSuccess
+
+    /** The last takePendingWrite didn't make it to disk, so the next one hands it out again. */
+    fun writeFailed() {
+        dirty = true
+    }
 
     private fun file(): File {
         val namingKey = SafeStore.keyProvider.key()

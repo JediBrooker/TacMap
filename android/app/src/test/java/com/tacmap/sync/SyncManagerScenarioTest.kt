@@ -991,6 +991,46 @@ class SyncManagerScenarioTest {
         }
     }
 
+    @Test
+    fun v2RememberedIdWhoseWriteFailedIsWrittenByTheNextBatch() {
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ios = Shipped2xIos(keys)
+        val wp = waypoint("bob")
+        val upper = wp.id.uppercase()
+        ios.model[UUID.fromString(wp.id)] = FakeV3Peer.waypointContent(wp)
+        val created = ios.diff().single()
+        val dir = java.nio.file.Files.createTempDirectory("v2-write-failed").toFile()
+        // the sealed write for the learned id fails (stands in for a full disk, or the key
+        // relocking between the check and the write)
+        val idsDir = java.io.File(java.io.File(dir, "files"), LegacyV2IdStore.DIRECTORY_NAME).apply { mkdirs() }
+        assertTrue(idsDir.setWritable(false))
+
+        val first = SyncHarness(dir = dir)
+        try {
+            v2Connected(listOf(snapshotItem(created)), first)
+            assertEquals(upper, first.manager.rememberedV2IdForTests(wp.id))
+            assertTrue("nothing should have landed", idsDir.listFiles().orEmpty().none { it.name.endsWith(".json") })
+            assertTrue(idsDir.setWritable(true))
+            // a later batch that teaches nothing new still has to write it
+            first.deliver(JSONObject().put("t", "loc"))
+            first.advance(500)
+        } finally {
+            idsDir.setWritable(true)
+            first.close(deleteFiles = false)
+        }
+
+        // the relay purged the room, so only this device still knows the casing
+        val second = SyncHarness(dir = dir)
+        try {
+            v2Connected(harness = second)
+            assertEquals("the retry never wrote it", upper, second.manager.rememberedV2IdForTests(wp.id))
+            second.advance(500)
+            assertEquals(upper, second.socket.sentOfType("put").single().getString("id"))
+        } finally {
+            second.close()
+        }
+    }
+
     private fun v2Vectors(): JSONObject {
         var dir: java.io.File? = java.io.File(System.getProperty("user.dir") ?: ".").absoluteFile
         repeat(8) {
