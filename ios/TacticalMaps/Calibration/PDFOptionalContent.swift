@@ -15,14 +15,28 @@ import Compression
 ///
 /// The PDF is untrusted, so everything here is budgeted and any surprise
 /// (encryption, odd xref, unsupported filter, budget hit) just returns nil and
-/// we draw the original like before.
+/// we draw the original like before. Budgets are for the whole pass, not per
+/// object, and offsets/lengths from the file get range checked before any
+/// math on them (Int overflow traps, so a crafted /Length used to crash us).
 enum PDFOptionalContent {
 
-    // budgets
+    // budgets, per pass unless it says otherwise
     static let maxXrefSections = 64
     static let maxObjects = 2_000_000
+    /// highest object number we accept, keeps start + count sums nowhere near Int.max
+    static let maxObjectNumber = Int(Int32.max)
     static let maxScannedObjects = 500_000
+    /// every object read, the scan plus resolving refs
+    static let maxObjectLoads = 1_000_000
+    /// one decoded stream
     static let maxInflatedBytes = 32 * 1024 * 1024
+    /// everything decoded in the pass, re-decodes after an eviction included
+    static let maxTotalInflatedBytes = 64 * 1024 * 1024
+    /// decoded object streams kept around for lookups, oldest goes first
+    static let maxCachedObjStmBytes = 32 * 1024 * 1024
+    /// bytes lexed or scanned for endstream: this much, plus 2x the file and
+    /// 2x what got decoded. keeps the work linear in the input
+    static let parseSlackBytes = 16 * 1024 * 1024
     static let maxDepth = 64
     static let maxContainerItems = 200_000
 
@@ -38,6 +52,9 @@ enum PDFOptionalContent {
     private struct CacheKey: Hashable { let path: String; let size: Int; let mtime: Double }
     private final class Entry { let tail: Data?; init(_ t: Data?) { tail = t } }
     private static let lock = NSLock()
+    /// one pass at a time. a second lane asking for the same file waits and gets
+    /// the cached answer instead of doing it all again next to the first
+    private static let computeLock = NSLock()
     private static var cache: [CacheKey: Entry] = [:]
     private static var order: [CacheKey] = []
 
@@ -53,6 +70,12 @@ enum PDFOptionalContent {
         let hit = cache[key]
         lock.unlock()
         if let hit { return hit.tail.map { (data, $0) } }
+        computeLock.lock()
+        defer { computeLock.unlock() }
+        lock.lock()
+        let done = cache[key]
+        lock.unlock()
+        if let done { return done.tail.map { (data, $0) } }
         let tail = data.withUnsafeBytes { updateTail(for: $0) }
         lock.lock()
         if cache[key] == nil {
@@ -70,6 +93,11 @@ enum PDFOptionalContent {
     /// nil when there's nothing to fix (or we can't tell safely)
     static func updateTail(for bytes: UnsafeRawBufferPointer) -> Data? {
         guard let file = PDFFile(bytes: bytes) else { return nil }
+        return updateTail(file: file)
+    }
+
+    /// same, on a file thats already open (tests look at its budget counters after)
+    static func updateTail(file: PDFFile) -> Data? {
         guard file.trailer["Encrypt"] == nil,
               case .ref(let rootNum, _)? = file.trailer["Root"],
               case .dict(let catalog)? = file.object(rootNum) else { return nil }
@@ -85,7 +113,7 @@ enum PDFOptionalContent {
         var scanned = 0
         for n in file.objectNumbers() {
             scanned += 1
-            guard scanned <= maxScannedObjects else { return nil }
+            guard scanned <= maxScannedObjects, !file.exhausted else { return nil }
             guard case .dict(let d)? = file.object(n), case .name(let t)? = d["Type"], t == Array("OCMD".utf8) else { continue }
             if visible(ocmd: d, file: file, ocgOn: ocgOn) == false { hidden.append(n) }
         }
@@ -107,6 +135,8 @@ enum PDFOptionalContent {
         }
         let ocg = Array("<< /Type /OCG /Name (TacMap hidden) >>".utf8)
         for n in hidden { objects.append((n, file.generation(n), ocg)) }
+        // a budget ran out somewhere along the way, half an answer isnt good enough
+        guard !file.exhausted else { return nil }
         return file.incrementalUpdate(objects)
     }
 
@@ -388,8 +418,33 @@ final class PDFFile {
     private var xref: [Int: Loc] = [:]
     private var lastXrefOffset = 0
     private var newestIsStream = false
-    private var objStmCache: [Int: (data: [UInt8], offsets: [Int: Int])] = [:]
     private var loading: Set<Int> = []
+
+    private struct ObjStm {
+        let data: [UInt8]
+        let offsets: [Int: Int]
+        /// rough bytes held, the offsets table counts too
+        var cost: Int { data.count + offsets.count * 16 + 64 }
+    }
+    private var objStmCache: [Int: ObjStm] = [:]
+    /// insertion order for eviction, head moves instead of removeFirst (thats O(n))
+    private var objStmOrder: [Int] = []
+    private var objStmHead = 0
+    private var objStmBroken: Set<Int> = []
+    private(set) var cachedObjStmBytes = 0
+    private(set) var peakCachedObjStmBytes = 0
+
+    // pass budget counters, see PDFOptionalContent
+    private(set) var decodedBytes = 0
+    private(set) var parsedBytes = 0
+    private(set) var objectLoads = 0
+    /// a budget ran out (or the xref got too big), every read after this is nil
+    private(set) var exhausted = false
+
+    private func charge(parsed n: Int) {
+        parsedBytes += max(0, n)
+        if parsedBytes > PDFOptionalContent.parseSlackBytes + 2 * (bytes.count + decodedBytes) { exhausted = true }
+    }
 
     init?(bytes: UnsafeRawBufferPointer) {
         self.bytes = bytes
@@ -405,7 +460,7 @@ final class PDFFile {
                 continue
             }
             seen.insert(off)
-            guard let (t, isStream) = readSection(at: off) else { return nil }
+            guard let (t, isStream) = readSection(at: off), !exhausted else { return nil }
             if first { trailer = t; newestIsStream = isStream; first = false }
             if case .int(let x)? = t["XRefStm"] { queue.insert(x, at: 0) }
             if case .int(let p)? = t["Prev"] { queue.append(p) }
@@ -428,21 +483,35 @@ final class PDFFile {
         return nil
     }
 
-    private func record(_ n: Int, _ loc: Loc) { if xref[n] == nil { xref[n] = loc } }
-    private func recordFree(_ n: Int) { if xref[n] == nil { xref[n] = .offset(-1, gen: 0) } }
+    /// stops taking entries once the table is full, init bails on exhausted.
+    /// checked per entry, a 6 byte "0 0 n" row adds up fast in a 512 MiB file
+    private func record(_ n: Int, _ loc: Loc) {
+        guard xref[n] == nil else { return }
+        guard xref.count < PDFOptionalContent.maxObjects else { exhausted = true; return }
+        xref[n] = loc
+    }
+    private func recordFree(_ n: Int) { record(n, .offset(-1, gen: 0)) }
+
+    /// first object number + count of an xref subsection, nil if it runs past maxObjectNumber
+    private static func subsection(_ start: Int, _ count: Int) -> (Int, Int)? {
+        guard count >= 0, count <= PDFOptionalContent.maxObjects,
+              start >= 0, start <= PDFOptionalContent.maxObjectNumber - count else { return nil }
+        return (start, count)
+    }
 
     private func readSection(at off: Int) -> (PDFDict, Bool)? {
         var lx = PDFLexer(b: bytes, pos: off)
         let save = lx.pos
         if lx.keyword() == Array("xref".utf8) {
+            defer { charge(parsed: lx.pos - off) }
             while true {
                 let mark = lx.pos
                 if lx.keyword() == Array("trailer".utf8) { break }
                 lx.pos = mark
-                guard let start = lx.unsignedInt(), let count = lx.unsignedInt(),
-                      count <= PDFOptionalContent.maxObjects else { return nil }
+                guard let a = lx.unsignedInt(), let b = lx.unsignedInt(),
+                      let (start, count) = Self.subsection(a, b) else { return nil }
                 for i in 0..<count {
-                    guard let o = lx.unsignedInt(), let g = lx.unsignedInt() else { return nil }
+                    guard !exhausted, let o = lx.unsignedInt(), let g = lx.unsignedInt() else { return nil }
                     let kind = lx.keyword()
                     if kind == [0x6E] { record(start + i, .offset(o, gen: g)) } else { recordFree(start + i) }
                 }
@@ -451,7 +520,7 @@ final class PDFFile {
             return (t, false)
         }
         lx.pos = save
-        guard let (_, _, d, stream) = indirect(at: off), case .dict(let t) = d, let raw = stream,
+        guard let (_, _, d, stream) = indirect(at: off, wantStream: true), case .dict(let t) = d, let raw = stream,
               case .name(let ty)? = t["Type"], ty == Array("XRef".utf8),
               let data = decode(raw, dict: t),
               case .array(let wv)? = t["W"], wv.count == 3 else { return nil }
@@ -472,10 +541,10 @@ final class PDFFile {
             return v
         }
         for pair in stride(from: 0, to: index.count, by: 2) {
-            let (start, count) = (index[pair], index[pair + 1])
-            guard count >= 0, count <= PDFOptionalContent.maxObjects else { return nil }
+            // /Index [9223372036854775807 2] used to trap on start + i
+            guard let (start, count) = Self.subsection(index[pair], index[pair + 1]) else { return nil }
             for i in 0..<count {
-                guard p + row <= data.count else { return nil }
+                guard !exhausted, p + row <= data.count else { return nil }
                 let type = field(w[0], 1), a = field(w[1], 0), c = field(w[2], 0)
                 switch type {
                 case 1: record(start + i, .offset(a, gen: c))
@@ -487,11 +556,15 @@ final class PDFFile {
         return (t, true)
     }
 
-    /// "n g obj value [stream...]" at an offset
-    private func indirect(at off: Int) -> (Int, Int, PDFValue, UnsafeRawBufferPointer?)? {
-        guard off >= 0, off < bytes.count else { return nil }
+    /// "n g obj value [stream...]" at an offset. the stream bytes only when
+    /// asked: the OCMD scan never needs them, and finding them without a good
+    /// /Length means scanning for endstream
+    private func indirect(at off: Int, wantStream: Bool) -> (Int, Int, PDFValue, UnsafeRawBufferPointer?)? {
+        guard !exhausted, off >= 0, off < bytes.count else { return nil }
         var lx = PDFLexer(b: bytes, pos: off)
+        defer { charge(parsed: lx.pos - off) }
         guard let n = lx.unsignedInt(), let g = lx.unsignedInt(), lx.expect("obj"), let v = lx.value() else { return nil }
+        guard wantStream else { return (n, g, v, nil) }
         let mark = lx.pos
         guard case .dict(let d) = v, lx.keyword() == Array("stream".utf8) else {
             lx.pos = mark
@@ -506,12 +579,14 @@ final class PDFFile {
         case .ref(let ln, _)?: if case .int(let l)? = object(ln) { length = l }
         default: break
         }
-        if let l = length, l >= 0, start + l <= bytes.count {
+        // start <= bytes.count so this side cant overflow, start + l could (/Length 9223372036854775807)
+        if let l = length, l >= 0, l <= bytes.count - start {
             return (n, g, v, UnsafeRawBufferPointer(rebasing: bytes[start..<start + l]))
         }
-        // no usable /Length, look for endstream
+        // no usable /Length, look for endstream. counts against the parse budget
         let key = Array("endstream".utf8)
         var i = start
+        defer { charge(parsed: i - start) }
         while i + key.count <= bytes.count {
             if bytes[i] == key[0], Array(bytes[i..<i + key.count]) == key {
                 return (n, g, v, UnsafeRawBufferPointer(rebasing: bytes[start..<i]))
@@ -521,16 +596,33 @@ final class PDFFile {
         return nil
     }
 
-    /// FlateDecode (optionally with a PNG predictor) or no filter, nothing else
+    /// FlateDecode (optionally with a PNG predictor) or no filter, nothing else.
+    /// output counts against the pass budget, past it the whole pass gives up
     private func decode(_ raw: UnsafeRawBufferPointer, dict: PDFDict) -> [UInt8]? {
+        let remaining = max(0, PDFOptionalContent.maxTotalInflatedBytes - decodedBytes)
+        let limit = min(PDFOptionalContent.maxInflatedBytes, remaining)
+        // too big for its own cap = just a broken stream, too big for whats left = stop
+        func tooBig() -> [UInt8]? {
+            if limit == remaining { exhausted = true }
+            return nil
+        }
         var filters: [[UInt8]] = []
         switch dict["Filter"] {
-        case nil: return Array(raw)
+        case nil: break
         case .name(let f)?: filters = [f]
         case .array(let a)?: filters = a.compactMap { if case .name(let f) = $0 { return f } else { return nil } }
         default: return nil
         }
-        guard filters == [Array("FlateDecode".utf8)], var data = Self.inflate(raw) else { return filters.isEmpty ? Array(raw) : nil }
+        if filters.isEmpty {
+            guard raw.count <= limit else { return tooBig() }
+            decodedBytes += raw.count
+            return Array(raw)
+        }
+        guard filters == [Array("FlateDecode".utf8)] else { return nil }
+        var used = 0
+        let inflated = Self.inflate(raw, limit: limit, used: &used)
+        decodedBytes += used
+        guard var data = inflated else { return used >= limit ? tooBig() : nil }
         var parms = PDFDict()
         switch dict["DecodeParms"] {
         case .dict(let p)?: parms = p
@@ -548,7 +640,9 @@ final class PDFFile {
         return data
     }
 
-    static func inflate(_ src: UnsafeRawBufferPointer) -> [UInt8]? {
+    /// nil past limit bytes of output. used = how much we decoded, never more than limit
+    static func inflate(_ src: UnsafeRawBufferPointer, limit: Int, used: inout Int) -> [UInt8]? {
+        used = 0
         // Compression's ZLIB is raw deflate, skip the 2 byte zlib header
         guard src.count > 2, let base = src.baseAddress else { return nil }
         let stream = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
@@ -565,8 +659,11 @@ final class PDFFile {
             stream.pointee.dst_ptr = dst
             stream.pointee.dst_size = chunk
             let status = compression_stream_process(stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
-            out.append(contentsOf: UnsafeBufferPointer(start: dst, count: chunk - stream.pointee.dst_size))
-            if out.count > PDFOptionalContent.maxInflatedBytes { return nil }
+            let n = chunk - stream.pointee.dst_size
+            // check before appending so the array never grows past the cap
+            if n > limit - out.count { used = limit; return nil }
+            out.append(contentsOf: UnsafeBufferPointer(start: dst, count: n))
+            used = out.count
             switch status {
             case COMPRESSION_STATUS_OK: continue
             case COMPRESSION_STATUS_END: return out
@@ -611,37 +708,72 @@ final class PDFFile {
     func generation(_ n: Int) -> Int { if case .offset(_, let g)? = xref[n] { return g }; return 0 }
 
     func object(_ n: Int) -> PDFValue? {
-        guard let loc = xref[n], !loading.contains(n), loading.count < 16 else { return nil }
+        guard !exhausted, let loc = xref[n], !loading.contains(n), loading.count < 16 else { return nil }
+        objectLoads += 1
+        guard objectLoads <= PDFOptionalContent.maxObjectLoads else { exhausted = true; return nil }
         loading.insert(n)
         defer { loading.remove(n) }
         switch loc {
         case .offset(let o, _):
-            guard o >= 0, let (num, _, v, _) = indirect(at: o), num == n else { return nil }
+            guard o >= 0, let (num, _, v, _) = indirect(at: o, wantStream: false), num == n else { return nil }
             return v
         case .packed(let s, _):
-            if objStmCache[s] == nil {
-                guard case .offset(let o, _)? = xref[s], let (_, _, d, raw) = indirect(at: o),
-                      case .dict(let sd) = d, let raw, let data = decode(raw, dict: sd),
-                      case .int(let count)? = sd["N"], case .int(let first)? = sd["First"],
-                      count >= 0, count <= PDFOptionalContent.maxObjects, first >= 0, first <= data.count else { return nil }
-                var offsets: [Int: Int] = [:]
-                let ok: Bool = data.withUnsafeBytes { buf in
-                    var lx = PDFLexer(b: buf, pos: 0)
-                    for _ in 0..<count {
-                        guard let num = lx.unsignedInt(), let rel = lx.unsignedInt() else { return false }
-                        offsets[num] = first + rel
-                    }
-                    return true
-                }
-                guard ok else { return nil }
-                objStmCache[s] = (data, offsets)
-            }
-            guard let (data, offsets) = objStmCache[s], let at = offsets[n], at < data.count else { return nil }
-            return data.withUnsafeBytes { buf -> PDFValue? in
+            guard let stm = objectStream(s), let at = stm.offsets[n] else { return nil }
+            var lexed = 0
+            let v = stm.data.withUnsafeBytes { buf -> PDFValue? in
                 var lx = PDFLexer(b: buf, pos: at)
+                defer { lexed = lx.pos - at }
                 return lx.value()
             }
+            charge(parsed: lexed)
+            return v
         }
+    }
+
+    /// decoded object stream s. cached up to maxCachedObjStmBytes in total, oldest
+    /// out first, and a broken one is remembered so it isnt decoded over and over
+    private func objectStream(_ s: Int) -> ObjStm? {
+        if let hit = objStmCache[s] { return hit }
+        guard !objStmBroken.contains(s) else { return nil }
+        guard let stm = loadObjectStream(s) else {
+            objStmBroken.insert(s)
+            return nil
+        }
+        // one thats bigger than the whole cache just gets used once
+        guard stm.cost <= PDFOptionalContent.maxCachedObjStmBytes else { return stm }
+        while cachedObjStmBytes + stm.cost > PDFOptionalContent.maxCachedObjStmBytes, objStmHead < objStmOrder.count {
+            let old = objStmOrder[objStmHead]
+            objStmHead += 1
+            cachedObjStmBytes -= objStmCache.removeValue(forKey: old)?.cost ?? 0
+        }
+        objStmCache[s] = stm
+        objStmOrder.append(s)
+        cachedObjStmBytes += stm.cost
+        peakCachedObjStmBytes = max(peakCachedObjStmBytes, cachedObjStmBytes)
+        return stm
+    }
+
+    /// an /N past what the scan would ever read is junk, keeps the offsets table small
+    private func loadObjectStream(_ s: Int) -> ObjStm? {
+        guard case .offset(let o, _)? = xref[s], let (_, _, d, raw) = indirect(at: o, wantStream: true),
+              case .dict(let sd) = d, let raw, let data = decode(raw, dict: sd),
+              case .int(let count)? = sd["N"], case .int(let first)? = sd["First"],
+              count >= 0, count <= PDFOptionalContent.maxScannedObjects, first >= 0, first <= data.count else { return nil }
+        var offsets: [Int: Int] = [:]
+        var lexed = 0
+        let ok: Bool = data.withUnsafeBytes { buf in
+            var lx = PDFLexer(b: buf, pos: 0)
+            defer { lexed = lx.pos }
+            for _ in 0..<count {
+                guard let num = lx.unsignedInt(), let rel = lx.unsignedInt() else { return false }
+                // out of range just means that one object cant be read, like before
+                if rel < data.count - first { offsets[num] = first + rel }
+            }
+            return true
+        }
+        charge(parsed: lexed)
+        guard ok else { return nil }
+        return ObjStm(data: data, offsets: offsets)
     }
 
     func resolve(_ v: PDFValue) -> PDFValue? {
@@ -670,8 +802,10 @@ final class PDFFile {
             entries.append((o.num, o.gen, bytes.count + out.count))
             out += Array("\(o.num) \(o.gen) obj\n".utf8) + o.body + Array("\nendobj\n".utf8)
         }
+        // a junk /Size (say Int.max) is ignored, selfNum + 1 below used to trap on it.
+        // object numbers are <= maxObjectNumber already so the + 1s are fine
         var size = 0
-        if case .int(let s)? = trailer["Size"] { size = s }
+        if case .int(let s)? = trailer["Size"], (0...PDFOptionalContent.maxObjectNumber).contains(s) { size = s }
         size = max(size, (xref.keys.max() ?? 0) + 1, (objects.map(\.num).max() ?? 0) + 1)
         var t = PDFDict()
         for key in ["Root", "Info", "ID"] { if let v = trailer[key] { t[key] = v } }
