@@ -631,7 +631,7 @@ V2 = {
              "note": "iOS always sends uppercase, whoever created the object (2.x iOS did the same)"},
             {"id": "android_own_object", "platform": "android", "localId": V2_ID, "rememberedRawId": None,
              "expectFrameId": V2_ID, "expectStateKey": V2_ID, "expectEmbeddedId": V2_ID,
-             "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01, unchanged)"},
+             "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01) until an uppercase id for them is accepted, e.g. after a 3.0.1 iOS edit"},
             {"id": "android_edits_ios_object", "platform": "android", "localId": V2_ID,
              "rememberedRawId": V2_ID.upper(), "expectFrameId": V2_ID.upper(), "expectStateKey": V2_ID,
              "expectEmbeddedId": V2_ID,

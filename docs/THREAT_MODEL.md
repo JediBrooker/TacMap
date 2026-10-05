@@ -528,8 +528,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   target opens, Home, recents or screen off), and closing the sheet back into
   TacMap locks nothing. While that sheet is up the mission stores stay attached,
   the key stays cached and Unit Sync keeps processing. Before clearing the cache,
-  Android waits up to two seconds for Unit Sync sealed writes already handed to
-  its persistence worker, the presence clean point included. Once cleared, the
+  Android waits up to two seconds for Unit Sync sealed writes already queued on
+  its persistence worker, which normally includes the presence clean point; if
+  another sync write holds the store at that moment, the clean point fails
+  closed instead and the next reload applies the safe presence floor. Once cleared, the
   general key is not unwrapped again in either mode until the foreground unlock
   (device-mode resume, the App Lock PIN, a platform credential or a confirmed
   protection change). A write still in flight behind the lock fails closed
@@ -715,10 +717,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   the same map twice, and a kill between the write and the unlink leaves the old name behind as a second, unlisted
   link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
   leftovers). Nothing is lost in either case.
-  Old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather than
-  being dropped. A library that was never written, with no old stores left to migrate, while map files sit in app
-  storage is handled the same way, so neither a missing nor a quarantined index can authorise deleting those
-  files. When old stores that read cleanly are migrated instead, the library written from them permits
+  On iOS, old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather
+  than being dropped; Android can't rebuild them either and brings that map back uncalibrated. A library that was
+  never written, with no old stores left to migrate, while map files sit in app storage is salvaged the same way
+  (every file adopted, `recoveryPreservesOrphans=true`, no cleanup), so neither a missing nor a quarantined index
+  can authorise deleting those files. When old stores that read cleanly are migrated instead, the library written from them permits
   cleanup, so the reconcile after it keeps the files those stores name and removes any other map file in app
   storage, much like 2.x's own cold-start cleanup, which kept only the active and retained map. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not

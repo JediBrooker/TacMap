@@ -419,8 +419,9 @@ The health endpoint returns `ok` with a no-store
 that header matches `RELAY_RELEASE_ID` in `src/release.ts`; an `ok` body alone is
 only a liveness check. Every change to `src/index.ts`, `src/limits.ts` or
 `wrangler.jsonc` needs a new id: `test/contract.test.ts` hashes those files and
-fails until `src/release.ts` carries the new hash, and it refuses ids that
-already shipped with other source.
+fails until `src/release.ts` carries the new hash, and it refuses any id listed
+in its retired list, so move the old id there when you bump it (a new hash with
+the old id still passes if you forget).
 
 Verified end-to-end against the deployed Durable Object (two-client WebSocket
 test): snapshot-on-connect, peer broadcast with the opaque `ct` preserved, no

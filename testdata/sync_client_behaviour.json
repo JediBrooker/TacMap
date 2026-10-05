@@ -1227,7 +1227,7 @@
           "expectFrameId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
           "expectStateKey": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
           "expectEmbeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
-          "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01, unchanged)"
+          "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01) until an uppercase id for them is accepted, e.g. after a 3.0.1 iOS edit"
         },
         {
           "id": "android_edits_ios_object",
