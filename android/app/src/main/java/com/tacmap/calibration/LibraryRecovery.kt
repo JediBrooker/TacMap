@@ -289,8 +289,10 @@ internal object LibraryRebuild {
                     val info = if (key == null || c.relativeName == crashedOn) null else inspected(marker, c, inspectPdf)
                     base.copy(pdf = info ?: uninspectable())
                 }
-                // an MBTiles that won't open stays listed but can't match its stamp: unavailable, Delete only
-                ImportedMapKind.MBTILES -> if (runCatching { validateMbtiles(c.file) }.getOrDefault(false)) base else base.copy(byteCount = -1)
+                // an MBTiles that won't open stays listed but can't match its stamp: unavailable, Delete only.
+                // its admission runs under the marker too (s14.1), one that killed the last pass isn't opened
+                ImportedMapKind.MBTILES ->
+                    if (c.relativeName != crashedOn && validated(marker, c, validateMbtiles)) base else base.copy(byteCount = -1)
             }
         }
         runCatching { marker.delete() }
@@ -300,6 +302,31 @@ internal object LibraryRebuild {
             entries = entries,
             recoveryPreservesOrphans = true,
         )
+    }
+
+    private fun validated(marker: File, c: Candidate, validate: (File) -> Boolean): Boolean {
+        writeMarker(marker, c.relativeName)
+        return runCatching { validate(c.file) }.getOrDefault(false)
+    }
+
+    /** the opaque name the marker still holds, the file the last pass died on. null = none */
+    fun markedName(filesDir: File): String? =
+        runCatching { File(filesDir, MARKER_NAME).takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
+
+    /**
+     * [open] with the marker naming [relativeName] on disk first, the migration's MBTiles name
+     * read uses it. Whatever the marker held before goes back after, so a crash the rebuild
+     * still has to skip isn't forgotten
+     */
+    fun <T> underMarker(filesDir: File, relativeName: String, open: () -> T): T {
+        val marker = File(filesDir, MARKER_NAME)
+        val before = markedName(filesDir)
+        writeMarker(marker, relativeName)
+        try {
+            return open()
+        } finally {
+            if (before != null) writeMarker(marker, before) else runCatching { marker.delete() }
+        }
     }
 
     private fun inspected(marker: File, c: Candidate, inspect: PdfInspect): PdfEntryInfo? {

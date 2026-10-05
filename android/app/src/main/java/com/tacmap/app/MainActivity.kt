@@ -399,6 +399,7 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
         com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = false
         (application as TacticalApp).pdfRenderGuard.disarmBackground()
+        (application as TacticalApp).mbtilesOpenGuard.disarmBackground()
         if (shareSheetLock.onStop()) {
             lockForBackground()
             // compose pauses recomposition at ON_STOP, so flipping missionKeyReady cant tear

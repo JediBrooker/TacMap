@@ -109,6 +109,8 @@ internal class MapImportPipeline(
     private val clock: () -> Long = System::currentTimeMillis,
     private val freeBytes: () -> Long = { StatFs(context.filesDir.path).availableBytes },
     private val onStage: (ImportStage) -> Unit = {},
+    /** the MBTiles admission, a seam so a test can look at the marker while it runs */
+    private val validateMbtiles: (File) -> Boolean = { f -> MBTilesStore.open(f.path)?.let { it.close(); true } ?: false },
 ) {
     private val stages = PdfImportStages(journal, inspect, clock, onStage)
 
@@ -136,12 +138,21 @@ internal class MapImportPipeline(
         library: LibrarySnapshot,
         progress: (ImportProgress) -> Unit,
     ): PreparedOutcome {
+        // the same pack took the app down in its admission last time, replaying it would loop
+        interruptedBefore(operationKey)?.let { return it }
         val size = sourceSize(uri)
         precheck(library, ImportedMapKind.MBTILES, size)?.let { return PreparedOutcome.Failed(it) }
         val name = displayStem(uri, ".mbtiles")
         val copied = try {
             copy(uri, operationKey, "mbtiles", "mbtiles", ImportLimits.MBTILES_MAX_BYTES, size, progress) { f ->
-                MBTilesStore.open(f.path)?.let { it.close(); true } ?: false
+                // s9.8 / s14.1: the admission reads a hostile file, so it runs under the same
+                // durable marker as a PDF parse. a crash in there gets swept at the next launch
+                markInspecting(operationKey, clock())
+                try {
+                    validateMbtiles(f)
+                } finally {
+                    markInspecting(operationKey, null)
+                }
             } ?: return PreparedOutcome.Failed(ImportFailure(ImportError.TOO_LARGE, mapOf("limit" to ImportLimits.MBTILES_MAX_BYTES)))
         } catch (c: CancellationException) {
             throw c
@@ -219,6 +230,11 @@ internal class MapImportPipeline(
     }
 
     private fun discard(file: File) = discardImportCopy(file)
+
+    private fun markInspecting(operationKey: String, at: Long?) {
+        val st = runCatching { journal.state(operationKey) }.getOrNull() ?: return
+        runCatching { journal.persist(st.copy(inspectStartedAtEpochMs = at, updatedAtEpochMs = clock())) }
+    }
 
     private fun sourceSize(uri: Uri): Long? = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->

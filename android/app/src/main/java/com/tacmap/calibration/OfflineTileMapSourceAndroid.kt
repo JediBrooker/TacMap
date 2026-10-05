@@ -24,9 +24,12 @@ class OfflineTileMapSourceAndroid private constructor(
     override val calibration: Calibration? = null
     private val closed = AtomicBoolean(false)
 
+    /** the open guard's first draw watch while this publication hasn't settled (s14.1), else null */
+    @Volatile internal var readWatch: com.tacmap.map.render.TileReadWatch? = null
+
     /** Tile source for the custom (SDK-free) map view. */
     fun renderTileSource(): com.tacmap.map.render.TileSource =
-        com.tacmap.map.render.OfflineRasterTileSource(store, minZoom, maxZoom, path)
+        com.tacmap.map.render.OfflineRasterTileSource(store, minZoom, maxZoom, path) { readWatch }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) store.close()

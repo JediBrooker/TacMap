@@ -1017,6 +1017,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesViewShape.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesWriter.kt",
     "platform": "android",
     "area": "maps-calibration",
@@ -1456,6 +1462,12 @@
     "path": "android/app/src/main/java/com/tacmap/map/render/MapCamera.kt",
     "platform": "android",
     "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/MbtilesOpenGuard.kt",
+    "platform": "android",
+    "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
   },
   {

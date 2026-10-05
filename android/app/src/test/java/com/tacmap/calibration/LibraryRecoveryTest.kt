@@ -631,6 +631,64 @@ class LibraryRecoveryTest {
     }
 
     @Test
+    fun aPackOpenThatKilledTheLastRebuildIsNotRetriedAndTheRestOpenUnderTheMarker() {
+        // s14.1: an MBTiles admission runs file data, a pack that took the process down is never reopened
+        val dir = tempDir()
+        val crashed = mapFile(dir, "mbtiles/import-aaaa.mbtiles", 1_000L)
+        val fine = mapFile(dir, "mbtiles/import-bbbb.mbtiles", 2_000L)
+        val marker = File(dir, LibraryRebuild.MARKER_NAME)
+        marker.writeText("mbtiles/import-aaaa.mbtiles")
+        val opened = ArrayList<Pair<String, String?>>()
+        val rebuilt = LibraryRebuild.rebuild(
+            filesDir = dir, defaultStyle = "OSM_TOPO", nowMs = 1L, recoveredName = { "r$it" },
+            inspectPdf = { null },
+            // what the marker says while each pack is being opened
+            validateMbtiles = { f -> opened += f.name to marker.takeIf { it.isFile }?.readText(); true },
+            hash = { "sha256:" + "1".repeat(64) },
+        )
+        assertEquals(listOf("import-bbbb.mbtiles" to "mbtiles/import-bbbb.mbtiles"), opened)
+        val byName = rebuilt.entries.associateBy { it.fileName }
+        // adopted, never opened, unavailable (Delete only); the other one's a normal pack
+        assertEquals(-1L, byName.getValue("mbtiles/import-aaaa.mbtiles").byteCount)
+        assertEquals(fine.length(), byName.getValue("mbtiles/import-bbbb.mbtiles").byteCount)
+        assertTrue(crashed.isFile)
+        assertFalse(marker.exists())
+    }
+
+    @Test
+    fun theMigrationsPackNameReadRunsUnderTheMarkerAndFallsBackToTheStemAfterACrash() {
+        val dir = tempDir()
+        val pack = mapFile(dir, "mbtiles/import-cccc.mbtiles", 1_000L)
+        SafeStore.writeAtomically(
+            File(dir, ACTIVE), ACTIVE,
+            """{"kind":"OFFLINE_TILES","preferredOnlineStyle":"OSM_TOPO","offlineRelativePath":"mbtiles/import-cccc.mbtiles"}""",
+        )
+        val marker = File(dir, LibraryRebuild.MARKER_NAME)
+        val seen = ArrayList<String?>()
+        fun reader() = LegacyMapReader(
+            dir, ActiveMapSelectionStore.forTests(dir), FakeSession(), pageCount = ::pdfPages,
+            mbtilesName = { seen += marker.takeIf { it.isFile }?.readText(); "Pack name" },
+        )
+        fun offlineName(read: LegacyMapReader.Read) = (read as LegacyMapReader.Read.Present).inputs.offline.single().displayName
+
+        assertEquals("Pack name", offlineName(reader().read("OSM_TOPO")))
+        assertEquals(listOf<String?>("mbtiles/import-cccc.mbtiles"), seen)
+        assertFalse("the marker goes after a clean read", marker.exists())
+
+        // the read died last time: no open, the stem stands in, and the marker stays for the rebuild
+        marker.writeText("mbtiles/import-cccc.mbtiles")
+        assertEquals(pack.nameWithoutExtension, offlineName(reader().read("OSM_TOPO")))
+        assertEquals(1, seen.size)
+        assertEquals("mbtiles/import-cccc.mbtiles", marker.readText())
+
+        // a marker a rebuild left for another file comes back after the read
+        marker.writeText("pdf_maps/import-dddd.pdf")
+        assertEquals("Pack name", offlineName(reader().read("OSM_TOPO")))
+        assertEquals("mbtiles/import-cccc.mbtiles", seen.last())
+        assertEquals("pdf_maps/import-dddd.pdf", marker.readText())
+    }
+
+    @Test
     fun theRebuildWatchdogGivesUpOnAParseThatHangs() {
         val ok = InspectionResult.Ok(PdfInspection(1, emptyList()))
         assertEquals(ok, LibraryRebuild.withWatchdog(1_000) { ok })

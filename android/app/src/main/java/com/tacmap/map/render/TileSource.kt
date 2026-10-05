@@ -256,11 +256,16 @@ class OfflineRasterTileSource(
     override val minZoom: Int,
     override val maxZoom: Int,
     key: String = "",
+    /** the open guard's first draw watch for the pack's current publication, if it has one (s14.1) */
+    private val reads: () -> TileReadWatch? = { null },
 ) : TileSource {
     override val tileSizePx = 256
     override val cacheKey: String = "offline:$key:${System.identityHashCode(store)}"
 
     override suspend fun loadTile(tile: TileIndex): Bitmap? {
+        val watch = reads()
+        watch?.readStarted()
+        var cameBack = false
         // BitmapFactory itself is not cancellable. Keep a reference outside the
         // dispatcher hop so prompt cancellation cannot discard a newly-decoded
         // bitmap before the caller gets ownership of it.
@@ -271,13 +276,18 @@ class OfflineRasterTileSource(
                 decodeBoundedTile(data).also { decoded = it }
             }
             decoded = null
+            cameBack = true
             delivered
         } catch (cancelled: CancellationException) {
             decoded?.takeUnless(Bitmap::isRecycled)?.recycle()
             throw cancelled
         } catch (failure: Exception) {
             decoded?.takeUnless(Bitmap::isRecycled)?.recycle()
+            // the read itself finished, it just had nothing drawable
+            cameBack = true
             throw failure
+        } finally {
+            watch?.readEnded(cameBack)
         }
     }
 }

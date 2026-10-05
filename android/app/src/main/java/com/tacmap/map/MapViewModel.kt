@@ -104,6 +104,9 @@ internal fun closeSupersededOfflineSources(
     }
 }
 
+/** how often the open guard looks at a pack's first draw window, well under firstDrawQuietMs */
+private const val FIRST_DRAW_POLL_MS = 100L
+
 /** where the imported-map library is at, Layers + the import pre-check read it */
 internal enum class LibraryStatus { LOADING, LOADED, LOCKED, CORRUPT }
 
@@ -114,6 +117,22 @@ internal sealed class MapLaunchAlert {
     data object LibraryRecovered : MapLaunchAlert()
     data object ImportInterrupted : MapLaunchAlert()
     data object ActiveFileChanged : MapLaunchAlert()
+}
+
+/**
+ * What a crash guard held back at launch and is asking about: a PDF, or an MBTiles pack
+ * that never got opened (s14.1). The alert only needs the name
+ */
+sealed interface CrashSuspect {
+    val entryId: String?
+    val displayName: String
+
+    data class Pdf(val source: PdfMapSource) : CrashSuspect {
+        override val entryId: String? get() = source.entryId
+        override val displayName: String get() = source.displayName
+    }
+
+    data class Mbtiles(override val entryId: String, override val displayName: String) : CrashSuspect
 }
 
 /**
@@ -180,9 +199,16 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     /** Generate Offline Tiles, app scoped */
     val bakeManager: com.tacmap.calibration.PdfBakeManager = tacticalApp.pdfBakeManager
 
-    private val _pdfRecovery = MutableStateFlow<PdfMapSource?>(null)
-    /** the PDF the crash guard held back this launch, waiting on Open Anyway / Delete Map / Not Now */
-    val pdfRecovery: StateFlow<PdfMapSource?> = _pdfRecovery.asStateFlow()
+    /** the MBTiles open guard (s14.1), app scoped like the PDF one */
+    private val mbtilesGuard = tacticalApp.mbtilesOpenGuard
+
+    /** the pack publication the open guard waits on to draw, and the job that watches it */
+    private var firstDraw: Pair<String, OfflineTileMapSourceAndroid>? = null
+    private var firstDrawJob: kotlinx.coroutines.Job? = null
+
+    private val _pdfRecovery = MutableStateFlow<CrashSuspect?>(null)
+    /** the PDF or pack a crash guard held back this launch, waiting on Open Anyway / Delete Map / Not Now */
+    val pdfRecovery: StateFlow<CrashSuspect?> = _pdfRecovery.asStateFlow()
 
     private val _pdfLaunchNotices = MutableStateFlow<List<com.tacmap.map.render.pdf.PdfLaunchNotice>>(emptyList())
     /** import interrupted and/or bake interrupted from the last run, each shown once, in order */
@@ -531,6 +557,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         pdfLaunchDecision = d
         val notices = com.tacmap.map.render.pdf.PdfLaunchNotice.from(d)
         if (notices.isNotEmpty() && pdfRenderGuard.takeNotice()) _pdfLaunchNotices.value = notices
+        // the MBTiles guard's step at the same moment, the restored token is the active pack (s14.1)
+        mbtilesGuard.launchDecision(state.activeEntry?.takeIf { it.isMbtiles }?.id)
     }
 
     /** a token this launch's guard step named as the crash suspect (and nobody's opened it since) */
@@ -553,11 +581,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             publish(baseMapSource(styleOf(state.active.style) ?: preferredBaseMap), frame = false)
             return
         }
+        // a pack the open guard blamed for the last crash isn't opened again on its own
+        if (entry.isMbtiles && holdBackSuspectMbtiles(entry)) return
         // OD-F4 (M8): a PDF whose stored file is missing or changed keeps the selection and
         // goes up anyway, the render session checks the bytes against contentKey on open and
         // fails it as cannotOpen (Try Again, Use Online Map). nothing ever draws other bytes
         val source = when {
-            canBeActive(entry) -> sourceFor(entry)
+            canBeActive(entry) -> if (entry.isMbtiles) openMbtilesGuarded(entry) else sourceFor(entry)
             entry.isPdf && entryAllowsActive(entry) -> sourceFor(entry)
             else -> null
         }
@@ -577,13 +607,68 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private fun holdBackSuspectPdf(pdf: PdfMapSource): Boolean {
         if (!isCrashSuspect(pdf.render.renderGuardToken)) return false
         publish(onlineBasemap(), frame = false)
-        _pdfRecovery.value = pdf
+        _pdfRecovery.value = CrashSuspect.Pdf(pdf)
         return true
+    }
+
+    /**
+     * s14.1: the open guard named this pack the crash suspect, so it isn't opened at all. Online
+     * in memory only (durable selection + entry untouched) and the PDF guard's alert asks.
+     * True when held back
+     */
+    private fun holdBackSuspectMbtiles(entry: ImportedMapEntry): Boolean {
+        if (!mbtilesGuard.launchDecided || !mbtilesGuard.isSuspect(entry.id)) return false
+        publish(onlineBasemap(), frame = false)
+        _pdfRecovery.value = CrashSuspect.Mbtiles(entry.id, entry.displayName)
+        return true
+    }
+
+    /**
+     * A restore or activation opening [entry]'s pack: the open guard's armed (foreground only,
+     * on disk) before the open, and done with it right away when the pack's refused. A published
+     * one stays armed till its first draw settles (see [publish])
+     */
+    private fun openMbtilesGuarded(entry: ImportedMapEntry): MapSource? {
+        mbtilesGuard.arm(entry.id, foreground = com.tacmap.map.render.pdf.PdfRenderExecutor.foreground)
+        val source = sourceFor(entry)
+        if (source == null) mbtilesGuard.complete(entry.id)
+        return source
+    }
+
+    /** the guard's first draw window for a freshly published pack, or the end of the old one */
+    private fun onPublishedForOpenGuard(source: MapSource) {
+        // replaced before it settled: done with it all the same
+        if (firstDraw != null && firstDraw?.second !== source) finishFirstDraw()
+        val pack = source as? OfflineTileMapSourceAndroid ?: return
+        val token = entryIdOf(pack)?.takeIf(mbtilesGuard::isArmed) ?: return
+        firstDrawJob?.cancel()
+        val watch = com.tacmap.map.render.MbtilesFirstDraw(android.os.SystemClock::elapsedRealtime)
+        pack.readWatch = watch
+        firstDraw = token to pack
+        firstDrawJob = viewModelScope.launch {
+            while (!watch.settled()) kotlinx.coroutines.delay(FIRST_DRAW_POLL_MS)
+            firstDrawJob = null
+            finishFirstDraw()
+        }
+    }
+
+    private fun finishFirstDraw() {
+        val (token, pack) = firstDraw ?: return
+        firstDraw = null
+        firstDrawJob?.cancel()
+        firstDrawJob = null
+        pack.readWatch = null
+        mbtilesGuard.complete(token)
     }
 
     /** Open Anyway */
     fun openSuspectPdfAnyway() {
-        val pdf = _pdfRecovery.value ?: return
+        val suspect = _pdfRecovery.value ?: return
+        if (suspect is CrashSuspect.Mbtiles) {
+            openSuspectMbtilesAnyway(suspect)
+            return
+        }
+        val pdf = (suspect as CrashSuspect.Pdf).source
         pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
         _pdfRecovery.value = null
         if (pdf.isPreview) {
@@ -596,8 +681,19 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** the pack the open guard held back: resolved first, then the usual guarded open if it's still the one */
+    private fun openSuspectMbtilesAnyway(suspect: CrashSuspect.Mbtiles) {
+        mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
+        _pdfRecovery.value = null
+        val state = _libraryState.value ?: return
+        if (_mapSource.value !is OnlineRasterMapSourceAndroid || state.active.entryId != suspect.entryId) return
+        val entry = state.entry(suspect.entryId)?.takeIf(::canBeActive) ?: return
+        openMbtilesGuarded(entry)?.let { publish(it, frame = true) }
+    }
+
     /** Not Now: keep the suspect so the next launch asks again */
     fun dismissPdfRecovery() {
+        if (_pdfRecovery.value is CrashSuspect.Mbtiles) mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.NOT_NOW)
         _pdfRecovery.value = null
     }
 
@@ -607,8 +703,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
      * too once the delete lands (F4)
      */
     fun deleteSuspectPdf(): Boolean {
-        val pdf = _pdfRecovery.value ?: return false
-        val id = pdf.entryId ?: return false
+        val id = _pdfRecovery.value?.entryId ?: return false
         return deleteImportedMap(id)
     }
 
@@ -693,7 +788,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         )
         if (suspectPreview && _pdfRecovery.value == null && entry != null) {
             // C8: the preview's what went down. ask, like for a restored map; Open Anyway resumes it
-            recoveryPreviewFor(entry)?.let { src -> _pdfRecovery.value = src }
+            recoveryPreviewFor(entry)?.let { src -> _pdfRecovery.value = CrashSuspect.Pdf(src) }
         }
         if (decision.action != AutoResumeAction.RESUME || entry == null) return
         startCalibration(entry.id, resumeSilently = true)
@@ -961,6 +1056,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private fun publish(source: MapSource, frame: Boolean) {
         _mapSource.value = source
         if (frame) frameCameraFor(source)
+        onPublishedForOpenGuard(source)
         // s2.8: a different entry under a running calibration suspends it
         calibration.onActiveSourceChanged(entryIdOf(source))
     }
@@ -992,10 +1088,17 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val state = writableState() ?: return false
         val entry = state.entry(id) ?: return false
         if (!canBeActive(entry)) return false
-        val source = sourceFor(entry) ?: return false
-        val next = reduce(LibraryTransition.ActivateEntry(id), state) ?: return false
-        return transition(next, retry = { activateImportedMap(id, frame) }) {
-            if (_pdfRecovery.value?.entryId == id) {
+        val held = _pdfRecovery.value
+        if (entry.isMbtiles && held is CrashSuspect.Mbtiles && held.entryId == id) {
+            // picking the held back pack in Layers is Open Anyway, resolved before it's opened
+            mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
+            _pdfRecovery.value = null
+        }
+        val source = (if (entry.isMbtiles) openMbtilesGuarded(entry) else sourceFor(entry)) ?: return false
+        val next = reduce(LibraryTransition.ActivateEntry(id), state)
+        val done = next != null && transition(next, retry = { activateImportedMap(id, frame) }) {
+            val suspect = _pdfRecovery.value
+            if (suspect is CrashSuspect.Pdf && suspect.entryId == id) {
                 // picking it in Layers is an explicit open, same as Open Anyway
                 pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
                 _pdfRecovery.value = null
@@ -1003,6 +1106,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             previewReturn = null
             publish(source, frame)
         }
+        // opened but never put up (no transition, or the write failed): nothing will draw it
+        if (entry.isMbtiles && !done) mbtilesGuard.complete(id)
+        return done
     }
 
     /** import commit: the entry, plus active when it has a georef or is MBTiles */
@@ -1014,7 +1120,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         return transition(next, retry = { addImportedEntry(entry, activate, frame) }) {
             if (shown) {
                 previewReturn = null
-                sourceFor(entry)?.let { publish(it, frame && entry.derivedFromId == null) }
+                val source = if (entry.isMbtiles) openMbtilesGuarded(entry) else sourceFor(entry)
+                source?.let { publish(it, frame && entry.derivedFromId == null) }
             }
         }
     }
@@ -1135,10 +1242,14 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
         // a deleted crash suspect is resolved, whichever way the delete got here (the crash
         // dialog, its Retry after a failed write, or Layers) and the dialog goes with it (F4)
-        if (gone.any { isCrashSuspect(it.renderGuardToken) } || _pdfRecovery.value?.entryId in goneIds) {
+        val held = _pdfRecovery.value
+        if (gone.any { isCrashSuspect(it.renderGuardToken) } || (held is CrashSuspect.Pdf && held.entryId in goneIds)) {
             pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.DELETED)
-            if (_pdfRecovery.value?.entryId in goneIds) _pdfRecovery.value = null
         }
+        if (gone.any { it.isMbtiles && mbtilesGuard.isSuspect(it.id) }) {
+            mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.DELETED)
+        }
+        if (held?.entryId in goneIds) _pdfRecovery.value = null
         gone.forEach { e ->
             offlineSources.remove(e.id)?.close()
             e.contentKey?.let { key -> e.pdf?.let { draftStore.delete(CalibrationTarget.draftKey(key, it.pageIndex)) } }
@@ -1304,7 +1415,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         // C2/M10: calibrating the held back crash suspect is an explicit open, same as Open
         // Anyway or picking it in Layers. any other entry leaves the dialog where it is
         val suspect = _pdfRecovery.value
-        if (suspect != null && suspect.entryId == entry.id) {
+        if (suspect is CrashSuspect.Pdf && suspect.entryId == entry.id) {
             pdfRenderGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
             _pdfRecovery.value = null
         }
@@ -1604,6 +1715,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         pdfRuntime.release()
         headingService.stop()
         locationService.stop()
+        // the source goes before its first draw settled, done with it all the same
+        finishFirstDraw()
         closeSupersededOfflineSources(
             candidates = listOf(_mapSource.value) + offlineSources.values,
             stillReferenced = emptyList(),
