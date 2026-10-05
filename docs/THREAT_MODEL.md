@@ -492,10 +492,23 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   Android detaches mission stores and clears its general-key cache on Activity
   pause. iOS keeps the map view mounted to preserve authorized recording:
   previously decrypted mission/library objects, track points and rendered tiles
-  may remain beneath the opaque lock overlay. AUTH mode clears the general key
-  cache; DEVICE mode may retain it under the accepted lifecycle policy. UI and
-  inbound Sync gates prevent ordinary locked-state access/processing, but do not
-  defend retained memory against code executing inside a compromised process.
+  may remain in memory beneath the opaque lock view. AUTH mode clears the
+  general key cache; DEVICE mode may retain it under the accepted lifecycle
+  policy. UI and inbound Sync gates prevent ordinary locked-state
+  access/processing, but do not defend retained memory against code executing
+  inside a compromised process.
+
+  On iOS the App Lock view is shown in its own window above alert level in every
+  scene of the app, so it also covers whatever TacMap had presented when it
+  locked: sheets (Unit Sync with the join code, waypoint and drawing lists, the
+  map library, export), the system share sheet, file pickers and alerts. Those
+  stay presented underneath (nothing is dismissed, so they are back after
+  unlock) but while locked they cannot be seen or touched, are hidden from
+  VoiceOver, and lose text-input focus; if anything underneath claims keyboard
+  focus while locked, the lock window takes it back. TacMap Chat is still closed
+  and its secrets cleared on lock. App Lock arms when the app enters the
+  background, not on a transient `.inactive`. Prompts drawn by iOS itself
+  (permission alerts, Face ID) are outside the app and can still appear above it.
 
   The optional in-app PIN lock remains a **UI deterrent for a borrowed device,
   not encryption**, and is independent of all of the above.
@@ -822,8 +835,13 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   thumbnail). This is literal on Android (`FLAG_SECURE` blocks screenshots,
   screen recording, and the recents thumbnail). On iOS there is no public API to
   block an in-app screenshot, so the toggle only covers the **app-switcher
-  snapshot** (an opaque cover while the app is backgrounded) - a deliberate
-  screenshot of the live map is still possible.
+  snapshot**: whenever the app is not active (from `.inactive`, before iOS takes
+  the snapshot) an opaque cover is shown in its own window above everything
+  TacMap has on screen, including open sheets, the share sheet, file pickers and
+  alerts, so a join code, waypoint list or export preview stays out of the
+  thumbnail too. With the toggle off and App Lock on, the lock view only goes up
+  once the app is in the background. A deliberate screenshot of the live app is
+  still possible.
 - Online lookups off; enabling them sends provider queries described in §5.
 - Online basemaps off; enabling them exposes viewed tile coordinates as described in §5.
 - Mission data encrypted at rest with a device-bound key.
