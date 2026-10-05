@@ -700,7 +700,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   library) fails, nothing is written, cleared or deleted and Retry is offered. One exception on Android: the
   store records a library as sealed-only before its bytes go down, so a library write that fails partway (a
   full disk) leaves that record, the never-written library then counts as unreadable, and its Retry is the
-  rebuild above; the old stores stay as they are and still nothing is deleted. If a legacy store is damaged
+  rebuild above; the old stores stay as they are and still nothing is deleted. On iOS it is the other way
+  round: the library's bytes go down before its sealed-only record, so if saving that record fails the
+  library is already written. The migration then keeps the opaque links that library names, clears and
+  deletes nothing, and the restore uses that library as if the app had been killed right after the write.
+  If a legacy store is damaged
   or was quarantined (only its `.corrupt-<time>` copy is left), or a legacy PDF is present but can't be read
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,

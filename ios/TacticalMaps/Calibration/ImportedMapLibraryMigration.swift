@@ -17,7 +17,9 @@ enum LegacyMigrationCause: String, Sendable {
 /// 2. every migration draft is saved, each one has to land,
 /// 3. the library is written (the single commit point),
 /// 4. only then are the legacy stores cleared and the old names unlinked.
-/// A failure in 2 or 3 unlinks this attempt's links and clears nothing. A crash
+/// A failure in 2 or 3 unlinks this attempt's links and clears nothing, unless
+/// 3 threw after the library already hit the disk: then the links it names stay
+/// and the restore takes it from there like after a crash past 3. A crash
 /// before 3 just redoes it (drafts are keyed by file + page so they get
 /// overwritten), a crash after 3 leaves stale legacy bytes the next load clears.
 /// Not clean though: links are made as files get inspected, before 3. A salvage
@@ -35,8 +37,9 @@ enum ImportedMapLibraryMigration {
     enum Result: Equatable {
         /// the library already exists (or there was never anything to move)
         case notNeeded
-        /// key locked, or a draft / library write failed: nothing written, cleared
-        /// or deleted, Retry and unlock run it again
+        /// key locked, or a draft / library write failed: nothing cleared or
+        /// deleted, Retry and unlock run it again. Nothing written either, except a
+        /// library write that threw after landing (its links stay, see commit)
         case blocked
         case migrated(uncalibratedName: String?)
         /// L5: uncertain legacy read, written with recoveryPreservesOrphans, old
@@ -186,8 +189,9 @@ enum ImportedMapLibraryMigration {
     }
 
     /// L6: drafts, then the one library write, then (plain runs only) clear the
-    /// old stores, then unlink the old names. false = nothing counts, this
-    /// attempt's links are gone again and nothing was cleared
+    /// old stores, then unlink the old names. false = blocked, nothing was
+    /// cleared and no old name unlinked. This attempt's links go again unless
+    /// the library landed anyway (see below)
     private static func commit(_ state: LibraryState, links: [(old: URL, new: URL)], drafts: [CalibrationDraft],
                                draftStore: CalibrationDraftStoring, write: (LibraryState) throws -> Void,
                                clearLegacyStores: Bool) -> Bool {
@@ -198,6 +202,15 @@ enum ImportedMapLibraryMigration {
             for d in drafts { try draftStore.save(d) }
             try write(state)
         } catch {
+            // F1: SafeStore.write puts the sealed bytes down before the keychain
+            // sealed-only record, so a throw from there leaves the library on disk.
+            // it names the new links, so they stay. pull them and the restore right
+            // after loads it, finds no entry files and reconciles away the 2.x
+            // names, the last copy. load() said empty before, so a file now is ours
+            if ImportedMapLibrary.exists() {
+                NSLog("[LibraryMigration] library write threw after it landed, links kept, nothing cleared")
+                return false
+            }
             NSLog("[LibraryMigration] migration write failed, nothing cleared")
             for l in moved { ImportedMapStorage.unlink(l.new) }
             return false

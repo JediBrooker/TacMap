@@ -965,6 +965,79 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         XCTAssertFalse(ImportedMapLibraryMigration.legacyPresent)
     }
 
+    /// what SafeStore.write really does when the keychain sealed-only record
+    /// fails: the sealed bytes are already down, then it throws
+    private let landsThenThrows: (LibraryState) throws -> Void = { s in
+        try ImportedMapLibrary.write(s)
+        throw CocoaError(.fileWriteNoPermission)
+    }
+
+    /// F1: a library write that throws after landing used to unlink the links the
+    /// landed library points at. The restore right after loads it (plain run, so
+    /// cleanup is on) and its reconcile ate the 2.x name, the only copy left
+    func testMigrationWriteThatThrowsAfterTheLibraryLandedKeepsTheMap() throws {
+        let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Foo.pdf")
+        let fileBytes = try Data(contentsOf: old)
+        let g = try XCTUnwrap(GeoPDFReader.read(url: old)?.georef)
+        let source = PDFMapSource(url: old, georef: g, contentKey: PDFSessionStore.contentKey(for: old))
+        XCTAssertTrue(PDFSessionStore.save(source))
+        XCTAssertTrue(ActiveMapSelectionStore.save(source))
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(write: landsThenThrows), .blocked)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(lib.active, .entry(e.id))
+        XCTAssertEqual(ImportedMapLibrary.fileStatus(e), .ok, "the file the landed library names is still there")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path), "nothing unlinked")
+        XCTAssertTrue(ImportedMapLibraryMigration.legacyPresent, "nothing cleared")
+
+        // same launch: ContentView restores straight after a blocked hop. Loaded and
+        // unflagged, so D8 and the reconcile run for real
+        let vm = MapViewModel(libraryDependencies: liveDependencies(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        vm.pdfRenderGuard = PDFRenderGuard(url: root.appendingPathComponent("guard.json"))
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        XCTAssertEqual(vm.activeEntryID, e.id)
+        let url = try XCTUnwrap(ImportedMapLibrary.fileURL(e))
+        XCTAssertEqual(try? Data(contentsOf: url), fileBytes, "map bytes survive the reconcile")
+        XCTAssertFalse(ImportedMapLibraryMigration.legacyPresent)
+        XCTAssertEqual(try importedNames(), [url.lastPathComponent], "only the 2.x name went, its bytes live on under the opaque one")
+    }
+
+    /// F1 for a salvage: the flagged library that landed has to find its files
+    /// under the names it lists, not under 2.x names nothing lists any more
+    func testSalvageWriteThatThrowsAfterTheLibraryLandedKeepsWhatItLists() throws {
+        let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Malformed.pdf")
+        let fileBytes = try Data(contentsOf: old)
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
+        let session = Data("unreadable legacy session".utf8)
+        PDFSessionStore.defaultsProvider().set(session, forKey: "active_pdf_v1")
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(write: landsThenThrows), .blocked)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        XCTAssertEqual(lib.recoveryPreservesOrphans, true)
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(lib.entries.count, 1)
+        XCTAssertEqual(try? Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(e))), fileBytes)
+        XCTAssertEqual(ImportedMapStates.state(e, file: ImportedMapLibrary.fileStatus(e)), .geoPDF)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path), "the old name stays, nothing deleted")
+        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
+    }
+
+    /// the other side of F1: a write that throws before anything lands still
+    /// takes this attempt's links back, like a failed draft save
+    func testMigrationWriteThatThrowsBeforeLandingStillUnlinksTheAttempt() throws {
+        let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Bar.pdf")
+        let g = try XCTUnwrap(GeoPDFReader.read(url: old)?.georef)
+        let source = PDFMapSource(url: old, georef: g, contentKey: PDFSessionStore.contentKey(for: old))
+        XCTAssertTrue(PDFSessionStore.save(source))
+        XCTAssertTrue(ActiveMapSelectionStore.save(source))
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(write: { _ in throw CocoaError(.fileWriteOutOfSpace) }), .blocked)
+        XCTAssertFalse(ImportedMapLibrary.exists())
+        XCTAssertEqual(try importedNames(), ["Bar.pdf"])
+        XCTAssertTrue(ImportedMapLibraryMigration.legacyPresent)
+    }
+
     /// L7: map files with no library and no legacy store at all
     func testOrphanMapFilesWithNoLibraryAreAdoptedNotReconciled() throws {
         let orphan = root.appendingPathComponent("ImportedMaps/map-\(UUID().uuidString.lowercased()).pdf")
