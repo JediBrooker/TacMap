@@ -69,6 +69,29 @@ internal object UnitSyncJoinGate {
 internal fun unitSyncJoinConsentMessage(interval: BackgroundUnitSyncInterval): String =
     Messages.syncJoinLocationConsent(interval.displayName.lowercase())
 
+/**
+ * What sits under a 2: code (plans/04 section 16, 3.0.2): the red LEGACY ROOM line, then
+ * what mixing app versions costs in there. Shown in the join form while a 2: code is typed,
+ * so it's on screen through the tap-again confirm, and for as long as we're in the room.
+ */
+internal object LegacyRoomCopy {
+    fun applies(code: String?): Boolean = code?.trim()?.startsWith("2:") == true
+
+    /** Warning first, then the mixed versions line. Empty for anything that isnt a 2: code. */
+    fun lines(code: String?): List<String> = if (!applies(code)) emptyList() else listOf(
+        L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."),
+        Messages.syncLegacyRoomMixedVersions(),
+    )
+}
+
+@Composable
+private fun LegacyRoomLines(code: String?) {
+    val lines = LegacyRoomCopy.lines(code)
+    if (lines.isEmpty()) return
+    Text(lines[0], color = Color.Red, fontWeight = FontWeight.Bold)
+    Text(lines[1], fontSize = 12.sp, color = Color.Gray)
+}
+
 /** Join / create a unit sync room and show connection status. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -226,9 +249,7 @@ fun SyncDialog(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    if (joinedRoom.startsWith("2:")) {
-                        Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."), color = Color.Red, fontWeight = FontWeight.Bold)
-                    }
+                    LegacyRoomLines(joinedRoom)
                     OutlinedButton(
                         onClick = { manager.leave() },
                         modifier = Modifier.fillMaxWidth()
@@ -287,9 +308,7 @@ fun SyncDialog(
                             modifier = Modifier.weight(1f)
                         ) { Text(L10n.text("Join / create")) }
                     }
-                    if (code.trim().startsWith("2:")) {
-                        Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."), color = Color.Red, fontWeight = FontWeight.Bold)
-                    }
+                    LegacyRoomLines(code)
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

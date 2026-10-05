@@ -195,8 +195,10 @@ internal class SnapshotValidator(
             ?: return skip(SnapshotRecordReason.EMBEDDED_UUID_MISMATCH)
         if (hasher.wireId(canonical) != outer.wireId) return skip(SnapshotRecordReason.EMBEDDED_UUID_MISMATCH)
         // an object we already keep under an uppercase id (old imports kept the raw feature id)
-        // stays under it. folding past it made a second copy, or tombstoned our own record
-        val localId = localIdOf(canonical) ?: canonical
+        // stays under it. folding past it made a second copy, or tombstoned our own record.
+        // with no local twin keep the sender's casing (3.0.2): 3.0.0 and 2.x android upsert by
+        // exact id, so a lowercase fold made them a second copy once we edited it
+        val localId = localIdOf(canonical) ?: canonical.takeIf { localKindOf(it) != null } ?: embeddedId
         val folded = withLocalId(parsed, localId)
         // a waypoint and a drawing never share one UUID. applying it anyway left
         // two objects behind one id and the diff ping-ponged them forever
@@ -229,10 +231,10 @@ internal class SnapshotValidator(
         private val V3_OBJECT_KINDS = setOf("waypoint", "drawing")
 
         /**
-         * The record's object under its local id: lowercase, or the casing a local object
-         * already has. Uppercase is fine on the wire but one object must never end up with
-         * two local ids (plans/04 2.7). The restage reparse needs this too, it starts from
-         * the sender's bytes again.
+         * The record's object under its local id: the casing a local object already has, or
+         * the sender's own when there's none. Any casing is fine on the wire but one object
+         * must never end up with two local ids (plans/04 2.7). The restage reparse needs this
+         * too, it starts from the sender's bytes again.
          */
         fun withLocalId(parsed: GeoJsonImporter.Result, localId: String): GeoJsonImporter.Result {
             val canonical = SyncIdentity.canonicalUuid(localId) ?: return parsed

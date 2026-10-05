@@ -51,6 +51,8 @@ internal object OutboundSizeCheck {
  * on `v` go to the larger `by` compared as ASCII bytes, same as the relay.
  * Outbound reuses the casing a 2.x iOS sender used for the object (3.0.1
  * amendment), since 2.x iOS echo-deletes an edit that comes back lowercase.
+ * 3.0.2: the first casing this device sends or accepts for an object sticks,
+ * so our own objects stay lowercase and 2.x Android keeps seeing them.
  */
 internal object LegacyV2Ids {
     private val PATTERN = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -66,14 +68,23 @@ internal object LegacyV2Ids {
         remembered?.takeIf { stateKey(it) != null && stateKey(it) == stateKey(localId) } ?: localId
 
     /**
-     * What's remembered after an accepted inbound record carrying [raw]. The
-     * first raw id with an uppercase letter sticks, lowercase never replaces it.
+     * What's pinned after an accepted inbound record carrying [raw]. Whatever
+     * casing got here first sticks, a later one in another casing never re-pins.
+     * 3.0.1 only kept uppercase, so once a 3.0.1 iOS edit came in for an object
+     * we first got lowercase (an Android peer's) our later sends went uppercase
+     * and 2.x Android lost them.
      */
     fun remember(current: String?, raw: String): String? = when {
         current != null -> current
         stateKey(raw) == null -> null
-        raw.any { it in 'A'..'F' } -> raw
-        else -> null
+        else -> raw
+    }
+
+    /** Same rule for our own put or del, pinned before the wire id is worked out. */
+    fun pinOwn(current: String?, localId: String): String? = when {
+        current != null -> current
+        stateKey(localId) == null -> null
+        else -> localId
     }
 
     fun embeddedMatches(recordId: String, embeddedId: String): Boolean =
