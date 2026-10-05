@@ -104,8 +104,9 @@ final class WaypointStore: ObservableObject {
     weak var undoManager: UndoManager?
 
     /// Bumped per object each time a Unit Sync peer's write changes it (see
-    /// SyncRemoteModelApplier). Undoing a local edit checks it so the undo never
-    /// clobbers a newer peer version, their edit wins. Same as Android.
+    /// SyncRemoteModelApplier and commitRemoteBatch). Undoing a local edit
+    /// checks it so the undo never clobbers a newer peer version, their edit
+    /// wins. Same as Android.
     private var peerWriteMarks: [UUID: Int] = [:]
 
     func notePeerWrite(_ id: UUID) { peerWriteMarks[id, default: 0] += 1 }
@@ -260,6 +261,12 @@ final class WaypointStore: ObservableObject {
             pendingLoadError = Messages.couldNotSaveWaypointChangeToDiskMessage("").withArgument(0, error.displayMessage)
             throw WaypointMutationError.persistenceFailed(error)
         }
+        // v3 peer writes only ever land here, so this is where a pending local undo finds out
+        // a peer touched the object. only ids whose value actually moved, a replayed identical
+        // record mustnt cancel your undo
+        let before = Dictionary(waypoints.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let after = Dictionary(candidate.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for id in Set(before.keys).union(after.keys) where before[id] != after[id] { notePeerWrite(id) }
         waypoints = candidate
         if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
         return true
