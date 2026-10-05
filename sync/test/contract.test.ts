@@ -43,22 +43,54 @@ async function reply(ws: WebSocket, frame: Record<string, unknown>): Promise<any
   return response
 }
 
-describe("release id", () => {
-  // ids that already went out with other relay source. never ship one again
-  const RETIRED_RELEASE_IDS = ["tacmap-sync-2.1.0-sp1"]
+// every id that has gone out, pinned to the source hash it shipped with. when
+// you bump the id add the new pair here, never edit an existing one
+const SHIPPED_RELEASES: Record<string, string> = {
+  "tacmap-sync-3.0.1-epoch-floor": "24ba66f78e5dd2aef34d86b31c56300968d9ff6b5477b99c7757c8227a004eeb",
+}
+// ids that shipped before the hash existed (2.1.0-sp1 went out with 2 different
+// sources), so there's no single hash to pin. never ship one again
+const RETIRED_RELEASE_IDS = ["tacmap-sync-2.1.0-sp1"]
 
+// null when the id/hash pair is fine to ship, otherwise why not
+function releaseIdProblem(id: string, sourceHash: string): string | null {
+  if (RETIRED_RELEASE_IDS.includes(id)) return `${id} is retired`
+  const pinned = SHIPPED_RELEASES[id]
+  if (pinned === undefined) return `${id} has no pinned hash, add it to SHIPPED_RELEASES`
+  if (pinned !== sourceHash) return `${id} already shipped with ${pinned}, give the new source a new id`
+  return null
+}
+
+async function relaySourceHash(): Promise<string> {
+  const files: Array<[string, string]> = [
+    ["src/index.ts", relaySource], ["src/limits.ts", limitsSource], ["wrangler.jsonc", wranglerConfig],
+  ]
+  const digest = new Uint8Array(await crypto.subtle.digest(
+    "SHA-256", new TextEncoder().encode(files.map(([name, text]) => `${name}\n${text}\n`).join("")),
+  ))
+  return [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("")
+}
+
+describe("release id", () => {
   it("moves whenever the relay source or its deploy config does (relay-ref-2)", async () => {
-    const files: Array<[string, string]> = [
-      ["src/index.ts", relaySource], ["src/limits.ts", limitsSource], ["wrangler.jsonc", wranglerConfig],
-    ]
-    const digest = new Uint8Array(await crypto.subtle.digest(
-      "SHA-256", new TextEncoder().encode(files.map(([name, text]) => `${name}\n${text}\n`).join("")),
-    ))
-    const hex = [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("")
+    const hex = await relaySourceHash()
     // a mismatch means the relay changed under an id /health already reports:
-    // give src/release.ts a new id, retire the old one here, then paste this hash
+    // give src/release.ts a new id and this hash, then pin the pair above
     expect(hex).toBe(RELAY_RELEASE_SOURCE_SHA256)
-    expect(RETIRED_RELEASE_IDS).not.toContain(RELAY_RELEASE_ID)
+    expect(releaseIdProblem(RELAY_RELEASE_ID, hex)).toBeNull()
+  })
+
+  it("refuses a new hash under an id that already shipped (SEC-3)", () => {
+    // the slip this guards: paste the new hash into release.ts, forget the id
+    const otherSource = "0".repeat(64)
+    expect(releaseIdProblem(RELAY_RELEASE_ID, otherSource)).toMatch(/already shipped/)
+    for (const [id, hash] of Object.entries(SHIPPED_RELEASES)) {
+      expect(releaseIdProblem(id, hash)).toBeNull()
+      expect(releaseIdProblem(id, otherSource)).not.toBeNull()
+    }
+    expect(releaseIdProblem("tacmap-sync-2.1.0-sp1", otherSource)).toMatch(/retired/)
+    expect(releaseIdProblem("tacmap-sync-next", otherSource)).toMatch(/no pinned hash/)
+    for (const id of RETIRED_RELEASE_IDS) expect(SHIPPED_RELEASES[id]).toBeUndefined()
   })
 })
 
