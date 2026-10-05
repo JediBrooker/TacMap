@@ -16,6 +16,10 @@ final class OfflineTileMapSource: MapSource {
     let store: MBTilesStore
     /// the ImportedMapLibrary entry this source shows, nil for legacy/test sources
     let entryID: UUID?
+    /// 3.0.2 M1: set when the open ran under the MBTiles open guard. The
+    /// renderer reports its reads here, the guard clears once the first draw
+    /// settles (or this source goes away first)
+    var firstDraw: MBTilesFirstDrawWatch?
 
     private init(url: URL, store: MBTilesStore, entryID: UUID? = nil, displayName: String? = nil) {
         self.url = url
@@ -53,5 +57,10 @@ final class OfflineTileMapSource: MapSource {
     /// Fresh overlay for map to add. Coordinator owns the lifecycle.
     func makeOverlay() -> MBTilesTileOverlay { MBTilesTileOverlay(store: store) }
 
-    func closeForDeletion() { store.closeForDeletion() }
+    /// the store's lock waits out a read in flight, so by the time the guard
+    /// hears about it nothing of this pack is still running
+    func closeForDeletion() {
+        store.closeForDeletion()
+        firstDraw?.settle()
+    }
 }

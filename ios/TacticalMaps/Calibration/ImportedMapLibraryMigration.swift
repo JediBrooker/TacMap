@@ -340,9 +340,22 @@ enum ImportedMapLibraryMigration {
             return nil
         }
         var name = url.deletingPathExtension().lastPathComponent
-        if let store = MBTilesStore(url: target) {
-            name = store.metadata.name ?? name
-            store.closeForDeletion()
+        // 3.0.2: the name read runs under the rebuild marker, keyed on the 2.x
+        // name (the opaque link is new every attempt). Died in here last time =
+        // keep the stem and don't open it again
+        let marker = ImportedMapLibraryRecovery.markerURL
+        if let marker, ImportedMapLibraryRecovery.markerNames(url.lastPathComponent) {
+            try? FileManager.default.removeItem(at: marker)
+        } else {
+            if let marker {
+                try? Data(url.lastPathComponent.utf8).write(
+                    to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
+            if let store = MBTilesStore(url: target) {
+                name = store.metadata.name ?? name
+                store.closeForDeletion()
+            }
+            if let marker { try? FileManager.default.removeItem(at: marker) }
         }
         let stats = fileStats(target)
         return (ImportedMapEntry(id: UUID(), kind: .mbtiles, fileName: rel, displayName: name, contentKey: nil,
@@ -365,6 +378,12 @@ enum ImportedMapLibraryRecovery {
 
     static var markerURL: URL? {
         try? ImportedMapStorage.importedMapsDirectory().appendingPathComponent(markerName)
+    }
+
+    /// true when a pass died opening a file of this name (the marker's still there)
+    static func markerNames(_ fileName: String) -> Bool {
+        guard let marker = markerURL, let named = try? String(contentsOf: marker, encoding: .utf8) else { return false }
+        return named.trimmingCharacters(in: .whitespacesAndNewlines) == fileName
     }
 
     /// every map file a reconcile would have deleted, oldest first. Not the one
@@ -506,10 +525,17 @@ enum ImportedMapLibraryRecovery {
                     }
                 }
                 info = pdf
-            } else if let store = MBTilesStore(url: url) {
-                store.closeForDeletion()
-            } else {
+            } else if url.lastPathComponent == crashedOn {
+                // 3.0.2: the last pass died opening this pack, adopt it unavailable unopened
                 opens = false
+            } else {
+                if let marker {
+                    try? Data(url.lastPathComponent.utf8).write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                }
+                let store = MBTilesStore(url: url)
+                store?.closeForDeletion()
+                if let marker { try? FileManager.default.removeItem(at: marker) }
+                opens = store != nil
             }
             // linked only after the parse, so a crash in there never leaves a
             // second name for the same bytes
