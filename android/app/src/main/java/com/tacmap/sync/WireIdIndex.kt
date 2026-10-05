@@ -16,7 +16,7 @@ internal class WireIdHasher(metadataKey: ByteArray) {
     private val mac: Mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key, "HmacSHA256")) }
 
     fun wireId(localId: String): String? {
-        val uuid = runCatching { SyncIdentity.uuidToBytes(localId) }.getOrNull() ?: return null
+        val uuid = SyncIdentity.uuidToBytes(localId) ?: return null
         WireIdIndex.hmacCount.incrementAndGet()
         mac.reset()
         mac.update(WIRE_OBJ_PREFIX)

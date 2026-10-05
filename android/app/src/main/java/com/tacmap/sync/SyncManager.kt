@@ -3786,7 +3786,7 @@ class SyncManager internal constructor(
                 val parsed = runCatching { GeoJsonImporter.parse(
                     record.content, staged, staged.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID,
                     density = displayDensity, keepRingAnchors = true,
-                ) }.getOrNull()
+                ) }.getOrNull()?.let { SnapshotValidator.withLocalId(it, record.localId) }
                 val hash = parsed?.let {
                     SnapshotValidator.expectedModelHash(it, record.localId, staged, displayDensity)
                 }

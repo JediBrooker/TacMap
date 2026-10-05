@@ -169,7 +169,7 @@ internal class FakeV3Peer(private val keys: SyncCrypto.V3RoomKeys) {
     var epoch = 1L
 
     fun wireId(localId: String): String =
-        SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(localId))
+        SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(localId)!!)
 
     fun hello(): JSONObject {
         val epochHex = VersionStamp.counterHex16(epoch)

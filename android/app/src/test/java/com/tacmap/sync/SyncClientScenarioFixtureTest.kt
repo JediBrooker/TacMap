@@ -140,6 +140,12 @@ class SyncClientScenarioFixtureTest {
             "SyncHostileRecordFixtureTest#everyHostileRecordInOneSnapshotIsSkippedThroughTheRealManager",
             "SyncHostileRecordFixtureTest#everyHostileRecordLiveIsSkippedWithoutAReconnect",
         ),
+        "poison_embedded_id_skipped" to listOf(
+            "SyncHostileRecordFixtureTest#everyEmbeddedIdCaseClassifiesExactlyAndTheHasherIsStrict",
+            "SyncHostileRecordFixtureTest#everyEmbeddedIdCaseInASnapshotKeepsSyncRunning",
+            "SyncHostileRecordFixtureTest#everyEmbeddedIdCaseLiveKeepsSyncRunning",
+            "SyncManagerSp3Test#uppercaseEmbeddedIdStaysFoldedWhenTheSnapshotIsRestaged",
+        ),
         "structural_snapshot_stops_after_three" to listOf(
             "SyncClientScenarioFixtureTest#structuralSnapshotStopsAfterThree",
             "SyncMaliciousFrameHandlerTest#structuralSnapshotViolationsCommitNothing",

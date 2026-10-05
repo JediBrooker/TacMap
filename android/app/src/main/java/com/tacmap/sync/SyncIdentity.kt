@@ -139,10 +139,20 @@ object SyncIdentity {
         return sha256(raw)
     }
 
-    fun uuidToBytes(uuid: String): ByteArray {
-        val stripped = uuid.replace("-", "")
-        require(stripped.length == 32) { "UUID must be 32 hex chars" }
-        return hexToBytes(stripped)
+    // ascii only, either case. matches() is a whole string match so a trailing newline cant slip past the $
+    private val CANONICAL_UUID = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+    /** Lowercase 8-4-4-4-12 form, or null for anything that isnt one. Nothing gets trimmed (plans/04 2.7). */
+    fun canonicalUuid(raw: String): String? = if (CANONICAL_UUID.matches(raw)) raw.lowercase() else null
+
+    /**
+     * Null unless [uuid] is canonical. This used to just strip dashes and run
+     * Character.digit, so a dashless, non hex or fullwidth id still hashed to a
+     * real wire id and then failed the replay commit (sync-android-2).
+     */
+    fun uuidToBytes(uuid: String): ByteArray? {
+        val canonical = canonicalUuid(uuid) ?: return null
+        return hexToBytes(canonical.replace("-", ""))
     }
 
     fun hexToBytes(hex: String): ByteArray {
