@@ -43,14 +43,15 @@ async function reply(ws: WebSocket, frame: Record<string, unknown>): Promise<any
   return response
 }
 
-// every id that has gone out, pinned to the source hash it shipped with. when
-// you bump the id add the new pair here, never edit an existing one
+// every id that went out after the hash pin, pinned to the source hash it
+// shipped with. when you bump the id add the new pair here, never edit one
 const SHIPPED_RELEASES: Record<string, string> = {
   "tacmap-sync-3.0.1-epoch-floor": "24ba66f78e5dd2aef34d86b31c56300968d9ff6b5477b99c7757c8227a004eeb",
 }
-// ids that shipped before the hash existed (2.1.0-sp1 went out with 2 different
-// sources), so there's no single hash to pin. never ship one again
-const RETIRED_RELEASE_IDS = ["tacmap-sync-2.1.0-sp1"]
+// ids that shipped before the hash pin, so nothing to pin them to. fifo1
+// predates limits.ts and 2.1.0-sp1 went out with 2 different sources. every
+// shipped id lives in one of these two lists. never ship one of these again
+const RETIRED_RELEASE_IDS = ["tacmap-sync-2.0.0-64-fifo1", "tacmap-sync-2.1.0-sp1"]
 
 // null when the id/hash pair is fine to ship, otherwise why not
 function releaseIdProblem(id: string, sourceHash: string): string | null {
@@ -88,7 +89,10 @@ describe("release id", () => {
       expect(releaseIdProblem(id, hash)).toBeNull()
       expect(releaseIdProblem(id, otherSource)).not.toBeNull()
     }
-    expect(releaseIdProblem("tacmap-sync-2.1.0-sp1", otherSource)).toMatch(/retired/)
+    // both pre-pin ids, fifo1 included, so a later bump can't reuse it with a fresh hash
+    for (const id of ["tacmap-sync-2.0.0-64-fifo1", "tacmap-sync-2.1.0-sp1"]) {
+      expect(releaseIdProblem(id, otherSource)).toMatch(/retired/)
+    }
     expect(releaseIdProblem("tacmap-sync-next", otherSource)).toMatch(/no pinned hash/)
     for (const id of RETIRED_RELEASE_IDS) expect(SHIPPED_RELEASES[id]).toBeUndefined()
   })
