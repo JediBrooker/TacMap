@@ -587,6 +587,7 @@ class SyncManager internal constructor(
         val stagedKinds = HashMap<String, String>()
 
         fun localKind(localId: String): String? = stagedKinds[localId] ?: before.kind(localId)
+        fun localIdOf(canonical: String): String? = before.localIdOf(canonical)
         var peers: Map<String, PresencePeer>? = null
         var onlineMembers: Map<String, OnlineMember>? = null
         var chatRecipientsDirty = false
@@ -603,6 +604,8 @@ class SyncManager internal constructor(
         val committedLayers: List<com.tacmap.drawings.DrawingLayer>,
         /** localId -> kind at snapshot-begin, a copy the worker can read safely. */
         private val localKinds: Map<String, String>,
+        /** lowercase UUID -> stored id for objects kept in another casing, same snapshot-begin copy */
+        private val localIdAliases: Map<String, String>,
         private val stageEligible: (SyncReplayState.AuthenticatedMutation) -> Boolean,
         parent: Job,
         dispatcher: kotlinx.coroutines.CoroutineDispatcher,
@@ -627,7 +630,7 @@ class SyncManager internal constructor(
                 previous?.join()
                 for ((rec, wireId) in items) {
                     val check = try {
-                        SnapshotRecordClassifier.classify(validator, rec, wireId, staged, localKinds::get)
+                        SnapshotRecordClassifier.classify(validator, rec, wireId, staged, localKinds::get, localIdAliases::get)
                     } catch (cancel: kotlinx.coroutines.CancellationException) {
                         throw cancel
                     } catch (_: Throwable) {
@@ -695,6 +698,13 @@ class SyncManager internal constructor(
             id in features -> "drawing"
             else -> null
         }
+
+        private val caseAliases: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
+            SnapshotValidator.caseAliases(waypoints.keys + features.keys) { it in waypoints || it in features }
+        }
+
+        /** the id an object with this lowercase UUID is stored under, when that isn't lowercase */
+        fun localIdOf(canonical: String): String? = caseAliases[canonical]
     }
 
     private var presenceJob: Job? = null
@@ -3590,10 +3600,12 @@ class SyncManager internal constructor(
                 val pins = replay.actorPinsCopy()
                 val model = ModelLookup()
                 val generations = modelRevisionJournal.generationsCopy()
+                val kinds = localObjectKinds()
                 snapshotRun = SnapshotRun(
                     validator = SnapshotValidator(key, keys.roomIdRaw, keys.metadataKey, pins::get, displayDensity),
                     committedLayers = drawingStore.committedDocument.value.layers,
-                    localKinds = localObjectKinds(),
+                    localKinds = kinds,
+                    localIdAliases = SnapshotValidator.caseAliases(kinds.keys, kinds::containsKey),
                     stageEligible = replay.snapshotStageEligibility(model::hash, { generations[it] ?: 0L }),
                     parent = managerJob,
                     dispatcher = env.validationDispatcher,
@@ -3721,6 +3733,9 @@ class SyncManager internal constructor(
             modelRevisionJournal.awaitPersistence()
             if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
             before = ModelLookup()
+            // an object kept under an uppercase id may have come or gone while validation ran,
+            // a put has to land on whatever id the stores use now
+            val rebound = rebindLocalIds(validated, before)
             // Stores may have changed while validation ran. A newly created
             // opposite-kind object is unsupported before any replay commit.
             val collided = validated.removeAll { record ->
@@ -3729,7 +3744,7 @@ class SyncManager internal constructor(
                     true
                 } else false
             }
-            restageIfLayersChanged(validated, run.committedLayers, before.document.layers, skips, collided)
+            restageIfLayersChanged(validated, run.committedLayers, before.document.layers, skips, collided || rebound)
             if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
             if (before.isCurrent()) break
         }
@@ -3799,6 +3814,26 @@ class SyncManager internal constructor(
     private fun stillCurrent(socket: SyncWebSocket, connectionGeneration: Long): Boolean =
         !lifecycleGate.isDisposed && !backgroundPresenceOnly && !awaitingForegroundStores &&
             ws === socket && activeConnectionGeneration == connectionGeneration
+
+    /**
+     * Puts whose local id no longer matches the casing the stores keep that UUID under now.
+     * They get the current one, and true means the caller restages so the folded object and
+     * its expected hash follow. Nothing stored under that UUID any more keeps what it had,
+     * the bookkeeping for a delete is still keyed by it.
+     */
+    private fun rebindLocalIds(validated: MutableList<ValidatedV3>, model: ModelLookup): Boolean {
+        var changed = false
+        val iterator = validated.listIterator()
+        while (iterator.hasNext()) {
+            val record = iterator.next() as? ValidatedV3.Put ?: continue
+            val canonical = SyncIdentity.canonicalUuid(record.localId) ?: continue
+            val now = model.localIdOf(canonical) ?: canonical
+            if (now == record.localId || model.kind(now) == null) continue
+            iterator.set(record.copy(localId = now))
+            changed = true
+        }
+        return changed
+    }
 
     /** User touched layers while the snapshot was in flight: recompute against what's committed now (section 3). */
     private suspend fun restageIfLayersChanged(
@@ -4468,7 +4503,9 @@ class SyncManager internal constructor(
         val batch = openLiveBatch() ?: return
         try {
             val validator = liveValidatorOrNull() ?: return
-            val checked = SnapshotRecordClassifier.classify(validator, rec, wireId, batch.layers, batch::localKind)
+            val checked = SnapshotRecordClassifier.classify(
+                validator, rec, wireId, batch.layers, batch::localKind, batch::localIdOf,
+            )
             var validated = when (checked) {
                 is V3Check.Skip -> {
                     recordSkip(wireId, checked.reason.category)

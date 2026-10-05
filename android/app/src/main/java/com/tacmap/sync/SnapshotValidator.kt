@@ -134,6 +134,8 @@ internal class SnapshotValidator(
         layers: List<DrawingLayer>,
         /** Kind of the local object with this UUID, if there is one. */
         localKindOf: (String) -> String? = { null },
+        /** lowercase UUID -> the id a local object is stored under when that's another casing */
+        localIdOf: (String) -> String? = { null },
     ): V3Check {
         fun skip(reason: SnapshotRecordReason) = V3Check.Skip(wireId, reason)
         if (closed) return skip(SnapshotRecordReason.AEAD_FAILED)
@@ -189,9 +191,12 @@ internal class SnapshotValidator(
         } ?: return skip(SnapshotRecordReason.KIND_CONTENT_MISMATCH)
         // canonical before we hash it (plans/04 2.7). a dashless or non hex id used to
         // hash fine here, then the replay commit refused it and sync stopped for good
-        val localId = SyncIdentity.canonicalUuid(embeddedId)
+        val canonical = SyncIdentity.canonicalUuid(embeddedId)
             ?: return skip(SnapshotRecordReason.EMBEDDED_UUID_MISMATCH)
-        if (hasher.wireId(localId) != outer.wireId) return skip(SnapshotRecordReason.EMBEDDED_UUID_MISMATCH)
+        if (hasher.wireId(canonical) != outer.wireId) return skip(SnapshotRecordReason.EMBEDDED_UUID_MISMATCH)
+        // an object we already keep under an uppercase id (old imports kept the raw feature id)
+        // stays under it. folding past it made a second copy, or tombstoned our own record
+        val localId = localIdOf(canonical) ?: canonical
         val folded = withLocalId(parsed, localId)
         // a waypoint and a drawing never share one UUID. applying it anyway left
         // two objects behind one id and the diff ping-ponged them forever
@@ -224,17 +229,36 @@ internal class SnapshotValidator(
         private val V3_OBJECT_KINDS = setOf("waypoint", "drawing")
 
         /**
-         * The record's object under its lowercase local id. Uppercase is fine on the
-         * wire but one object must never end up with two local ids (plans/04 2.7).
-         * The restage reparse needs this too, it starts from the sender's bytes again.
+         * The record's object under its local id: lowercase, or the casing a local object
+         * already has. Uppercase is fine on the wire but one object must never end up with
+         * two local ids (plans/04 2.7). The restage reparse needs this too, it starts from
+         * the sender's bytes again.
          */
         fun withLocalId(parsed: GeoJsonImporter.Result, localId: String): GeoJsonImporter.Result {
-            fun folds(id: String) = id != localId && SyncIdentity.canonicalUuid(id) == localId
+            val canonical = SyncIdentity.canonicalUuid(localId) ?: return parsed
+            fun folds(id: String) = id != localId && SyncIdentity.canonicalUuid(id) == canonical
             if (parsed.waypoints.none { folds(it.id) } && parsed.drawings.none { folds(it.id) }) return parsed
             return parsed.copy(
                 waypoints = parsed.waypoints.map { if (folds(it.id)) it.copy(id = localId) else it },
                 drawings = parsed.drawings.map { if (folds(it.id)) it.copy(id = localId) else it },
             )
+        }
+
+        /**
+         * lowercase UUID -> the id a local object is really stored under, only for the ones
+         * kept in another casing. Android up to 1.2.2 kept a GeoJSON import's raw feature id
+         * and iOS 1.0 exported uppercase, so those are out there. An exact lowercase twin
+         * wins and never shows up in here.
+         */
+        fun caseAliases(storedIds: Iterable<String>, isStored: (String) -> Boolean): Map<String, String> {
+            var out: HashMap<String, String>? = null
+            for (id in storedIds) {
+                if (id.none { it in 'A'..'F' }) continue
+                val lower = SyncIdentity.canonicalUuid(id) ?: continue
+                if (isStored(lower)) continue
+                (out ?: HashMap<String, String>().also { out = it }).putIfAbsent(lower, id)
+            }
+            return out ?: emptyMap()
         }
 
         /** Receiver-local fixed-point hash; the authenticated payload hash stays the sender's bytes. */
