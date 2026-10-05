@@ -26,12 +26,22 @@ class PdfStoredFileTest {
         assertEquals(StoredFileVerdict.REJECT, storedFileVerdict(validPath = false, fileThere = false, contentBound = true))
     }
 
+    // the memo is keyed on path+size+mtime+inode. on linux CI a delete+rewrite inside the same
+    // ms can land on the same inode and mtime, so the old hash comes back and this flaked (3.0.0
+    // main CI too). real swaps are a reimport, way more than a ms apart, so pin distinct mtimes here
+    private var tick = 1_700_000_000_000L
+    private fun File.writeStamped(bytes: ByteArray) {
+        writeBytes(bytes)
+        tick += 10_000
+        assertTrue(setLastModified(tick))
+    }
+
     @Test
     fun missingThenSwappedThenRestoredBytes() {
         val dir = tempDir()
         val pdf = File(dir, "import-abc.pdf")
         val original = "%PDF-1.4 the sheet it was calibrated on".toByteArray()
-        pdf.writeBytes(original)
+        pdf.writeStamped(original)
         val key = PdfStoredFile.contentKey(pdf)!!
         assertEquals(PdfCalibrationIdentity.contentKey(pdf), key)
         assertTrue(PdfStoredFile.matches(pdf, key))
@@ -43,12 +53,12 @@ class PdfStoredFileTest {
         // swapped: same name, same size, different bytes
         val swapped = original.copyOf().also { it[it.size - 1] = 'X'.code.toByte() }
         assertEquals(original.size, swapped.size)
-        pdf.writeBytes(swapped)
+        pdf.writeStamped(swapped)
         assertFalse("swapped bytes never pass for the old calibration", PdfStoredFile.matches(pdf, key))
 
         // the right file back: Try Again / next launch recovers
         assertTrue(pdf.delete())
-        pdf.writeBytes(original)
+        pdf.writeStamped(original)
         assertTrue("restored", PdfStoredFile.matches(pdf, key))
     }
 
