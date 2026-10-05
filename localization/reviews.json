@@ -14636,6 +14636,13 @@
         "translation": "e70554af9acb2dd498c8c8d7b372e2e969afd07e75be7e2d62d28c6eea634a8b",
         "status": "reviewed"
       }
+    },
+    "map_library_recovered_notice": {
+      "de": {
+        "source": "9f5ee2fea535a9781af365da2338b437881908ea60ccc94c8dc5efb5331930d9",
+        "translation": "dc47803f7b835ef5b9ff37d71941cc37a0519e789d66ec2543f03a6691550746",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

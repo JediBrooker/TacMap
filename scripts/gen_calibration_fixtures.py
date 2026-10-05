@@ -2275,48 +2275,184 @@ def choose_page_rows():
                       "entryIsActive": a, "expect": e, "note": n} for i, c, p, m, g, a, e, n in rows]}
 
 
+# 3.0.1: legacy causes where the read was authenticated (the key was there) but something in the old
+# stores can't be read or converted, now or on any later try. These used to block forever (S3), now
+# they salvage: write what converts, adopt the rest, freeze the old stores, never clean up
+LEGACY_UNCERTAIN = ("corrupt", "quarantinedOnly", "retainedCorrupt", "retainedQuarantinedOnly", "sessionInvalid",
+                    "pdfHashMismatch", "pdfUnconvertible", "v1PointsUnrebuildable")
+# SafeStore moves an undecodable selector aside on the read, so the next pass only sees the .corrupt copy
+LEGACY_AFTER_READ = {"corrupt": "quarantinedOnly", "retainedCorrupt": "retainedQuarantinedOnly"}
+# what D8 can clear: a live legacy store is there. a quarantine copy is never cleared
+LEGACY_CLEARABLE = ("readable", "namesNothing", "locked", "corrupt", "retainedCorrupt", "sessionInvalid",
+                    "pdfHashMismatch", "pdfUnconvertible", "v1PointsUnrebuildable")
+LEGACY_PLATFORMS = {"retainedCorrupt": ["android"], "retainedQuarantinedOnly": ["android"],
+                    "v1PointsUnrebuildable": ["ios"]}
+LEGACY_CODES = {
+    "none": "no legacy store and no quarantine copy of one",
+    "readable": "every legacy store authenticates, decodes and converts",
+    "locked": "the mission-data key (or the keychain/keystore behind it) fails during the legacy read",
+    "namesNothing": "an authenticated legacy read that names no file that still exists (S4)",
+    "corrupt": "the active-map selector file is there but won't authenticate or decode (or is plaintext after "
+               "sealed-only): the read quarantines it to <name>.corrupt-<epoch>",
+    "quarantinedOnly": "only <selector>.corrupt-<epoch> is left (2.x or an earlier 3.x pass quarantined it), "
+                       "iOS also: the selector was sealed here before and no library was ever written",
+    "retainedCorrupt": "Android: retained_imported_map_source.json is there but won't authenticate or decode",
+    "retainedQuarantinedOnly": "Android: only retained_imported_map_source.json.corrupt-<epoch> is left",
+    "sessionInvalid": "a legacy PDF session record is stored but won't unseal with the key available, won't "
+                      "decode or fails validation (iOS active_pdf_v1, Android prefs active_pdf / pdf_calibrations)",
+    "pdfHashMismatch": "the legacy session's PDF is on disk but no longer hashes to the stored content key",
+    "pdfUnconvertible": "the legacy PDF is on disk but won't hash (IO), won't open, lacks the session's page, "
+                        "can't be linked or copied, or lies outside the managed directories",
+    "v1PointsUnrebuildable": "iOS: a v1 calibration whose PDFKit display space can't be rebuilt, so its points "
+                             "can't be put in raw page space (they used to be dropped silently, wp4-ios-8)",
+}
+
+
+def restore_plan(g):
+    """one launch / unlock / Retry restore, 3.0.1 rules (s8.2 r1 + the 3.0.1 amendment)"""
+    lf, key_, legacy, flag = g["libraryFile"], g["missionKey"], g["legacy"], g["recoveryPreservesOrphans"]
+
+    def out(status, migration, cleanup, clear, issue, notice=None, flag_after=None):
+        usable = status in ("loaded", "empty")
+        return {"status": status, "migration": migration, "reconcile": cleanup, "bakeSweep": cleanup,
+                "draftPrune": cleanup, "clearLegacy": clear, "issue": issue, "notice": notice,
+                "recoveryPreservesOrphans": flag_after if usable else None,
+                "importAllowed": usable, "basemapChangeAllowed": usable}
+
+    def blocked():
+        return out("migrationPending", "blocked", False, False, "lockedRetry")
+
+    def write(migration, clear, notice, flag_after, has_drafts):
+        # drafts first, then the one library write. either failing writes nothing that counts and clears nothing
+        if g["writes"] == "libraryFails" or (g["writes"] == "draftFails" and has_drafts):
+            return blocked()
+        return out("loaded", migration, not flag_after, clear, None, notice, flag_after)
+
+    if key_ == "locked":
+        return out("locked", "none", False, False, "lockedRetry")
+    if lf == "ok":
+        # D8 only on a library that may clean up; a recovery-flagged one leaves the old stores frozen
+        return out("loaded", "none", not flag, (not flag) and legacy in LEGACY_CLEARABLE, None, flag_after=flag)
+    if lf in ("unreadable", "newerSchema") or g["corruptSibling"] or g["writtenBefore"]:
+        return out("corrupt", "none", False, False, "corruptRetry")
+    # a genuine Empty from here on
+    if legacy == "none":
+        if g["managedFiles"]:
+            # never an authoritative cleanup while files are there: adopt them instead (S2 rules)
+            return write("adoptOrphans", False, "recovered", True, False)
+        return out("empty", "none", True, False, None, flag_after=False)
+    if legacy == "locked":
+        return blocked()
+    if legacy == "readable":
+        return write("run", True, None, False, True)
+    if legacy == "namesNothing":
+        return write("writeEmptyAndClear", True, None, False, False)
+    assert legacy in LEGACY_UNCERTAIN, legacy
+    return write("salvage", False, "recovered", True, True)
+
+
+def state_after(g, e):
+    """what's on disk for the next restore (Retry, unlock or the next launch)"""
+    n = dict(g)
+    if e["migration"] in ("run", "writeEmptyAndClear", "salvage", "adoptOrphans"):
+        n["libraryFile"] = "ok"
+        n["recoveryPreservesOrphans"] = e["recoveryPreservesOrphans"]
+    if e["clearLegacy"]:
+        n["legacy"] = "none"
+    elif e["migration"] in ("blocked", "salvage"):
+        n["legacy"] = LEGACY_AFTER_READ.get(g["legacy"], g["legacy"])
+    return n
+
+
 def library_load_rows():
-    """s8.2 r1: what a launch / unlock / Retry restore does (S1, S2, S3, S4, D8, F3)"""
+    """s8.2 r1 + 3.0.1: what a launch / unlock / Retry restore does (S1-S4, D8, F3, salvage, orphan adoption)"""
     rows = []
 
-    def run(cid, given, status, migration, reconcile, clear_legacy, issue, note):
-        rows.append({"id": cid, "given": given,
-                     "expect": {"status": status, "migration": migration, "reconcile": reconcile,
-                                "bakeSweep": reconcile, "draftPrune": reconcile, "clearLegacy": clear_legacy,
-                                "issue": issue}, "note": note})
+    def run(cid, given, note):
+        e = restore_plan(given)
+        nxt = restore_plan(state_after(given, e))
+        e["nextRestore"] = {k: nxt[k] for k in ("status", "migration", "reconcile", "clearLegacy", "issue",
+                                                "notice", "recoveryPreservesOrphans", "importAllowed")}
+        # the loop the 3.0.0 bugs lived in: a second pass must never turn a protected state into a cleanup
+        if e["migration"] in ("salvage", "adoptOrphans", "blocked") or e["recoveryPreservesOrphans"]:
+            assert not e["reconcile"] and not nxt["reconcile"] and not nxt["clearLegacy"], cid
+        assert e["status"] != "empty" or not given["managedFiles"], cid
+        platforms = LEGACY_PLATFORMS.get(given["legacy"], ["ios", "android"])
+        rows.append({"id": cid, "platforms": platforms, "given": given, "expect": e, "note": note})
 
-    def g(file="absent", key_="unlocked", sibling=False, written=False, legacy="none", recovery=False):
+    def g(file="absent", key_="unlocked", sibling=False, written=False, legacy="none", recovery=False,
+          files=False, writes="ok"):
         return {"libraryFile": file, "missionKey": key_, "corruptSibling": sibling, "writtenBefore": written,
-                "legacy": legacy, "recoveryPreservesOrphans": recovery}
+                "legacy": legacy, "recoveryPreservesOrphans": recovery, "managedFiles": files, "writes": writes}
 
-    run("loaded", g("ok"), "loaded", "none", True, False, None, "the normal launch")
-    run("loaded_rebuilt", g("ok", recovery=True), "loaded", "none", False, False, None,
+    run("loaded", g("ok"), "the normal launch")
+    run("loaded_rebuilt", g("ok", recovery=True),
         "S1/S2: sealed recovery provenance survives cold launch; unknown map files, bakes and drafts are preserved")
-    run("loaded_legacy_left", g("ok", legacy="readable"), "loaded", "none", True, True, None,
-        "D8: legacy stores still there after a Loaded restore are cleared (after the library is durable)")
-    run("locked", g("ok", key_="locked"), "locked", "none", False, False, "lockedRetry",
-        "F3: issue with Retry; Retry and mission-data unlock re-run migration + restore")
-    run("undecryptable", g("unreadable"), "corrupt", "none", False, False, "corruptRetry",
-        "quarantined to .corrupt-<epoch>; Retry rebuilds (libraryRetry)")
-    run("newer_schema", g("newerSchema"), "corrupt", "none", False, False, "corruptRetry", "same as unreadable")
-    run("vanished_with_quarantine", g("absent", sibling=True), "corrupt", "none", False, False, "corruptRetry",
-        "S1: the second load after a quarantine is NOT empty")
-    run("vanished_after_written", g("absent", written=True), "corrupt", "none", False, False, "corruptRetry",
+    run("loaded_legacy_left", g("ok", legacy="readable"),
+        "D8: legacy stores still there after a Loaded restore are cleared (the drafts were saved before the write)")
+    run("locked", g("ok", key_="locked"), "F3: issue with Retry; Retry and mission-data unlock re-run migration + restore")
+    run("undecryptable", g("unreadable"), "quarantined to .corrupt-<epoch>; Retry rebuilds (libraryRetry)")
+    run("newer_schema", g("newerSchema"), "same as unreadable")
+    run("vanished_with_quarantine", g("absent", sibling=True), "S1: the second load after a quarantine is NOT empty")
+    run("vanished_after_written", g("absent", written=True),
         "S1: a library this device wrote before and is gone now is corrupt, never empty")
-    run("first_launch", g(), "empty", "none", True, False, None,
-        "genuinely empty, nothing to migrate: authoritative (the keep set is empty and there's nothing to delete)")
-    run("migrate", g(legacy="readable"), "loaded", "run", True, True, None,
-        "write the library, then clear legacy, then restore as Loaded")
-    run("legacy_locked", g(legacy="locked"), "migrationPending", "blocked", False, False, "lockedRetry",
-        "no migration, no deletion")
-    run("legacy_quarantined", g(legacy="corrupt"), "migrationPending", "blocked", False, False, "lockedRetry",
-        "S1: a quarantined legacy selector blocks; it never reads as 'no legacy left'")
-    run("legacy_pdf_unconvertible", g(legacy="pdfUnconvertible"), "migrationPending", "blocked", False, False,
-        "lockedRetry", "S3: legacy PDF present but its session/prefs/hash/link/document can't be read or converted: "
-                       "fail closed, nothing written, cleared or deleted")
-    run("legacy_names_nothing", g(legacy="namesNothing"), "loaded", "writeEmptyAndClear", True, True, None,
+    run("first_launch", g(), "genuinely empty, nothing to migrate and no file in the managed directories: "
+                             "authoritative, and the cleanup it authorises has nothing to delete")
+    run("migrate", g(legacy="readable"), "drafts, then the library write, then clear legacy, then restore as Loaded")
+    run("legacy_locked", g(legacy="locked"), "no migration, no deletion, Retry or unlock tries again")
+    run("legacy_quarantined", g(legacy="corrupt", files=True),
+        "3.0.1 (wp4-ios-1, wp4-android-1/7): the read quarantines the selector, it's never 'no legacy left' and "
+        "no longer blocks forever: salvage writes what converts, adopts every other map file, freezes the old "
+        "stores, recoveryPreservesOrphans=true")
+    run("legacy_pdf_unconvertible", g(legacy="pdfUnconvertible", files=True),
+        "3.0.1: was S3 blocked forever. Salvage: the PDF is adopted where it is (re-inspected, pageCount 0 if it "
+        "won't inspect), its session stays frozen in the legacy store")
+    run("legacy_names_nothing", g(legacy="namesNothing"),
         "S4: authenticated legacy read that names no existing file: write an empty library, clear legacy")
+    run("first_launch_with_orphan_files", g(files=True),
+        "3.0.1 (gap-android-blockers-empirical-2): Empty with no legacy but files in the managed directories is "
+        "never authoritative. They're adopted by the S2 rules in one write with recoveryPreservesOrphans=true")
+    run("first_launch_orphans_write_fails", g(files=True, writes="libraryFails"),
+        "the adoption write failed: nothing changes, Retry; never an empty authoritative restore")
+    run("legacy_quarantined_only", g(legacy="quarantinedOnly", files=True),
+        "3.0.1: the pass after a quarantine (Retry, relaunch, or a selector 2.x quarantined): only the .corrupt "
+        "copy is left and it still counts as legacy, so salvage, never an empty restore that wipes the files")
+    run("legacy_retained_corrupt", g(legacy="retainedCorrupt", files=True),
+        "Android: the retained selector won't read; salvage keeps (adopts) the retained pack")
+    run("legacy_retained_quarantined_only", g(legacy="retainedQuarantinedOnly", files=True),
+        "Android: only the retained selector's .corrupt copy is left; the next read must not drop the retained "
+        "pack from the inputs and reconcile it away")
+    run("legacy_session_invalid", g(legacy="sessionInvalid", files=True),
+        "was S3 blocked forever: the record stays frozen, the PDF file is adopted")
+    run("legacy_pdf_hash_mismatch", g(legacy="pdfHashMismatch", files=True),
+        "was S3 blocked forever: the changed file is adopted and re-inspected; the old calibration was for other "
+        "bytes so it isn't applied, it stays frozen in the legacy store")
+    run("legacy_v1_points_unrebuildable", g(legacy="v1PointsUnrebuildable", files=True),
+        "iOS (wp4-ios-8): the PDF converts without its v1 calibration; the parked points stay in the frozen "
+        "legacy calibration store instead of being cleared")
+    run("legacy_salvage_write_fails", g(legacy="corrupt", files=True, writes="libraryFails"),
+        "salvage write failed: nothing changes, Retry. The read already quarantined the selector, the next pass "
+        "sees quarantinedOnly and still salvages")
+    run("migrate_draft_save_fails", g(legacy="readable", writes="draftFails"),
+        "wp4-android-8: drafts are saved BEFORE the library write; a failed save writes no library and clears "
+        "nothing, Retry")
+    run("migrate_library_write_fails", g(legacy="readable", writes="libraryFails"),
+        "drafts already saved, library write failed: nothing cleared, Retry redoes it (same draft keys overwritten)")
+    run("loaded_rebuilt_legacy_left", g("ok", recovery=True, legacy="readable"),
+        "3.0.1: a recovery-flagged library never runs D8, the old stores stay frozen")
+    run("loaded_after_salvage", g("ok", recovery=True, legacy="quarantinedOnly", files=True),
+        "the launch after a salvage: Loaded, imports and basemap changes work, nothing cleaned up or cleared")
+    run("loaded_quarantine_copy_only", g("ok", legacy="quarantinedOnly"),
+        "an ordinary library next to an old .corrupt copy: normal cleanup, the copy is never cleared")
     return {"rows": rows,
+            "legacyCodes": LEGACY_CODES,
+            "givenFields": {
+                "managedFiles": "after s9.8 interrupted-import recovery, the managed directories (iOS ImportedMaps + "
+                                "offline_tiles, Android pdf_maps + mbtiles + offline_tiles) hold a regular file the "
+                                "reconcile or the bake sweep would delete (map file, sidecar, .partial, bake) that no "
+                                "in-flight import owns",
+                "writes": "ok | draftFails (a migration draft save returns false or throws) | libraryFails "
+                          "(the sealed library write fails)"},
             "retry": {
                 "corrupt": {"action": "rebuild", "message": key("map_library_corrupt_message"),
                             "adoptedName": msg("map_recovered_name", number=1),
@@ -2329,11 +2465,46 @@ def library_load_rows():
                                       "write fails -> nothing changes, still corrupt",
                                       "after the write the library is Loaded with recoveryPreservesOrphans=true: no reconcile/sweep/prune"],
                             "deletes": "no imported map file, bake or draft; the sealed flag disables cleanup on later restores and transitions too"},
-                "locked": {"action": "reload", "note": "re-run migration + restore, same as mission-data unlock"}},
+                "locked": {"action": "reload", "note": "re-run migration + restore, same as mission-data unlock"},
+                "blocked": {"action": "reload", "note": "a failed draft or library write: Retry re-runs the same "
+                                                       "migration from the start, nothing was cleared"}},
+            "salvage": {
+                "when": "Empty library, legacy present, read authenticated, at least one cause in legacyCodes is "
+                        "uncertain (corrupt, quarantinedOnly, retained*, sessionInvalid, pdfHashMismatch, "
+                        "pdfUnconvertible, v1PointsUnrebuildable)",
+                "steps": ["convert every legacy input that converts, with the s8.2 migration rules (link to the opaque "
+                          "name on iOS, manual calibration, drafts for leftover points)",
+                          "a legacy input that doesn't convert is not converted and its file is not linked",
+                          "adopt every other map file in the managed directories by the S2 rebuild rules (re-hash, "
+                          "s9.5 inspection with marker + watchdog, s9.6 first valid page, pageCount 0 / unavailable "
+                          "on failure, MBTiles validated); files referenced by a converted entry, and the old names "
+                          "of converted links, aren't adopted twice",
+                          "adopted names: map_recovered_name {n} in mtime order, except an iOS file with a "
+                          "non-opaque legacy name, which keeps its file stem as the name and is linked to "
+                          "ImportedMaps/map-<uuid>.<ext> like the migration (adopted in place if link and copy fail)",
+                          "active = the converted active entry if it can be the durable active selection, else "
+                          "online(preferred style if one was readable, else the default style)",
+                          "recoveryPreservesOrphans = true",
+                          "save the drafts, then one library write; either failing -> nothing changes, migrationPending, Retry",
+                          "after the write: unlink only the old names of converted links; clear NO legacy store; "
+                          "show map_library_recovered_notice once (it replaces map_migration_uncalibrated)"],
+                "notice": msg("map_library_recovered_notice"),
+                "deletes": "nothing: no map file, bake, draft, legacy store or quarantine copy"},
+            "adoptOrphans": {
+                "when": "Empty library, no legacy state at all, managedFiles",
+                "steps": ["S2 rebuild over the managed directories (same candidates, names, inspection and "
+                          "MBTiles validation)", "active = online(default style)", "recoveryPreservesOrphans = true",
+                          "one library write; failing -> nothing changes, migrationPending, Retry",
+                          "show map_library_recovered_notice once"],
+                "notice": msg("map_library_recovered_notice"),
+                "deletes": "nothing"},
             "rule": "reconcile, the bake sweep and the draft prune only ever run on a state read back as loaded "
-                    "(or a genuine first-launch empty), or the result of a library write made from one. Never from "
-                    "a state built in memory to stand in for a locked, corrupt or blocked one. Rebuilt states persist "
-                    "recoveryPreservesOrphans=true and never authorize cleanup; explicit deletion still removes known owned files"}
+                    "(or a genuine first-launch empty whose managed directories are empty), or the result of a "
+                    "library write made from one. Never from a state built in memory to stand in for a locked, "
+                    "corrupt or blocked one. Rebuilt, salvaged and adopted states persist "
+                    "recoveryPreservesOrphans=true and never authorize cleanup or D8; explicit deletion still "
+                    "removes known owned files. Locked forever is not an outcome: only a locked key or a failed "
+                    "write keeps a restore pending, and Retry or unlock tries again"}
 
 
 def import_pipeline():
@@ -2433,6 +2604,383 @@ def lifecycle():
     }
 
 
+# ----------------------------------------------------------------------------
+# MBTiles admission (s3.1 + the 3.0.1 amendment): tiles and metadata may be a table or a view
+# ----------------------------------------------------------------------------
+
+MBT_KNOWN = {"name": (128, True), "format": (32, True), "minzoom": (16, False), "maxzoom": (16, False),
+             "bounds": (256, False)}
+MBT_TILE_AGGREGATE = (
+    "SELECT MIN(CASE WHEN typeof(zoom_level)='integer' THEN zoom_level END), "
+    "MAX(CASE WHEN typeof(zoom_level)='integer' THEN zoom_level END), COUNT(*), "
+    "SUM(CASE WHEN typeof(zoom_level)='integer' AND typeof(tile_column)='integer' AND typeof(tile_row)='integer' "
+    "THEN CASE WHEN zoom_level BETWEEN 0 AND 30 AND tile_column BETWEEN 0 AND ((1 << zoom_level) - 1) "
+    "AND tile_row BETWEEN 0 AND ((1 << zoom_level) - 1) THEN 1 ELSE 0 END ELSE 0 END) FROM tiles")
+# the reference stands in for the apps' 30 s admission budget with a VM step budget, same verdicts
+MBT_REFERENCE_PROGRESS_CALLS = 20000
+
+
+class _MbtReject(Exception):
+    pass
+
+
+def _mbt_prefix(blob, length, characters, truncates):
+    """the bounded UTF-8 prefix rule both readers use (s3.1)"""
+    blob = bytes(blob or b"")
+    if length is None or (not truncates and length > characters * 4) or b"\x00" in blob:
+        raise _MbtReject("metadata")
+    truncated = length > len(blob)
+    for dropped in range(0, (min(3, len(blob)) if truncated else 0) + 1):
+        try:
+            text = blob[:len(blob) - dropped].decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if not truncates and len(text) > characters:
+            raise _MbtReject("metadata")
+        return text[:characters]
+    raise _MbtReject("metadata")
+
+
+def _mbt_zoom(text):
+    if len(text) > 16 or not re.fullmatch(r"(?:0|[1-9][0-9]?)", text.strip()) or int(text.strip()) > 30:
+        raise _MbtReject("metadata")
+    return int(text.strip())
+
+
+def _mbt_admit(conn, probes):
+    types = {}
+    for rel in ("metadata", "tiles"):
+        found = conn.execute("SELECT type FROM sqlite_master WHERE name=?", (rel,)).fetchall()
+        if len(found) != 1 or found[0][0] not in ("table", "view"):
+            raise _MbtReject("relation")
+        types[rel] = found[0][0]
+    if conn.execute("PRAGMA encoding").fetchone()[0].upper() != "UTF-8":
+        raise _MbtReject("encoding")
+    # key-addressed path: works on a view (no rowid), gives the table path's answers on a table
+    rows = conn.execute("SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), "
+                        "substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65").fetchall()
+    if len(rows) > 64:
+        raise _MbtReject("rows")
+    known = []
+    for name_type, value_type, name_len, name_prefix in rows:
+        if name_type != "text":
+            raise _MbtReject("metadata")
+        k = _mbt_prefix(name_prefix, name_len, 32, True).lower()
+        if k not in MBT_KNOWN:
+            continue
+        if value_type != "text" or k in known:
+            raise _MbtReject("metadata")
+        known.append(k)
+    values = {}
+    for k in known:
+        chars, truncates = MBT_KNOWN[k]
+        hit = conn.execute("SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, ?) "
+                           "FROM metadata WHERE lower(name) = ? LIMIT 2", (chars * 4, k)).fetchall()
+        if len(hit) != 1 or hit[0][0] != "text":
+            raise _MbtReject("metadata")
+        values[k] = _mbt_prefix(hit[0][2], hit[0][1], chars, truncates)
+    lo, hi, count, valid = conn.execute(MBT_TILE_AGGREGATE).fetchone()
+    if not all(isinstance(v, int) for v in (lo, hi, count, valid)) or count <= 0 or count != valid:
+        raise _MbtReject("tiles")
+    minimum = _mbt_zoom(values["minzoom"]) if "minzoom" in values else lo
+    maximum = _mbt_zoom(values["maxzoom"]) if "maxzoom" in values else hi
+    if minimum > maximum:
+        raise _MbtReject("metadata")
+    if "bounds" in values:
+        parts = values["bounds"].split(",")
+        try:
+            b = [float(p.strip()) for p in parts]
+        except ValueError:
+            raise _MbtReject("metadata")
+        if len(b) != 4 or not all(math.isfinite(v) for v in b) or not (-180 <= b[0] < b[2] <= 180 and -90 <= b[1] < b[3] <= 90):
+            raise _MbtReject("metadata")
+    out = {"accepted": True, "minZoom": minimum, "maxZoom": maximum,
+           "name": (values.get("name") or "").strip()[:128] or None,
+           "format": (values.get("format") or "").strip().lower()[:32] or None}
+    tiles = []
+    for z, x, y in probes.get("tiles", []):
+        hit = None
+        if minimum <= z <= maximum:
+            row = conn.execute("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                               (z, x, (1 << z) - 1 - y)).fetchone()
+            hit = bytes(row[0]).hex() if row and row[0] is not None else None
+        tiles.append({"z": z, "x": x, "y": y, "hex": hit})
+    if tiles:
+        out["tiles"] = tiles
+    ext = {}
+    for k in probes.get("extensions", []):
+        hit = conn.execute("SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, 512) "
+                           "FROM metadata WHERE lower(name) = ? LIMIT 2", (k,)).fetchall()
+        try:
+            ext[k] = _mbt_prefix(hit[0][2], hit[0][1], 128, False) if len(hit) == 1 and hit[0][0] == "text" else None
+        except _MbtReject:
+            ext[k] = None
+    if ext:
+        out["extensions"] = ext
+    out["relations"] = types
+    return out
+
+
+def mbtiles_reference(statements, probes=None):
+    """build the pack in memory with Python's sqlite3 and run the reference admission on it"""
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    try:
+        for s in statements:
+            conn.execute(s)
+        calls = [0]
+
+        def tick():
+            calls[0] += 1
+            return 1 if calls[0] > MBT_REFERENCE_PROGRESS_CALLS else 0
+        conn.set_progress_handler(tick, 1000)
+        try:
+            return _mbt_admit(conn, probes or {})
+        except _MbtReject as r:
+            return {"accepted": False, "rejectedAt": str(r)}
+        except sqlite3.OperationalError as e:
+            return {"accepted": False, "rejectedAt": "budget" if "interrupt" in str(e) else "sql"}
+    finally:
+        conn.close()
+
+
+def _sql_text(v):
+    return "'" + v.replace("'", "''") + "'"
+
+
+def _mbt_row_sql(row):
+    """one fixture metadata row as SQL values (the same encodings the platform harnesses use)"""
+    k = _sql_text(row["key"])
+    if "integerValue" in row:
+        v = str(row["integerValue"])
+    elif "textBytesHex" in row:
+        v = "CAST(X'%s' AS TEXT)" % row["textBytesHex"]
+    elif "valueRepeat" in row:
+        v = _sql_text(row["valueRepeat"][0] * row["valueRepeat"][1])
+    else:
+        v = "CAST(X'%s' AS TEXT)" % row["value"].encode("utf-8").hex()
+    return k, v
+
+
+# no declared column types, like both platform harnesses: affinity would turn 0 into '0' and hide the case
+MBT_TABLES = ["CREATE TABLE metadata (name, value)",
+              "CREATE TABLE tiles (zoom_level, tile_column, tile_row, tile_data)"]
+MBT_VARIANTS = [
+    {"id": "metadataView", "sql": ["ALTER TABLE metadata RENAME TO metadata_base",
+                                   "CREATE VIEW metadata AS SELECT name, value FROM metadata_base"]},
+    {"id": "tilesView", "sql": ["ALTER TABLE tiles RENAME TO tiles_base",
+                                "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base"]},
+]
+MBT_VARIANTS.append({"id": "bothViews", "sql": MBT_VARIANTS[0]["sql"] + MBT_VARIANTS[1]["sql"]})
+
+
+def _mbt_check_vectors(cases, tile_cases, ext_cases):
+    """the reference must agree with every hand-listed vector, and every variant must agree with the table"""
+    def meta_pack(rows, unknown=0):
+        s = list(MBT_TABLES) + ["INSERT INTO tiles VALUES (0, 0, 0, X'010203')"]
+        s += ["INSERT INTO metadata VALUES ('extension_%d', 'value')" % i for i in range(unknown)]
+        s += ["INSERT INTO metadata VALUES (%s, %s)" % _mbt_row_sql(r) for r in rows]
+        return s
+
+    def zoom_pack(c):
+        if c["storageType"] == "integer":
+            v = str(c["value"])
+        elif c["storageType"] == "real":
+            v = "CAST(%r AS REAL)" % c["value"]
+        else:
+            v = _sql_text(c["valueRepeat"][0] * c["valueRepeat"][1] if "valueRepeat" in c else c["value"])
+        return list(MBT_TABLES) + ["INSERT INTO tiles VALUES (%s, 0, 0, X'010203')" % v]
+
+    def same(builder, want, name, probes=None):
+        base = mbtiles_reference(builder, probes)
+        want(base)
+        for var in MBT_VARIANTS:
+            got = mbtiles_reference(builder + var["sql"], probes)
+            for k in ("accepted", "minZoom", "maxZoom", "name", "format", "extensions"):
+                assert got.get(k) == base.get(k), (name, var["id"], k, got.get(k), base.get(k))
+
+    for c in cases:
+        def want(r, c=c):
+            assert r["accepted"] == c["accepted"], (c["id"], r)
+            for k in ("name", "format"):
+                if k in c:
+                    assert r[k] == c[k], (c["id"], k)
+        same(meta_pack(c["rows"], c.get("unknownRows", 0)), want, c["id"])
+    for c in tile_cases:
+        def want(r, c=c):
+            assert r["accepted"] == c["accepted"], (c["id"], r)
+        same(zoom_pack(c), want, c["id"])
+    for c in ext_cases:
+        def want(r, c=c):
+            assert r["accepted"] == c["mapAccepted"], (c["id"], r)
+            assert r["extensions"][c["requestedKey"]] == c["expected"], (c["id"], r)
+        same(meta_pack(c["rows"]), want, c["id"], {"extensions": [c["requestedKey"]]})
+
+
+def mbtiles_relation_cases():
+    """3.0.1 (integration-commits-3, wp4-android-6): whole packs as SQL, tables and views. Expected values come
+    from the reference admission above, never typed in"""
+    meta = ["INSERT INTO meta_base VALUES ('name', 'Sample'), ('format', 'png')"]
+    tiles_rows = "(0, 0, 0, X'01'), (1, 0, 1, X'0203')"
+    base_tiles = ["CREATE TABLE tiles_base (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+                  "CREATE UNIQUE INDEX tiles_base_index ON tiles_base (zoom_level, tile_column, tile_row)",
+                  "INSERT INTO tiles_base VALUES " + tiles_rows]
+    meta_table = ["CREATE TABLE metadata (name text, value text)",
+                  "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')"]
+    meta_view = ["CREATE TABLE meta_base (name text, value text)"] + meta + [
+        "CREATE VIEW metadata AS SELECT name, value FROM meta_base"]
+    tiles_view = base_tiles + ["CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base"]
+    probes = {"tiles": [(0, 0, 0), (1, 0, 0), (1, 1, 1)]}
+    rows = [
+        ("tablesBaseline", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows], probes, True,
+         "plain tables, the shape every admission rule was written for"),
+        ("nodeMbtilesDedup", meta_table + [
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text, grid_id text)",
+            "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)",
+            "CREATE TABLE images (tile_data blob, tile_id text)",
+            "CREATE UNIQUE INDEX images_id ON images (tile_id)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a', NULL), (1, 0, 1, 'b', NULL)",
+            "INSERT INTO images VALUES (X'01', 'a'), (X'0203', 'b')",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, "
+            "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = map.tile_id"],
+         probes, True, "node-mbtiles / TileMill / mbutil / MapTiler deduplicated schema: tiles is a VIEW over map + "
+                       "images. 2.x Android opened it, 3.0.0 Android refused it (the regression)"),
+        ("metadataView", meta_view + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows], probes, True,
+         "metadata as a view: no rowid, no incremental blob, the key-addressed reads"),
+        ("bothViews", meta_view + tiles_view, probes, True, "both relations views"),
+        ("metadataViewBakeExtension", meta_view + [
+            "INSERT INTO meta_base VALUES ('tacmap_bake_key', '%s'), ('tacmap_tile_px', '768')" % ("c" * 64)] + tiles_view,
+         {"tiles": [(0, 0, 0)], "extensions": ["tacmap_bake_key", "tacmap_tile_px"]}, True,
+         "the lazy bake extension reader works on a metadata view too"),
+        ("tilesIsAnIndex", meta_table + base_tiles[:1] + ["CREATE INDEX tiles ON tiles_base (zoom_level)"],
+         None, False, "a relation named tiles that is an index: neither a table nor a view"),
+        ("tilesMissing", meta_table, None, False, "no tiles relation at all"),
+        ("tilesViewTextZoom", meta_table + base_tiles + [
+            "CREATE VIEW tiles AS SELECT CAST(zoom_level AS TEXT) AS zoom_level, tile_column, tile_row, tile_data "
+            "FROM tiles_base"], None, False, "a view can't launder storage classes: TEXT zoom still fails"),
+        ("tilesViewOutOfRange", meta_table + base_tiles + [
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row + 5 AS tile_row, tile_data FROM tiles_base"],
+         None, False, "row outside 0..2^z-1 through a view still fails"),
+        ("metadataViewDuplicateKnown", ["CREATE TABLE meta_base (name text, value text)"] + meta + [
+            "CREATE VIEW metadata AS SELECT name, value FROM meta_base UNION ALL SELECT 'NAME', 'second'"] + tiles_view,
+         None, False, "duplicate known key (case variant) produced by the view"),
+        ("metadataViewNonTextKnown", ["CREATE TABLE meta_base (name text, value text)"] + meta + [
+            "CREATE VIEW metadata AS SELECT name, value FROM meta_base UNION ALL SELECT 'minzoom', 0"] + tiles_view,
+         None, False, "known value that isn't TEXT"),
+        ("metadataViewUnbounded", [
+            "CREATE VIEW metadata AS WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) "
+            "SELECT 'extension_' || i AS name, 'v' AS value FROM n"] + tiles_view,
+         None, False, "an endless metadata view stops at the 65-row descriptor limit, no budget needed"),
+        ("metadataViewLargeUnknownValue", ["CREATE TABLE meta_base (name text, value text)"] + meta + [
+            "CREATE VIEW metadata AS SELECT name, value FROM meta_base UNION ALL "
+            "SELECT 'vendor', CAST(zeroblob(1048576) AS TEXT)"] + tiles_view,
+         probes, True, "an unknown value is classified, never copied (native SQLite may still build it)"),
+        ("tilesViewEndless", meta_table + [
+            "CREATE VIEW tiles AS WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) "
+            "SELECT 0 AS zoom_level, 0 AS tile_column, 0 AS tile_row, X'01' AS tile_data FROM n"],
+         None, False, "a view's row count isn't bounded by the file: the tile aggregate never ends, the "
+                      "admission budget stops it (tests shorten the budget with their seam)"),
+    ]
+    out = []
+    for cid, sql, pr, accepted, note in rows:
+        r = mbtiles_reference(sql, pr)
+        assert r["accepted"] == accepted, (cid, r)
+        if cid == "tilesViewEndless":
+            assert r["rejectedAt"] == "budget", r
+        row = {"id": cid, "sql": sql, "expect": r, "note": note}
+        if cid == "tilesViewEndless":
+            row["testBudgetMs"] = 250
+        out.append(row)
+    return out
+
+
+def mbtiles_admission():
+    adm = {
+        "maxRows": 64,
+        "maxKeyCharacters": 32,
+        "utf8PrefixBytesPerCharacter": 4,
+        "knownValueMaxCharacters": {"name": 128, "format": 32, "minzoom": 16, "maxzoom": 16, "bounds": 256},
+        "truncateFields": ["key", "name", "format"],
+        "consumedBakeExtensionMaxCharacters": 128,
+        "extensionCases": [
+            {"id": "validBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "a" * 64}], "mapAccepted": True, "expected": "a" * 64},
+            {"id": "mixedCaseBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "TACMAP_BAKE_KEY", "value": "b" * 64}], "mapAccepted": True, "expected": "b" * 64},
+            {"id": "caseVariantDuplicate", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "first"}, {"key": "TACMAP_BAKE_KEY", "value": "second"}], "mapAccepted": True, "expected": None},
+            {"id": "validTilePixels", "requestedKey": "tacmap_tile_px", "rows": [{"key": "tacmap_tile_px", "value": "768"}], "mapAccepted": True, "expected": "768"},
+            {"id": "bakeKeyNul", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "a\u0000hidden"}], "mapAccepted": True, "expected": None},
+            {"id": "duplicateBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "first"}, {"key": "tacmap_bake_key", "value": "second"}], "mapAccepted": True, "expected": None},
+            {"id": "oversizedBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "valueRepeat": ["x", 1048576]}], "mapAccepted": True, "expected": None},
+            {"id": "nonTextBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "integerValue": 7}], "mapAccepted": True, "expected": None},
+            {"id": "invalidUtf8BakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "textBytesHex": "ff"}], "mapAccepted": True, "expected": None},
+        ],
+        "tileZoomMin": 0,
+        "tileZoomMax": 30,
+        "tileZoomCases": [
+            {"id": "integerZero", "storageType": "integer", "value": 0, "accepted": True},
+            {"id": "integerThirty", "storageType": "integer", "value": 30, "accepted": True},
+            {"id": "negativeInteger", "storageType": "integer", "value": -1, "accepted": False},
+            {"id": "integerThirtyOne", "storageType": "integer", "value": 31, "accepted": False},
+            {"id": "numericText", "storageType": "text", "value": "0", "accepted": False},
+            {"id": "hugeText", "storageType": "text", "valueRepeat": ["9", 1048576], "accepted": False},
+            {"id": "realZero", "storageType": "real", "value": 0.0, "accepted": False},
+        ],
+        "rules": "Read LIMIT 65 scalar descriptors before text. Copy only bounded UTF-8 BLOB prefixes; "
+                 "skip unknown values. Known duplicate keys/non-text values, non-text keys, invalid UTF-8 "
+                 "or NUL in copied prefixes fail closed. Numeric/bounds overflow fails closed. "
+                 "ASCII vectors below are portable; platform Unicode character segmentation may differ. "
+                 "Only tacmap_bake_key/tacmap_tile_px are consumed lazily, with strict UTF-8/NUL/type/128-character/duplicate checks; invalid extension reads are missing and ordinary maps remain admissible.",
+        "cases": [
+            {"id": "descriptors64", "unknownRows": 64, "rows": [], "accepted": True},
+            {"id": "descriptors65", "unknownRows": 65, "rows": [], "accepted": False},
+            {"id": "unknownLargeValue", "rows": [{"key": "vendor", "valueRepeat": ["x", 1048576]}], "accepted": True},
+            {"id": "nameTruncated", "rows": [{"key": "name", "value": "n" * 129}], "accepted": True, "name": "n" * 128},
+            {"id": "formatTruncated", "rows": [{"key": "format", "value": "f" * 33}], "accepted": True, "format": "f" * 32},
+            {"id": "duplicateKnown", "rows": [{"key": "name", "value": "first"}, {"key": "NAME", "value": "second"}], "accepted": False},
+            {"id": "knownNonText", "rows": [{"key": "minzoom", "integerValue": 0}], "accepted": False},
+            {"id": "zoomOverflow", "rows": [{"key": "minzoom", "value": "0" * 17}], "accepted": False},
+            {"id": "boundsOverflow", "rows": [{"key": "bounds", "value": " " * 257}], "accepted": False},
+            {"id": "nameNul", "rows": [{"key": "name", "value": "a\u0000b"}], "accepted": False},
+            {"id": "invalidUtf8", "rows": [{"key": "name", "textBytesHex": "ff"}], "accepted": False},
+            {"id": "unknownLargeKey", "rows": [{"key": "v" * 1000, "value": "ignored"}], "accepted": True},
+        ],
+    }
+    _mbt_check_vectors(adm["cases"], adm["tileZoomCases"], adm["extensionCases"])
+    # 3.0.1: tiles and metadata may each be a table or a view (MBTiles 1.3), the 2.x Android behaviour
+    adm["relationTypes"] = ["table", "view"]
+    adm["admissionBudgetMs"] = 30000
+    adm["viewQueryBudgetMs"] = 2000
+    adm["relationRules"] = (
+        "Exactly one sqlite_master row named 'tiles' and one named 'metadata', each type 'table' or 'view'; "
+        "anything else (missing, index, trigger) fails closed. A TABLE keeps the existing reads (rowid "
+        "descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no "
+        "incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), "
+        "typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; "
+        "each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), "
+        "1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the "
+        "bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. Every "
+        "other admission check is unchanged on both. Every admission statement (from the first one after "
+        "open to the tile aggregate) shares one deadline of admissionBudgetMs; on expiry the statement is "
+        "interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. "
+        "After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) "
+        "each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no "
+        "per-read budget. PRAGMA trusted_schema=OFF is set first where the SQLite supports it")
+    adm["relationVariants"] = MBT_VARIANTS
+    adm["variantRule"] = ("every cases[] and extensionCases[] row gives the same verdict and values after its own "
+                          "setup plus metadataView or bothViews; every tileZoomCases[] row after tilesView or "
+                          "bothViews. The generator proves it against its reference admission")
+    adm["relationCases"] = mbtiles_relation_cases()
+    adm["relationCasesRule"] = ("run sql[] in order on an empty database file, open it with the real reader "
+                                "(testBudgetMs, when given, replaces admissionBudgetMs through the test seam) and "
+                                "compare expect: accepted, and when accepted minZoom, maxZoom, name, format, each "
+                                "tiles[] probe (XYZ, hex null = no tile) and extensions{}. rejectedAt and relations "
+                                "are the reference's notes, not asserted")
+    return adm
+
+
 def import_doc():
     return {
         "description": "Import limits, import errors -> message keys, the pure ImportDecision table, library entry "
@@ -2443,55 +2991,7 @@ def import_doc():
         "generator": "scripts/gen_calibration_fixtures.py",
         "calibration": CALIBRATION,
         "import": IMPORT,
-        "mbtilesMetadataAdmission": {
-            "maxRows": 64,
-            "maxKeyCharacters": 32,
-            "utf8PrefixBytesPerCharacter": 4,
-            "knownValueMaxCharacters": {"name": 128, "format": 32, "minzoom": 16, "maxzoom": 16, "bounds": 256},
-            "truncateFields": ["key", "name", "format"],
-            "consumedBakeExtensionMaxCharacters": 128,
-            "extensionCases": [
-                {"id": "validBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "a" * 64}], "mapAccepted": True, "expected": "a" * 64},
-                {"id": "mixedCaseBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "TACMAP_BAKE_KEY", "value": "b" * 64}], "mapAccepted": True, "expected": "b" * 64},
-                {"id": "caseVariantDuplicate", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "first"}, {"key": "TACMAP_BAKE_KEY", "value": "second"}], "mapAccepted": True, "expected": None},
-                {"id": "validTilePixels", "requestedKey": "tacmap_tile_px", "rows": [{"key": "tacmap_tile_px", "value": "768"}], "mapAccepted": True, "expected": "768"},
-                {"id": "bakeKeyNul", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "a\u0000hidden"}], "mapAccepted": True, "expected": None},
-                {"id": "duplicateBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "value": "first"}, {"key": "tacmap_bake_key", "value": "second"}], "mapAccepted": True, "expected": None},
-                {"id": "oversizedBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "valueRepeat": ["x", 1048576]}], "mapAccepted": True, "expected": None},
-                {"id": "nonTextBakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "integerValue": 7}], "mapAccepted": True, "expected": None},
-                {"id": "invalidUtf8BakeKey", "requestedKey": "tacmap_bake_key", "rows": [{"key": "tacmap_bake_key", "textBytesHex": "ff"}], "mapAccepted": True, "expected": None},
-            ],
-            "tileZoomMin": 0,
-            "tileZoomMax": 30,
-            "tileZoomCases": [
-                {"id": "integerZero", "storageType": "integer", "value": 0, "accepted": True},
-                {"id": "integerThirty", "storageType": "integer", "value": 30, "accepted": True},
-                {"id": "negativeInteger", "storageType": "integer", "value": -1, "accepted": False},
-                {"id": "integerThirtyOne", "storageType": "integer", "value": 31, "accepted": False},
-                {"id": "numericText", "storageType": "text", "value": "0", "accepted": False},
-                {"id": "hugeText", "storageType": "text", "valueRepeat": ["9", 1048576], "accepted": False},
-                {"id": "realZero", "storageType": "real", "value": 0.0, "accepted": False},
-            ],
-            "rules": "Read LIMIT 65 scalar descriptors before text. Copy only bounded UTF-8 BLOB prefixes; "
-                     "skip unknown values. Known duplicate keys/non-text values, non-text keys, invalid UTF-8 "
-                     "or NUL in copied prefixes fail closed. Numeric/bounds overflow fails closed. "
-                     "ASCII vectors below are portable; platform Unicode character segmentation may differ. "
-                     "Only tacmap_bake_key/tacmap_tile_px are consumed lazily, with strict UTF-8/NUL/type/128-character/duplicate checks; invalid extension reads are missing and ordinary maps remain admissible.",
-            "cases": [
-                {"id": "descriptors64", "unknownRows": 64, "rows": [], "accepted": True},
-                {"id": "descriptors65", "unknownRows": 65, "rows": [], "accepted": False},
-                {"id": "unknownLargeValue", "rows": [{"key": "vendor", "valueRepeat": ["x", 1048576]}], "accepted": True},
-                {"id": "nameTruncated", "rows": [{"key": "name", "value": "n" * 129}], "accepted": True, "name": "n" * 128},
-                {"id": "formatTruncated", "rows": [{"key": "format", "value": "f" * 33}], "accepted": True, "format": "f" * 32},
-                {"id": "duplicateKnown", "rows": [{"key": "name", "value": "first"}, {"key": "NAME", "value": "second"}], "accepted": False},
-                {"id": "knownNonText", "rows": [{"key": "minzoom", "integerValue": 0}], "accepted": False},
-                {"id": "zoomOverflow", "rows": [{"key": "minzoom", "value": "0" * 17}], "accepted": False},
-                {"id": "boundsOverflow", "rows": [{"key": "bounds", "value": " " * 257}], "accepted": False},
-                {"id": "nameNul", "rows": [{"key": "name", "value": "a\u0000b"}], "accepted": False},
-                {"id": "invalidUtf8", "rows": [{"key": "name", "textBytesHex": "ff"}], "accepted": False},
-                {"id": "unknownLargeKey", "rows": [{"key": "v" * 1000, "value": "ignored"}], "accepted": True},
-            ],
-        },
+        "mbtilesMetadataAdmission": mbtiles_admission(),
         "errors": {k: {"key": key(v[0]), "args": v[1]} for k, v in IMPORT_ERRORS.items()},
         "georefRejectReasons": ["lptsOutOfRange", "nonFinite", "gptsOffEarth", "rmsGate", "degenerateViewport",
                                 "malformed", "unknownDatum", "unsupportedProjection"],

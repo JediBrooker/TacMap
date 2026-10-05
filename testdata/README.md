@@ -104,6 +104,10 @@ holds client policy, not wire format, so the relay does not load it.
   asserts the invariants against the live `relayLimits`. Change constants there
   and regenerate (`--check` fails if the JSON is stale); don't nudge vectors
   until a test passes.
+- 3.0.1: `snapshot.embeddedIdCases` are hostile v3 records whose embedded
+  object id isn't canonical (plans/04 s2.7); `v2.vectors.outbound` and
+  `v2.vectors.remember` pin the legacy-room id casing (plans/04 s16, 3.0.1
+  amendment).
 ## PDF georeference contract
 
 `pdf_georef.json` pins the georeference model from
@@ -317,7 +321,8 @@ json says before anything is computed, so reruns are byte-identical. Each file h
 | `import_limits.lifecycle.draftActive` | r1 (T3, C1/C5/C6): drive `steps` from `draftBefore` through the real session + draft store, assert `expect.draft` (`none`/`active`/`inactive`/`deleted`), `session` and `toast` | exact |
 | `import_limits.lifecycle.autoResume` | r1 (E3, M10, C2/C6/C8, F3, OD-F1): given draft / entry / library / `crashSuspect`, the launch decision `action` (`resume`/`skip`/`deferUntilLoaded`), draft flag after, `frameSheet`, `reopenPending`, `toast` | exact |
 | `import_limits.lifecycle.suspectStart`, `.choosePage`, `.importPipeline` | r1 (C2; E1/E4/E14; E2/E5/E7/OD-F5): Open Anyway on start, Choose page confirm/no-op/activate/online fallback and its picker message, pipeline order, cancel visibility and re-checks | exact |
-| `import_limits.libraryLoad` | r1 (S1-S4, D8, F3): restore outcome per library file / key / quarantine sibling / written-before record / legacy state: `status`, `migration`, whether reconcile + bake sweep + draft prune may run, `clearLegacy`, `issue`; `retry` describes the corrupt rebuild and the locked reload | exact |
+| `import_limits.libraryLoad` | r1 (S1-S4, D8, F3) + 3.0.1 (contract s13.1): restore outcome per library file / key / quarantine sibling / written-before record / legacy state / `managedFiles` / failing `writes`: `status`, `migration` (`none`/`run`/`blocked`/`writeEmptyAndClear`/`salvage`/`adoptOrphans`), whether reconcile + bake sweep + draft prune may run, `clearLegacy`, `issue`, `notice`, `recoveryPreservesOrphans`, `importAllowed`, `basemapChangeAllowed` and `nextRestore` (the pass after this one). Rows carry `platforms`; build each `legacy` state from real stores per `legacyCodes`. `retry`, `salvage` and `adoptOrphans` describe the writes | exact |
+| `import_limits.mbtilesMetadataAdmission` | s3.1 + 3.0.1 (contract s13.2): constants, metadata / extension / tile-zoom vectors, `relationVariants` (each vector again with metadata and/or tiles as a view, same result) and `relationCases` (whole packs as SQL, expected values from the generator's reference admission; `testBudgetMs` replaces `admissionBudgetMs` through the test seam) | exact |
 | `import_limits.sizeDisplay`, `prechecks[].expect.argText` | r1 (OD-F6): byte args via the `pdf_tile_render.json` bakeFormat size rule (the generator asserts it equals WP2's cases) | exact |
 
 Choices the contract left open, pinned here (the rule text says so too):

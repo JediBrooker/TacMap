@@ -454,6 +454,10 @@ object Messages {
         L10n.message("id.map_library_footer", "%1\$s · %2\$s on this device. Imported maps stay on this device until you delete them and aren't included in backups.", maps, size)
     fun mapLibraryLocked(): String =
         L10n.message("id.map_library_locked", "Unlock mission data to see and change imported maps.")
+    fun mapLibraryRecoveredNotice(): String =
+        L10n.message("id.map_library_recovered_notice", "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.")
+    fun mapLibraryRecoveredNoticeMessage(): LocalizedMessage =
+        LocalizedMessage("id.map_library_recovered_notice", "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.", listOf())
     fun mapLibrarySection(): String =
         L10n.message("id.map_library_section", "Imported maps")
     fun mapMigrationUncalibrated(name: String): String =

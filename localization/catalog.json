@@ -19372,6 +19372,19 @@
       }
     ]
   },
+  "map_library_recovered_notice": {
+    "en": "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.",
+    "de": "Einige gespeicherte Kartendetails konnten nicht gelesen werden. Jede Kartendatei auf diesem Gerät wurde behalten und steht unter „Importierte Karten“, möglicherweise fehlen aber Namen oder Kalibrierungen. Prüfe deine Karten und kalibriere sie bei Bedarf neu. Es wurde nichts gelöscht.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryRecoveredNotice",
+    "deferred": true,
+    "context": "Library (3.0.1, legacy migration salvage and orphan adoption). One-time alert with OK after TacMap wrote a recovered library because old map data couldn't be read, or map files were found with no library: every file was kept and listed, nothing was deleted.",
+    "parameters": []
+  },
   "map_state_geopdf": {
     "en": "GeoPDF",
     "de": "GeoPDF",

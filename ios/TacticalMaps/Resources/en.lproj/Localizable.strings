@@ -160,6 +160,7 @@
 "id.map_library_empty" = "No imported maps. Use Import to add a PDF, GeoPDF or MBTiles map.";
 "id.map_library_footer" = "%1$@ · %2$@ on this device. Imported maps stay on this device until you delete them and aren't included in backups.";
 "id.map_library_locked" = "Unlock mission data to see and change imported maps.";
+"id.map_library_recovered_notice" = "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.";
 "id.map_library_section" = "Imported maps";
 "id.map_migration_uncalibrated" = "“%1$@” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.";
 "id.map_point_copy" = "Copy Coordinates";
