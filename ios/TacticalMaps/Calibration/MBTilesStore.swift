@@ -808,4 +808,13 @@ final class MBTilesStore: @unchecked Sendable {
         sqlite3_close(db)
         db = nil
     }
+
+#if DEBUG
+    /// retired, no connection left and none will open again
+    var isClosedForTesting: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return closedForDeletion && db == nil
+    }
+#endif
 }

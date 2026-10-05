@@ -49,9 +49,11 @@ final class OfflineTileMapSource: MapSource {
 
     /// Builds the UI/map wrapper from metadata validated by the detached
     /// import worker. No file open or SQLite query occurs in this initializer.
-    convenience init(prevalidatedURL url: URL, metadata: MBTilesStore.Metadata) {
+    convenience init(prevalidatedURL url: URL, metadata: MBTilesStore.Metadata,
+                     entryID: UUID? = nil, displayName: String? = nil) {
         self.init(url: url,
-                  store: MBTilesStore(prevalidatedURL: url, metadata: metadata))
+                  store: MBTilesStore(prevalidatedURL: url, metadata: metadata),
+                  entryID: entryID, displayName: displayName)
     }
 
     /// Fresh overlay for map to add. Coordinator owns the lifecycle.
@@ -62,5 +64,23 @@ final class OfflineTileMapSource: MapSource {
     func closeForDeletion() {
         store.closeForDeletion()
         firstDraw?.settle()
+    }
+}
+
+/// 3.0.2 M2: what a restore shows while its pack gets opened and admitted off
+/// main. No tiles, no tile requests (the renderer maps it to blank), no
+/// coverage so nothing reframes. The pack's area never goes to an online
+/// provider while it's being checked
+final class MBTilesOpeningSource: MapSource {
+    let id = UUID()
+    let displayName: String
+    let kind: MapSourceKind = .offlineTiles
+    let coverage: MKCoordinateRegion? = nil
+    let calibration: Calibration? = nil
+    let entryID: UUID
+
+    init(entryID: UUID, displayName: String) {
+        self.entryID = entryID
+        self.displayName = displayName
     }
 }

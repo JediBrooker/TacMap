@@ -199,6 +199,46 @@ final class MapViewModel: ObservableObject {
     @Published private(set) var mbtilesCrashSuspect: ImportedMapEntry?
     /// the guard only ever arms in the foreground, tests pin it
     var guardIsForeground: () -> Bool = { UIApplication.shared.applicationState != .background }
+
+    /// 3.0.2 M2: a pack is opened and admitted on packOpenQueue, never main,
+    /// and lands back on packOpenMain. Tests swap all three
+    var packOpenQueue: (@escaping () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) }
+    var packOpenMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
+    var packOpener: (URL, ImportedMapEntry) -> OfflineTileMapSource? = { url, e in
+        OfflineTileMapSource(url: url, entryID: e.id, displayName: e.displayName)
+    }
+    /// the one open still allowed to land. Anything published meanwhile or a
+    /// newer open drops it, its result gets closed instead
+    private var pendingPackOpen: (ticket: Int, entryID: UUID)?
+    private var packOpenTicket = 0
+    var packOpenPending: Bool { pendingPackOpen != nil }
+
+    /// admitted metadata, this process only, never persisted. Keyed on the
+    /// entry + the file stamp a restore trusts, so other bytes are a miss
+    private struct AdmittedPackKey: Hashable {
+        let id: UUID, fileName: String, contentKey: String?, byteCount: Int64, modifiedAtMs: Int64
+        init(_ e: ImportedMapEntry) {
+            id = e.id; fileName = e.fileName; contentKey = e.contentKey
+            byteCount = e.byteCount; modifiedAtMs = e.fileModifiedAtMs
+        }
+    }
+    private var admittedPacks: [AdmittedPackKey: MBTilesStore.Metadata] = [:]
+
+    /// what a pack open does once it lands
+    private struct PackOpenPlan {
+        /// blank placeholder while it opens (restore), else the old map stays up
+        var placeholder: Bool
+        /// activation: ActivateEntry re-reduced from the library, one write
+        var writes: Bool
+        var reframe: Bool
+        var verify: Bool
+        static let restore = PackOpenPlan(placeholder: true, writes: false, reframe: true, verify: true)
+        static let calibrationReturn = PackOpenPlan(placeholder: true, writes: false, reframe: false, verify: false)
+        static let openAnyway = PackOpenPlan(placeholder: false, writes: false, reframe: true, verify: true)
+        static func activate(reframe: Bool) -> PackOpenPlan {
+            PackOpenPlan(placeholder: false, writes: true, reframe: reframe, verify: false)
+        }
+    }
     private var backgroundObserver: NSObjectProtocol?
     /// whose estimate / bake gets cancelled when its map is deleted. tests swap it
     var bakeController: PDFBakeController = .shared
@@ -335,29 +375,124 @@ final class MapViewModel: ObservableObject {
             return src
         case .mbtiles:
             guard status == .ok else { return nil }
-            return openGuardedMBTiles(e, url: url)
+            // M2: never a fresh open here (main). Only metadata this process
+            // already admitted, anything else goes through openPack
+            return admittedPackSource(e, url: url)
         }
     }
 
     /// 3.0.2 M1: every MBTiles open that can end up on screen (restore,
-    /// activation, Open Anyway) runs under the open guard. Armed durably before
-    /// the open; a refused pack clears it right away, an admitted one once its
-    /// first draw settles, or when the source is replaced, closed or dropped
-    private func openGuardedMBTiles(_ e: ImportedMapEntry, url: URL) -> OfflineTileMapSource? {
+    /// activation, Open Anyway, import) runs under the open guard. Armed durably
+    /// before the open; a refused pack clears it right away, an admitted one once
+    /// its first draw settles, or when the source is replaced, closed or dropped.
+    /// This one's the lazy reader over admitted metadata, its open happens on the
+    /// first tile read (renderer thread) so the first draw covers it
+    private func admittedPackSource(_ e: ImportedMapEntry, url: URL) -> OfflineTileMapSource? {
+        guard let meta = admittedPacks[AdmittedPackKey(e)] else { return nil }
         let token = e.id.uuidString
         let guardStore = mbtilesOpenGuard
         let armed = guardStore.arm(token: token, foreground: guardIsForeground())
-        guard let src = OfflineTileMapSource(url: url, entryID: e.id, displayName: e.displayName) else {
-            if armed { guardStore.complete(token: token) }
-            return nil
-        }
+        let src = OfflineTileMapSource(prevalidatedURL: url, metadata: meta, entryID: e.id, displayName: e.displayName)
         if armed { src.firstDraw = MBTilesFirstDrawWatch { guardStore.complete(token: token) } }
         return src
     }
 
-    var activeEntryID: UUID? {
-        (mapSource as? PDFMapSource)?.entryID ?? (mapSource as? OfflineTileMapSource)?.entryID
+    /// 3.0.2 M2: restore, activation and Open Anyway of a pack. Main arms the
+    /// guard and, for a restore, puts up the blank placeholder. The open, the
+    /// hardening, relation/shape/base checks and the admission aggregate all run
+    /// off main. Back on main it only lands if it's still the newest ask for the
+    /// same file in a loaded library, else its store is closed and the guard
+    /// cleared. false = no file to open, nothing changed
+    @discardableResult
+    private func openPack(_ e: ImportedMapEntry, plan: PackOpenPlan) -> Bool {
+        guard e.kind == .mbtiles, fileStatus(e) == .ok, let url = libraryDependencies.fileURL(e) else { return false }
+        // already admitted this process: lazy reader, nothing to wait for
+        if let src = admittedPackSource(e, url: url) {
+            pendingPackOpen = nil
+            return landPack(src, e, plan: plan)
+        }
+        if plan.placeholder {
+            publishMapSource(MBTilesOpeningSource(entryID: e.id, displayName: e.displayName), reframe: false)
+        }
+        let token = e.id.uuidString
+        let guardStore = mbtilesOpenGuard
+        let armed = guardStore.arm(token: token, foreground: guardIsForeground())
+        packOpenTicket &+= 1
+        let ticket = packOpenTicket
+        pendingPackOpen = (ticket, e.id)
+        let opener = packOpener, main = packOpenMain
+        packOpenQueue { [weak self] in
+            let src = opener(url, e)
+            main {
+                guard let self else {
+                    src?.closeForDeletion()
+                    if armed { guardStore.complete(token: token) }
+                    return
+                }
+                self.packOpened(src, asked: e, ticket: ticket, armed: armed, guardStore: guardStore, plan: plan)
+            }
+        }
+        return true
     }
+
+    /// main, an off main open came back
+    private func packOpened(_ src: OfflineTileMapSource?, asked: ImportedMapEntry, ticket: Int, armed: Bool,
+                            guardStore: MBTilesOpenGuard, plan: PackOpenPlan) {
+        let token = asked.id.uuidString
+        // superseded: something else went on screen, a newer open started, or
+        // the library / the entry's file changed underneath it
+        guard pendingPackOpen?.ticket == ticket, libraryStatus == .loaded,
+              let e = library?.entry(asked.id), AdmittedPackKey(e) == AdmittedPackKey(asked) else {
+            // still the newest ask but the library moved: nothing's coming for it now
+            if pendingPackOpen?.ticket == ticket { pendingPackOpen = nil }
+            src?.closeForDeletion()
+            if armed { guardStore.complete(token: token) }
+            return
+        }
+        pendingPackOpen = nil
+        guard let src else {
+            // refused: nothing written. A restore goes online in memory like it
+            // always did, an activation leaves the old map up
+            if armed { guardStore.complete(token: token) }
+            if plan.placeholder {
+                publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+            }
+            return
+        }
+        admittedPacks[AdmittedPackKey(e)] = src.store.metadata
+        if armed { src.firstDraw = MBTilesFirstDrawWatch { guardStore.complete(token: token) } }
+        landPack(src, e, plan: plan)
+    }
+
+    @discardableResult
+    private func landPack(_ src: OfflineTileMapSource, _ e: ImportedMapEntry, plan: PackOpenPlan) -> Bool {
+        guard plan.writes else {
+            publishMapSource(src, reframe: plan.reframe)
+            if plan.verify { verifyInBackground(e) }
+            return true
+        }
+        let ok = execute(.activateEntry(e.id)) { _, _ in
+            self.clearCalibrationReturn()
+            self.publishMapSource(src, reframe: plan.reframe)
+        }
+        // this tap took over from a restore still opening and its write failed:
+        // dont leave the blank placeholder up with nothing coming
+        if !ok, pendingPackOpen == nil, let held = mapSource as? MBTilesOpeningSource,
+           let restored = library?.entry(held.entryID), !openPack(restored, plan: .restore) {
+            publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+        }
+        return ok
+    }
+
+    private static func entryID(of s: MapSource) -> UUID? {
+        (s as? PDFMapSource)?.entryID ?? (s as? OfflineTileMapSource)?.entryID ?? (s as? MBTilesOpeningSource)?.entryID
+    }
+
+    /// the placeholder counts, it's that entry being shown (just not drawn yet)
+    var activeEntryID: UUID? { Self.entryID(of: mapSource) }
+
+    /// an offline pack is up, or about to be (no online tiles either way)
+    var showsOfflinePack: Bool { mapSource is OfflineTileMapSource || mapSource is MBTilesOpeningSource }
 
     @discardableResult
     func selectOnlineBasemap(_ style: BasemapStyle) -> Bool {
@@ -371,8 +506,13 @@ final class MapViewModel: ObservableObject {
     @discardableResult
     func activateLibraryEntry(_ id: UUID, reframe: Bool = true) -> Bool {
         guard let e = library?.entry(id) else { return false }
-        // picking the held back pack by hand is Open Anyway, before it opens
-        if e.kind == .mbtiles { resolveMBTilesSuspect(id, .openAnyway) }
+        if e.kind == .mbtiles {
+            // picking the held back pack by hand is Open Anyway, before it opens
+            resolveMBTilesSuspect(id, .openAnyway)
+            // M2: opened off main, the old map stays up till it lands and the
+            // write happens then. true = on its way
+            return openPack(e, plan: .activate(reframe: reframe))
+        }
         guard let source = source(for: e) else { return false }
         return execute(.activateEntry(id)) { _, _ in
             self.clearCalibrationReturn()
@@ -389,8 +529,12 @@ final class MapViewModel: ObservableObject {
     /// import commit: one write adds the entry (+ makes it active). ownsCopy =
     /// the in-flight copy behind it: released once it's in the library, kept for
     /// the Retry when the write fails, dropped on Not Now (S7)
+    /// packMetadata: what the import worker already admitted off main (M2), the
+    /// pack is shown from that, never re-admitted here
     @discardableResult
-    func addImportedEntry(_ e: ImportedMapEntry, activate: Bool, ownsCopy copy: URL? = nil) -> Bool {
+    func addImportedEntry(_ e: ImportedMapEntry, activate: Bool, ownsCopy copy: URL? = nil,
+                          packMetadata: MBTilesStore.Metadata? = nil) -> Bool {
+        if e.kind == .mbtiles, let packMetadata { admittedPacks[AdmittedPackKey(e)] = packMetadata }
         let shown = activate ? source(for: e) : nil
         let ok = execute(.addEntry(e, activate: activate && shown != nil)) { _, _ in
             if let copy {
@@ -403,6 +547,8 @@ final class MapViewModel: ObservableObject {
             // a refused transition (library full etc) has no Retry, the copy goes now
             if mapSelectionPersistenceIssue == nil { ImportedMapStorage.unlink(copy); InFlightImportFiles.unregister(copy) } else { pendingImportCopy = copy }
         }
+        // a pack with no admitted metadata to hand: the normal off main activation
+        if ok, activate, shown == nil, e.kind == .mbtiles { _ = activateLibraryEntry(e.id) }
         return ok
     }
 
@@ -594,12 +740,15 @@ final class MapViewModel: ObservableObject {
         guard let back = calibrationReturn else { return }
         clearCalibrationReturn()
         // the durable entry may have been re-activated, rebuild it from the library
-        if let id = (back as? PDFMapSource)?.entryID ?? (back as? OfflineTileMapSource)?.entryID,
-           let e = library?.entry(id), let fresh = source(for: e) {
-            publishMapSource(fresh, reframe: false)
-        } else {
-            publishMapSource(back, reframe: false)
+        if let id = Self.entryID(of: back), let e = library?.entry(id) {
+            // a pack reopens off main (its old store closed when the display went up)
+            if e.kind == .mbtiles, openPack(e, plan: .calibrationReturn) { return }
+            if let fresh = source(for: e) {
+                publishMapSource(fresh, reframe: false)
+                return
+            }
         }
+        publishMapSource(back, reframe: false)
     }
 
     var inCalibrationDisplay: Bool { calibrationReturn != nil }
@@ -729,8 +878,13 @@ final class MapViewModel: ObservableObject {
                     }
                 } else {
                     _ = decideLaunchGuard(restoredToken: nil)
-                    if activeEntryID != id {
-                        if let e = s.entry(id), let src = source(for: e) {
+                    // a placeholder whose open went away (library locked under
+                    // it, say) isnt showing anything, this restore reopens it
+                    let opening = mapSource is MBTilesOpeningSource && pendingPackOpen?.entryID == id
+                    if activeEntryID != id || (mapSource is MBTilesOpeningSource && !opening) {
+                        if let e = s.entry(id), e.kind == .mbtiles, openPack(e, plan: .restore) {
+                            // M2: blank placeholder now, the pack once it's admitted off main
+                        } else if let e = s.entry(id), let src = source(for: e) {
                             publishMapSource(src)
                             verifyInBackground(e)
                         } else {
@@ -938,11 +1092,8 @@ final class MapViewModel: ObservableObject {
     func openCrashSuspectAnyway() {
         if pdfCrashSuspect == nil, let e = mbtilesCrashSuspect {
             resolveMBTilesSuspect(e.id, .openAnyway)
-            // then the normal guarded open, from the library as it is now
-            if let fresh = library?.entry(e.id), let src = source(for: fresh) {
-                publishMapSource(src)
-                verifyInBackground(fresh)
-            }
+            // then the normal guarded open (off main), from the library as it is now
+            if let fresh = library?.entry(e.id) { openPack(fresh, plan: .openAnyway) }
             return
         }
         guard let pdf = pdfCrashSuspect else { return }
@@ -1057,6 +1208,8 @@ final class MapViewModel: ObservableObject {
 
     private func publishMapSource(_ source: MapSource, reframe: Bool = true) {
         NSLog("[MapVM] map source changed -> kind=\(source.kind)")
+        // M2: whatever goes up now is newer than a pack still opening
+        pendingPackOpen = nil
         let previousSource = mapSource
         mapSource = source
         if let online = source as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }

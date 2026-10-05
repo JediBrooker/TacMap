@@ -235,7 +235,8 @@ final class MBTilesOpenGuardTests: XCTestCase {
         return (entry, state)
     }
 
-    /// one launch: a fresh view model over the given guard file
+    /// one launch: a fresh view model over the given guard file. M2 opens the
+    /// pack off main, this waits for it to land
     private func launch(_ state: LibraryState, pack: URL, guardFile: URL) -> MapViewModel {
         let vm = MapViewModel(libraryDependencies: PDFRenderGuardStoreTests.inMemoryLibrary(state, fileURL: { _ in pack }),
                               initialMapSource: OnlineRasterBasemapSource(.osmTopo))
@@ -243,12 +244,18 @@ final class MBTilesOpenGuardTests: XCTestCase {
         vm.mbtilesOpenGuard = MBTilesOpenGuard(url: guardFile)
         vm.guardIsForeground = { true }
         _ = vm.restoreActiveMapSelection()
+        landed(vm)
         return vm
     }
 
     private func waitFor(_ timeout: TimeInterval = 4, _ done: () -> Bool) {
         let end = Date().addingTimeInterval(timeout)
         while !done(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    private func landed(_ vm: MapViewModel, file: StaticString = #filePath, line: UInt = #line) {
+        waitFor { !vm.packOpenPending }
+        XCTAssertFalse(vm.packOpenPending, "pack open never landed", file: file, line: line)
     }
 
     func testACrashWhileTheRestoredPackOpensHoldsItBackUntilOpenAnyway() throws {
@@ -293,6 +300,7 @@ final class MBTilesOpenGuardTests: XCTestCase {
 
         // Open Anyway: the normal guarded open, armed again until its first draw
         third.openCrashSuspectAnyway()
+        landed(third)
         XCTAssertEqual(opens, 1)
         let shown = try XCTUnwrap(third.mapSource as? OfflineTileMapSource)
         XCTAssertEqual(shown.entryID, entry.id)
@@ -345,6 +353,7 @@ final class MBTilesOpenGuardTests: XCTestCase {
         vm.mbtilesOpenGuard = MBTilesOpenGuard(url: guardFile)
         vm.guardIsForeground = { false }
         _ = vm.restoreActiveMapSelection()
+        landed(vm)
         XCTAssertTrue(vm.mapSource is OfflineTileMapSource)
         XCTAssertEqual(MBTilesOpenGuard(url: guardFile).snapshot.inProgress, [])
 
@@ -367,6 +376,7 @@ final class MBTilesOpenGuardTests: XCTestCase {
         XCTAssertEqual(vm.mbtilesCrashSuspect?.id, entry.id)
         // Layers tap counts as Open Anyway
         XCTAssertTrue(vm.activateLibraryEntry(entry.id))
+        landed(vm)
         XCTAssertNil(vm.mbtilesCrashSuspect)
         XCTAssertNil(MBTilesOpenGuard(url: crashed).suspect)
         XCTAssertEqual((vm.mapSource as? OfflineTileMapSource)?.entryID, entry.id)
@@ -392,6 +402,7 @@ final class MBTilesOpenGuardTests: XCTestCase {
         var atOpen: Data?
         MBTilesStore.admissionOpenHookForTesting = { _ in atOpen = try? Data(contentsOf: guardFile) }
         XCTAssertTrue(vm.activateLibraryEntry(entry.id))
+        landed(vm)
         let crashed = dir.appendingPathComponent("crashed.json")
         try XCTUnwrap(atOpen).write(to: crashed)
         // the write never happened: online is still the durable selection
