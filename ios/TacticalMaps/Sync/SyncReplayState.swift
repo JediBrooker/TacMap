@@ -1258,6 +1258,8 @@ final class LocalModelRevisionJournal {
     typealias PersistenceWriter = (Data, URL, String) throws -> Void
 
     private var generations: [String: Int64] = [:]
+    /// the last load() failed only because the key was relocked under it (K1)
+    private(set) var loadHitRelock = false
     private let fileURL: URL?
     private let label = "sync/model-revisions"
     private let testKey: Data?
@@ -1343,6 +1345,7 @@ final class LocalModelRevisionJournal {
 
     @discardableResult
     func load() -> Bool {
+        loadHitRelock = false
         guard let fileURL else { return true }
         if let testKey {
             guard FileManager.default.fileExists(atPath: fileURL.path) else { return true }
@@ -1361,7 +1364,10 @@ final class LocalModelRevisionJournal {
             return values
         }) {
         case .empty: return true
-        case .locked, .corrupt: return false
+        case .locked(let error):
+            loadHitRelock = DataKey.failedBehindRelock(error)
+            return false
+        case .corrupt: return false
         case .loaded(let values):
             var decoded: [String: Int64] = [:]
             for (id, value) in values {

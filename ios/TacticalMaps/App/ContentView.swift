@@ -1667,7 +1667,8 @@ struct ContentView: View {
     private func unlockMissionData() {
         missionUnlockError = nil
         do {
-            _ = try DataKey.key()
+            // the user's own unlock, the only thing that reopens the key after a relock
+            try DataKey.unlock()
             dataKeyEpoch &+= 1
             waypointStore.reloadAfterUnlock()
             drawingStore.reloadAfterUnlock()
