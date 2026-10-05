@@ -10,7 +10,7 @@ export const RELAY_LIMITS = {
   // clock gets extra time for the snapshot they were sent, at a slow-link rate
   HELLO_DEADLINE_MS: 60_000,
   HELLO_DEADLINE_BYTES_PER_SEC: 100_000,
-  MAX_RECORDS: 10_000, // objects + retained tombstones + actor pins
+  MAX_RECORDS: 10_000, // objects + retained tombstones + actor pins + epoch floors
   MAX_STORED_BYTES: 50_000_000,
   MAX_V: 1e12, // v2 only
   CT_MAX: 700_000,

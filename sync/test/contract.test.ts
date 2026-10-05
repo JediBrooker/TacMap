@@ -3,7 +3,9 @@ import { describe, it, expect } from "vitest"
 import fixture from "../../testdata/sync_protocol_v3.json"
 import worker from "../src/index"
 import { RELAY_LIMITS } from "../src/limits"
+import { RELAY_RELEASE_ID, RELAY_RELEASE_SOURCE_SHA256 } from "../src/release"
 import relaySource from "../src/index.ts?raw"
+import limitsSource from "../src/limits.ts?raw"
 import wranglerConfig from "../wrangler.jsonc?raw"
 import {
   A, SD, SD_2, base64urlBytes, collectUntil, del, drainSnapshot, hello, hello2, helloOn,
@@ -40,6 +42,25 @@ async function reply(ws: WebSocket, frame: Record<string, unknown>): Promise<any
   ws.send(JSON.stringify(frame))
   return response
 }
+
+describe("release id", () => {
+  // ids that already went out with other relay source. never ship one again
+  const RETIRED_RELEASE_IDS = ["tacmap-sync-2.1.0-sp1"]
+
+  it("moves whenever the relay source or its deploy config does (relay-ref-2)", async () => {
+    const files: Array<[string, string]> = [
+      ["src/index.ts", relaySource], ["src/limits.ts", limitsSource], ["wrangler.jsonc", wranglerConfig],
+    ]
+    const digest = new Uint8Array(await crypto.subtle.digest(
+      "SHA-256", new TextEncoder().encode(files.map(([name, text]) => `${name}\n${text}\n`).join("")),
+    ))
+    const hex = [...digest].map(byte => byte.toString(16).padStart(2, "0")).join("")
+    // a mismatch means the relay changed under an id /health already reports:
+    // give src/release.ts a new id, retire the old one here, then paste this hash
+    expect(hex).toBe(RELAY_RELEASE_SOURCE_SHA256)
+    expect(RETIRED_RELEASE_IDS).not.toContain(RELAY_RELEASE_ID)
+  })
+})
 
 describe("relay limits contract", () => {
   it("mirrors testdata relayLimits.values exactly", () => {

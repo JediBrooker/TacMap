@@ -36,6 +36,11 @@ const LAST_CLOSE_DEDUPE_MS = 60_000
 // relay-only row per tombstone: tomb:<id> -> hour the delete landed. never
 // part of the record, so snapshots keep the exact shape clients verify
 const TOMB_PREFIX = "tomb:"
+// relay-only row per actor whose pin idle expiry dropped: epoch:<actorId> ->
+// the 16 hex hello epoch that pin held, nothing else. a hello still has to
+// beat it, so one captured before expiry can't be replayed after it (ADR-001
+// §14). the actor's next accepted hello turns it back into a pin
+const EPOCH_PREFIX = "epoch:"
 const ZERO_COUNTER = "0000000000000000"
 const B64URL_32_RE = /^[A-Za-z0-9_-]{43}$/
 const B64URL_64_RE = /^[A-Za-z0-9_-]{86}$/
@@ -200,6 +205,11 @@ function isNewerStamp(incoming: string, existing: string): boolean {
   const b = parseStamp(existing)
   if (!a || !b) return false
   return a.counter === b.counter ? a.actorId > b.actorId : a.counter > b.counter
+}
+
+// a stored epoch (pin or floor) as a number, 0 for none or anything malformed
+function storedEpoch(hex: unknown): bigint {
+  return typeof hex === "string" && /^[0-9a-f]{16}$/.test(hex) ? BigInt("0x" + hex) : 0n
 }
 
 function parseHelloEpoch(vs: string, actorId: string): { hex: string; value: bigint } | null {
@@ -945,19 +955,24 @@ export class SyncRoom {
     const type = (msg as { t?: unknown }).t
     const socket = ws.deserializeAttachment() as SocketState | null
     const protocol = socket?.protocol ?? 2
-    // only durably accepted work counts as room activity. presence, chat and
-    // rejected frames never touch storage, the open socket already keeps the
-    // room alive via the alarm
+    // accepted work and live traffic the relay acted on (relayed presence,
+    // routed chat, an answered ping) count as room activity. noteActivity
+    // writes at most once per ACTIVITY_PERSIST_MS, so the stored idle clock
+    // stays within the hour of real use even if the sockets later vanish with
+    // no close callback (deploy, restart). rejected frames never count
     let accepted = false
     try {
       if (type === "put") accepted = await (protocol === 3 ? this.applyChangeV3(ws, msg, false) : this.applyChange(ws, msg, false))
       else if (type === "del") accepted = await (protocol === 3 ? this.applyChangeV3(ws, msg, true) : this.applyChange(ws, msg, true))
-      else if (type === "loc") await (protocol === 3 ? this.handlePresenceV3(ws, msg) : this.handlePresence(ws, msg))
+      else if (type === "loc") accepted = await (protocol === 3 ? this.handlePresenceV3(ws, msg) : this.handlePresence(ws, msg))
       else if (type === "hello" && protocol === 3) accepted = await this.handleHello(ws, msg)
       else if (type === "leave" && protocol === 3) await this.handleExplicitLeave(ws, msg)
       else if (type === "chat-key" && protocol === 3) await this.handleChatKey(ws, msg)
-      else if (type === "chat" && protocol === 3) await this.handleChat(ws, msg)
-      else if (type === "ping" && Object.keys(msg).length === 1) ws.send(JSON.stringify({ t: "pong" }))
+      else if (type === "chat" && protocol === 3) accepted = await this.handleChat(ws, msg)
+      else if (type === "ping" && Object.keys(msg).length === 1) {
+        ws.send(JSON.stringify({ t: "pong" }))
+        accepted = true
+      }
     } catch {
       metric("storage_error", { operation: "message" })
       this.closeSocket(ws, 1011, "storage unavailable")
@@ -1226,17 +1241,21 @@ export class SyncRoom {
   }
 
   // Idle expiry drops what an idle room doesn't need: live object ciphertext
-  // and actor pins. It keeps auth, protocol, seq, highWater, accounting and
-  // every tombstone so a returning client neither rolls back, nor trips the
-  // counter window, nor sees a delete come back, until the idle purge takes
-  // the rest (purgeIdleRoom). A room that never accepted a write has none of
-  // that to protect and is wiped outright, like before SP1.
+  // and actor pins. Each pin leaves only its hello epoch behind, as an
+  // epoch:<actor> floor counted like the pin was. It keeps auth, protocol,
+  // seq, highWater, accounting, every tombstone and the floors, so a
+  // returning client neither rolls back, nor trips the counter window, nor
+  // sees a delete come back, and nobody holding the join code can replay an
+  // older session of someone else's (ADR-001 §14), until the idle purge takes
+  // the rest (purgeIdleRoom). A room that never accepted a write has no
+  // records to roll back and is wiped outright, pins and all, like before SP1.
   // Runs under bCW so no join or write lands between the scan and the rewrite.
   //
   // Crash safety: seq, horizonSeq and the meta:expiring marker are written
-  // before anything is deleted, so a pass that dies half way has already moved
-  // seq past what it removed. "failed" makes alarm() retry soon, and a join in
-  // the meantime recounts the counters because of the marker (ensureAccounting).
+  // first, then the floors, then the deletes. A pass that dies half way has
+  // already moved seq past what it removed and never drops a pin before its
+  // floor is stored. "failed" makes alarm() retry soon, and a join in the
+  // meantime recounts the counters because of the marker (ensureAccounting).
   private async expireIdleRoom(now: number): Promise<"expired" | "skipped" | "purged" | "failed"> {
     return this.state.blockConcurrencyWhile(async () => {
       try {
@@ -1249,10 +1268,21 @@ export class SyncRoom {
         // newest hello among the pins about to go. compaction uses it as the
         // last-seen bound for authors that no longer have a pin
         let droppedSeen: number | undefined
+        // floors already stored (an earlier expiry, or a pass that died) plus
+        // the ones the pins below leave. only the new or raised ones get written
+        const floors = new Map<string, string>()
+        for await (const [key, epoch] of this.scanRecords<string>(EPOCH_PREFIX, () => 64)) floors.set(key, epoch)
+        const floorWrites: Array<[string, string]> = []
         for await (const [key, pin] of this.scanRecords<ActorRecord>("actor:", () => 1024)) {
           doomed.push(key)
           const seen = pin.lastSeen ?? Math.max(pin.firstSeen ?? 0, indexedAt)
           droppedSeen = droppedSeen === undefined ? seen : Math.max(droppedSeen, seen)
+          // a pin from before hello epochs has nothing to hold a hello to
+          const epoch = storedEpoch(pin.helloEpoch)
+          const floorKey = EPOCH_PREFIX + key.slice("actor:".length)
+          if (epoch === 0n || epoch <= storedEpoch(floors.get(floorKey))) continue
+          floors.set(floorKey, pin.helloEpoch!)
+          floorWrites.push([floorKey, pin.helloEpoch!])
         }
         let keptRecords = 0
         let keptBytes = 0
@@ -1273,6 +1303,10 @@ export class SyncRoom {
           metric("room_expired", { removed: doomed.length, kept: 0, purged: 1 })
           return "purged"
         }
+        for (const [key, epoch] of floors) {
+          keptRecords += 1
+          keptBytes += storageBytes(key, epoch)
+        }
         if (doomed.length > 0) {
           await this.state.storage.transaction(async txn => {
             const nextSeq = ((await txn.get<number>("meta:seq")) ?? 0) + 1
@@ -1286,6 +1320,10 @@ export class SyncRoom {
               ...(seen !== undefined ? { "meta:droppedPinsSeen": seen } : {}),
             })
           })
+          // every floor is down before the first pin goes
+          for (let index = 0; index < floorWrites.length; index += 128) {
+            await this.state.storage.put(Object.fromEntries(floorWrites.slice(index, index + 128)))
+          }
           for (let index = 0; index < doomed.length; index += 128) {
             await this.state.storage.delete(doomed.slice(index, index + 128))
           }
@@ -1474,14 +1512,15 @@ export class SyncRoom {
     return s.msgs <= RATE_MAX_MSGS && s.bytes <= RATE_MAX_BYTES
   }
 
-  private async handlePresence(sender: WebSocket, input: unknown): Promise<void> {
+  private async handlePresence(sender: WebSocket, input: unknown): Promise<boolean> {
     const msg = input as Record<string, unknown>
     const clientId = typeof msg.clientId === "string" ? msg.clientId : ""
-    if (!clientId || clientId.length > 128 || !isValidCiphertext(msg.ct, PRESENCE_CT_MAX)) return
+    if (!clientId || clientId.length > 128 || !isValidCiphertext(msg.ct, PRESENCE_CT_MAX)) return false
     const s = sender.deserializeAttachment() as SocketState
     s.presenceV2 = { clientId, ct: msg.ct }
     sender.serializeAttachment(s)
     this.broadcast({ t: "loc", ...s.presenceV2 }, sender)
+    return true
   }
 
   private async applyChange(sender: WebSocket, input: unknown, deleted: boolean): Promise<boolean> {
@@ -1737,15 +1776,19 @@ export class SyncRoom {
 
   private async registerActor(frame: HelloFrame): Promise<"ok" | "mismatch" | "replay" | "quota"> {
     const key = "actor:" + frame.by
+    const floorKey = EPOCH_PREFIX + frame.by
     const incomingEpoch = parseHelloEpoch(frame.vs, frame.by)!
     let result: "ok" | "mismatch" | "replay" | "quota" = "ok"
     await this.state.storage.transaction(async txn => {
       const existing = await txn.get<ActorRecord>(key)
       if (existing?.pubkey !== undefined && existing.pubkey !== frame.pub) { result = "mismatch"; return }
-      const storedEpoch = existing?.helloEpoch && /^[0-9a-f]{16}$/.test(existing.helloEpoch)
-        ? BigInt("0x" + existing.helloEpoch)
-        : 0n
-      if (incomingEpoch.value <= storedEpoch) { result = "replay"; return }
+      // once idle expiry dropped the pin its epoch floor stands in for it, so
+      // the same strictly-newer rule holds across expiry. normally only one
+      // of the two exists, a pass that died half way can leave both
+      const floor = await txn.get<string>(floorKey)
+      const pinned = storedEpoch(existing?.helloEpoch)
+      const floored = storedEpoch(floor)
+      if (incomingEpoch.value <= (pinned > floored ? pinned : floored)) { result = "replay"; return }
       const actor: ActorRecord = {
         pubkey: frame.pub,
         firstSeen: existing?.firstSeen ?? Date.now(),
@@ -1755,10 +1798,13 @@ export class SyncRoom {
       }
       const total = (await txn.get<number>("meta:totalRecords")) ?? 0
       const bytes = (await txn.get<number>("meta:bytes")) ?? 0
-      const nextTotal = total + (existing ? 0 : 1)
-      const nextBytes = bytes - (existing ? storageBytes(key, existing) : 0) + storageBytes(key, actor)
+      // the new pin takes over from the floor, still one counted row per actor
+      const nextTotal = total + (existing ? 0 : 1) - (floor !== undefined ? 1 : 0)
+      const nextBytes = bytes - (existing ? storageBytes(key, existing) : 0) -
+        (floor !== undefined ? storageBytes(floorKey, floor) : 0) + storageBytes(key, actor)
       if (nextTotal > MAX_RECORDS || nextBytes > MAX_STORED_BYTES) { result = "quota"; return }
       await txn.put(key, actor)
+      if (floor !== undefined) await txn.delete(floorKey)
       await txn.put("meta:totalRecords", nextTotal)
       await txn.put("meta:bytes", nextBytes)
     })
@@ -1875,13 +1921,15 @@ export class SyncRoom {
     }))
   }
 
-  private sendChatNack(sender: WebSocket, mid: string | null, code: string, retry = false): void {
+  // false so handleChat can return it straight: a nacked chat routed nothing
+  private sendChatNack(sender: WebSocket, mid: string | null, code: string, retry = false): false {
     const socket = sender.deserializeAttachment() as SocketState | null
     sender.send(JSON.stringify({
       t: "chat-nack", cv: 1, ...(mid ? { mid } : {}),
       ...(socket?.hello ? { by: socket.hello.by, sd: socket.hello.sd } : {}),
       code, retry,
     }))
+    return false
   }
 
   private sendChatKeyNack(sender: WebSocket, code: string): void {
@@ -1971,7 +2019,7 @@ export class SyncRoom {
     }))
   }
 
-  private async handleChat(sender: WebSocket, input: unknown): Promise<void> {
+  private async handleChat(sender: WebSocket, input: unknown): Promise<boolean> {
     const frame = parseChat(input)
     const mid = input && typeof input === "object" && typeof (input as Record<string, unknown>).mid === "string"
       ? (input as Record<string, unknown>).mid as string
@@ -2019,7 +2067,7 @@ export class SyncRoom {
         return this.sendChatNack(sender, frame.mid, "recipient_offline", true)
       }
       this.sendChatAck(sender, frame)
-      return
+      return true
     }
     if (stamp.counter > prior + ADVANCE_WINDOW) {
       return this.sendChatNack(sender, frame.mid, "counter_rejected")
@@ -2033,23 +2081,25 @@ export class SyncRoom {
     socket.lastChat = { vs: frame.vs, mid: frame.mid, fingerprint }
     sender.serializeAttachment(socket)
     this.sendChatAck(sender, frame)
+    return true
   }
 
-  private async handlePresenceV3(ws: WebSocket, input: unknown): Promise<void> {
+  private async handlePresenceV3(ws: WebSocket, input: unknown): Promise<boolean> {
     const msg = input as Record<string, unknown>
     const socket = ws.deserializeAttachment() as SocketState
-    if (socket.replacementFences?.length) return
+    if (socket.replacementFences?.length) return false
     const hello = socket.hello
-    if (!hello || msg.by !== hello.by || msg.pub !== hello.pub || msg.sd !== hello.sd) return
-    if (typeof msg.vs !== "string" || !isValidCiphertext(msg.ct, PRESENCE_CT_MAX)) return
+    if (!hello || msg.by !== hello.by || msg.pub !== hello.pub || msg.sd !== hello.sd) return false
+    if (typeof msg.vs !== "string" || !isValidCiphertext(msg.ct, PRESENCE_CT_MAX)) return false
     const stamp = parseStamp(msg.vs)
-    if (!stamp || stamp.actorId !== hello.by || stamp.counter === 0n) return
+    if (!stamp || stamp.actorId !== hello.by || stamp.counter === 0n) return false
     const prior = socket.presenceCounter ? BigInt("0x" + socket.presenceCounter) : 0n
-    if (stamp.counter <= prior || stamp.counter > prior + ADVANCE_WINDOW) return
+    if (stamp.counter <= prior || stamp.counter > prior + ADVANCE_WINDOW) return false
     socket.presenceCounter = stamp.counter.toString(16).padStart(16, "0")
     socket.presenceV3 = { t: "loc", by: hello.by, pub: hello.pub, sd: hello.sd, vs: msg.vs, ct: msg.ct }
     ws.serializeAttachment(socket)
     this.broadcast(socket.presenceV3, ws)
+    return true
   }
 
   private collectV2Members(except: WebSocket): PresenceV2[] {
@@ -2091,6 +2141,10 @@ export class SyncRoom {
     let bytes = 0
     if (protocol === 3) {
       for await (const [key, value] of this.scanRecords<ActorRecord>("actor:", () => 1024)) {
+        total += 1
+        bytes += storageBytes(key, value)
+      }
+      for await (const [key, value] of this.scanRecords<string>(EPOCH_PREFIX, () => 64)) {
         total += 1
         bytes += storageBytes(key, value)
       }

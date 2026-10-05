@@ -1,6 +1,6 @@
 # TacMap — Privacy Policy
 
-*Last updated: 2 October 2026*
+*Last updated: 5 October 2026*
 
 *Applies to the iOS and Android editions of TacMap*
 
@@ -125,8 +125,13 @@ The relay and its hosting/network providers can still observe or process:
 - encrypted mission objects and tombstones held for synchronisation.
 
 Encrypted mission objects and actor records can remain at the relay until the
-room has been idle for seven days. Encrypted deletion records (tombstones) are
-kept after that. In current rooms a tombstone is removed once it is 30 days old
+room has been idle for seven days. From then on the relay keeps, for each
+device that started a session in the room, only a pseudonymous, room-specific
+device ID and the number of that device's latest session, so that an old
+session cannot be replayed into the room; for current app versions that number
+starts at the minute the device first joined the room, so it shows roughly
+when that was. Encrypted deletion records (tombstones) are also kept beyond
+seven idle days. In current rooms a tombstone is removed once it is 30 days old
 and the device that made it is not connected and has not started a session in
 the last 30 days; if the room was idle
 for seven days in the meantime, the relay no longer knows each device's last
@@ -140,12 +145,12 @@ connection hour before the idle period, the hour each kept deletion record
 was made, and for rooms created before this retention scheme the hour the
 relay started tracking their deletion records) with no mission content, so
 returning devices resume cleanly. Once a room has been idle for 90 days in a
-row the relay deletes everything it holds for it, including these values and
-any deletion records still kept; any use of the room before then restarts that
-period. A room in which nothing was ever stored is deleted entirely after
-seven idle days. A device that comes back to a room after it was deleted finds
-it empty and shows a rollback warning; start a new room with a new join code
-instead. Live location presence is forwarded to
+row the relay deletes everything it holds for it, including these values, the
+device IDs and session numbers, and any deletion records still kept; any use
+of the room before then restarts that period. A room in which nothing was ever
+stored is deleted entirely after seven idle days. A device that comes back to a
+room after it was deleted finds it empty and shows a rollback warning; start a
+new room with a new join code instead. Live location presence is forwarded to
 connected peers and held only as current in-memory session state. TacMap Chat
 key adverts and ciphertext are forwarded only to currently connected,
 Chat-capable sessions and are not written to the relay's room storage. There is
