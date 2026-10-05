@@ -3,11 +3,14 @@ import UIKit
 import Combine
 
 /// What has to sit over the whole app right now. The lock wins over the
-/// privacy cover, .none means nothing does.
+/// privacy cover, both win over the mission data screen, .none means nothing does.
 enum SecurityCover: Equatable {
     case none
     case privacy
     case lock
+    /// ContentView's "Mission data locked": auth-bound key locked, or a mission
+    /// store that couldn't open without the key
+    case missionData
 
     /// privacy arms on .inactive already, by .background it's too late for
     /// the app-switcher snapshot
@@ -16,6 +19,16 @@ enum SecurityCover: Equatable {
         if privacyScreen && phase != .active { return .privacy }
         return .none
     }
+
+    /// app = what RootGate resolved, the mission data screen only once that's .none
+    static func combine(app: SecurityCover, missionDataLocked: Bool) -> SecurityCover {
+        app == .none && missionDataLocked ? .missionData : app
+    }
+}
+
+/// what the mission data screen shows under its title
+struct MissionDataLock: Equatable {
+    var detail: String?
 }
 
 /// Own class so any controller instance (and the tests) can tell a cover
@@ -36,6 +49,9 @@ final class SecurityCoverWindows {
     static let windowLevel = UIWindow.Level(rawValue: UIWindow.Level.alert.rawValue + 1)
 
     private let model = SecurityCoverModel()
+    /// what RootGate asked for (App Lock, privacy). ContentView's mission data
+    /// screen sits in model.missionData and only shows when this is .none
+    private var appCover: SecurityCover = .none
     private var covers: [SecurityCoverWindow] = []
     /// app windows we hid from VoiceOver plus what they had before
     private var muted: [(window: WeakWindow, wasHidden: Bool)] = []
@@ -54,6 +70,27 @@ final class SecurityCoverWindows {
 
     func apply(_ cover: SecurityCover, onUnlock: @escaping () -> Void, scenes: [UIWindowScene]) {
         model.onUnlock = onUnlock
+        appCover = cover
+        refresh(scenes)
+    }
+
+    /// ContentView's "Mission data locked" screen, nil once its unlocked. It was
+    /// an overlay in the root view, so with the auth-bound key locked and App
+    /// Lock off a sheet left open (waypoints, export) stayed on top of it,
+    /// decrypted and usable. Same window as the lock now.
+    func setMissionData(_ lock: MissionDataLock?, unlock: @escaping () -> Void) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        setMissionData(lock, unlock: unlock, scenes: scenes)
+    }
+
+    func setMissionData(_ lock: MissionDataLock?, unlock: @escaping () -> Void, scenes: [UIWindowScene]) {
+        model.missionData = lock
+        model.onMissionUnlock = unlock
+        refresh(scenes)
+    }
+
+    private func refresh(_ scenes: [UIWindowScene]) {
+        let cover = SecurityCover.combine(app: appCover, missionDataLocked: model.missionData != nil)
         model.cover = cover
         covers.removeAll { $0.windowScene == nil }
         guard cover != .none else {
@@ -117,6 +154,8 @@ final class SecurityCoverWindows {
                 ?? scene?.windows.first { Self.isUnderneath($0) && !$0.isHidden && $0.windowLevel == .normal }
             back?.makeKey()
         }
+        // VoiceOver was left on the cover that just went away
+        if !covers.isEmpty { UIAccessibility.post(notification: .screenChanged, argument: nil) }
         covers.removeAll()
         previousKey.removeAll()
     }
@@ -155,7 +194,9 @@ private final class WeakWindow {
 
 private final class SecurityCoverModel: ObservableObject {
     @Published var cover: SecurityCover = .none
+    @Published var missionData: MissionDataLock?
     var onUnlock: () -> Void = {}
+    var onMissionUnlock: () -> Void = {}
 }
 
 private struct SecurityCoverRoot: View {
@@ -167,6 +208,8 @@ private struct SecurityCoverRoot: View {
             switch model.cover {
             case .lock: LockView { model.onUnlock() }
             case .privacy: PrivacyCoverView()
+            case .missionData:
+                MissionDataUnlockView(detail: model.missionData?.detail) { model.onMissionUnlock() }
             case .none: Color.black.ignoresSafeArea()
             }
         }

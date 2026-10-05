@@ -495,20 +495,27 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   may remain in memory beneath the opaque lock view. AUTH mode clears the
   general key cache; DEVICE mode may retain it under the accepted lifecycle
   policy. UI and inbound Sync gates prevent ordinary locked-state
-  access/processing, but do not defend retained memory against code executing
-  inside a compromised process.
+  access/processing (on iOS the UI gate is the cover window described next, for
+  the auth-bound key as well as App Lock), but do not defend retained memory
+  against code executing inside a compromised process.
 
   On iOS the App Lock view is shown in its own window above alert level in every
-  scene of the app, so it also covers whatever TacMap had presented when it
+  scene of the app, and so is the "Mission data locked" screen shown while the
+  mission-data key is locked (with the auth-bound key, after every trip out of the
+  foreground), so either one also covers whatever TacMap had presented when it
   locked: sheets (Unit Sync with the join code, waypoint and drawing lists, the
   map library, export), the system share sheet, file pickers and alerts. Those
-  stay presented underneath (nothing is dismissed, so they are back after
-  unlock) but while locked they cannot be seen or touched, are hidden from
-  VoiceOver, and lose text-input focus; if anything underneath claims keyboard
-  focus while locked, the lock window takes it back. TacMap Chat is still closed
-  and its secrets cleared on lock. App Lock arms when the app enters the
-  background, not on a transient `.inactive`. Prompts drawn by iOS itself
-  (permission alerts, Face ID) are outside the app and can still appear above it.
+  stay presented underneath (nothing is dismissed, so they are back after unlock)
+  but while locked they cannot be seen or touched, are hidden from VoiceOver, and
+  lose text-input focus; if anything underneath claims keyboard focus while
+  locked, the lock window takes it back. App Lock comes first; once its PIN is
+  entered, the mission data screen takes its place in the same window until the
+  key is unlocked, so a sheet left open is never uncovered in between. TacMap Chat
+  is still closed and its secrets cleared on lock. App Lock arms when the app
+  enters the background, not on a transient `.inactive`; the auth-bound key locks
+  on any `.inactive`. Prompts drawn by iOS itself (permission alerts, Face ID) are
+  outside the app and can still appear above it. Alerts TacMap raises while one of
+  these screens is up wait underneath it until unlock.
 
   The optional in-app PIN lock remains a **UI deterrent for a borrowed device,
   not encryption**, and is independent of all of the above.
@@ -805,10 +812,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   key locks on `.inactive` and the session ends as before. That in-memory
   material is cleared on leave, on a join-code change and at process death.
   Android detaches the mission stores and clears the general-key cache;
-  iOS gates inbound processing and the mounted UI without erasing every already
-  decrypted model or tile. The authorized recording-key exception and DEVICE
-  cache policy above still apply. A background return needs a fresh connection
-  and verified snapshot before mission frames are adopted. The background
+  iOS gates inbound processing and covers the mounted UI, presented sheets
+  included, without erasing every already decrypted model or tile. The
+  authorized recording-key exception and DEVICE cache policy above still apply.
+  A background return needs a fresh connection and verified snapshot before
+  mission frames are adopted. The background
   presence bridge has no recorder-key access and does not decrypt/adopt mission
   frames; its bounded structural snapshot drain is scratch only.
 - **Peer device keys are authenticated; human identity remains out-of-band.** Each

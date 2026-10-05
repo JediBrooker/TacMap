@@ -626,19 +626,28 @@ struct ContentView: View {
         }
     }
 
+    private var missionDataLock: MissionDataLock? {
+        guard missionDataLocked else { return nil }
+        return MissionDataLock(detail: missionUnlockError?.text
+                               ?? waypointStore.loadError
+                               ?? drawingStore.loadError
+                               ?? trackRecorder.persistError)
+    }
+
     private var lifecycleContent: some View {
         baseMapContent
         .overlay {
-            if missionDataLocked {
-                MissionDataUnlockView(
-                    detail: missionUnlockError?.text
-                        ?? waypointStore.loadError
-                        ?? drawingStore.loadError
-                        ?? trackRecorder.persistError,
-                    unlock: unlockMissionData
-                )
+            // backstop only, a sheet that was already open sits on top of this.
+            // the real one is in the cover window (SecurityCoverWindows)
+            if let lock = missionDataLock {
+                MissionDataUnlockView(detail: lock.detail, unlock: unlockMissionData)
             }
         }
+        .onChange(of: missionDataLock) { lock in
+            SecurityCoverWindows.shared.setMissionData(lock, unlock: unlockMissionData)
+        }
+        .onAppear { SecurityCoverWindows.shared.setMissionData(missionDataLock, unlock: unlockMissionData) }
+        .onDisappear { SecurityCoverWindows.shared.setMissionData(nil, unlock: {}) }
         .onReceive(NotificationCenter.default.publisher(for: DataKey.lockChanged)) { _ in
             dataKeyEpoch &+= 1
             if DataKey.isAuthBound && !DataKey.isUnlocked {
@@ -2020,7 +2029,8 @@ struct ContentView: View {
     }
 }
 
-private struct MissionDataUnlockView: View {
+/// also drawn by SecurityCoverWindows, above any sheet that was open
+struct MissionDataUnlockView: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     let detail: String?
     let unlock: () -> Void
