@@ -49,7 +49,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
 | Imported symbol packs | **Untrusted** | User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated. |
-| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs; it is size, depth and count bounded, never writes the file, and falls back to the plain file on anything unexpected. A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
+| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
 | Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
@@ -524,10 +524,30 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   Android detaches mission stores and clears its general-key cache on Activity
   pause. iOS keeps the map view mounted to preserve authorized recording:
   previously decrypted mission/library objects, track points and rendered tiles
-  may remain beneath the opaque lock overlay. AUTH mode clears the general key
-  cache; DEVICE mode may retain it under the accepted lifecycle policy. UI and
-  inbound Sync gates prevent ordinary locked-state access/processing, but do not
-  defend retained memory against code executing inside a compromised process.
+  may remain in memory beneath the opaque lock view. AUTH mode clears the
+  general key cache; DEVICE mode may retain it under the accepted lifecycle
+  policy. UI and inbound Sync gates prevent ordinary locked-state
+  access/processing (on iOS the UI gate is the cover window described next, for
+  the auth-bound key as well as App Lock), but do not defend retained memory
+  against code executing inside a compromised process.
+
+  On iOS the App Lock view is shown in its own window above alert level in every
+  scene of the app, and so is the "Mission data locked" screen shown while the
+  mission-data key is locked (with the auth-bound key, after every trip out of the
+  foreground), so either one also covers whatever TacMap had presented when it
+  locked: sheets (Unit Sync with the join code, waypoint and drawing lists, the
+  map library, export), the system share sheet, file pickers and alerts. Those
+  stay presented underneath (nothing is dismissed, so they are back after unlock)
+  but while locked they cannot be seen or touched, are hidden from VoiceOver, and
+  lose text-input focus; if anything underneath claims keyboard focus while
+  locked, the lock window takes it back. App Lock comes first; once its PIN is
+  entered, the mission data screen takes its place in the same window until the
+  key is unlocked, so a sheet left open is never uncovered in between. TacMap Chat
+  is still closed and its secrets cleared on lock. App Lock arms when the app
+  enters the background, not on a transient `.inactive`; the auth-bound key locks
+  on any `.inactive`. Prompts drawn by iOS itself (permission alerts, Face ID) are
+  outside the app and can still appear above it. Alerts TacMap raises while one of
+  these screens is up wait underneath it until unlock.
 
   The optional in-app PIN lock remains a **UI deterrent for a borrowed device,
   not encryption**, and is independent of all of the above.
@@ -651,7 +671,14 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
-  library. A library that was never written while map files sit in app storage is handled the same way, so a
+  library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
+  hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
+  In a salvage those links are made before the write, so if the app is killed part way through, the retry can list
+  the same map twice, and a kill between the write and the unlink leaves the old name behind as a second, unlisted
+  link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
+  leftovers). Nothing is lost in either case.
+  Old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather than
+  being dropped. A library that was never written while map files sit in app storage is handled the same way, so a
   missing or quarantined index can never authorise deleting those files. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
   recognize as retained, requiring re-import. This is a library-format/lifecycle
@@ -695,6 +722,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   probe draws it once under the render crash guard; a sheet that can't be drawn is
   refused and nothing is saved. Drawing (calibration previews included) is covered by
   the same guard, so a sheet that crashes the renderer is not reopened automatically.
+  On iOS that includes opening a stored sheet when it is restored at launch in the
+  foreground and has not drawn cleanly yet, where the optional-content reader (§3) reads
+  the raw file before CoreGraphics does. Once a sheet has drawn, or on a background
+  relaunch, that restore open is not guarded.
   A declared georeference that can't be verified is refused with a reason and the sheet
   can be calibrated by hand instead; it is never quietly placed around the current
   camera.
@@ -823,10 +854,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   key locks on `.inactive` and the session ends as before. That in-memory
   material is cleared on leave, on a join-code change and at process death.
   Android detaches the mission stores and clears the general-key cache;
-  iOS gates inbound processing and the mounted UI without erasing every already
-  decrypted model or tile. The authorized recording-key exception and DEVICE
-  cache policy above still apply. A background return needs a fresh connection
-  and verified snapshot before mission frames are adopted. The background
+  iOS gates inbound processing and covers the mounted UI, presented sheets
+  included, without erasing every already decrypted model or tile. The
+  authorized recording-key exception and DEVICE cache policy above still apply.
+  A background return needs a fresh connection and verified snapshot before
+  mission frames are adopted. The background
   presence bridge has no recorder-key access and does not decrypt/adopt mission
   frames; its bounded structural snapshot drain is scratch only.
 - **Peer device keys are authenticated; human identity remains out-of-band.** Each
@@ -871,8 +903,13 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   thumbnail). This is literal on Android (`FLAG_SECURE` blocks screenshots,
   screen recording, and the recents thumbnail). On iOS there is no public API to
   block an in-app screenshot, so the toggle only covers the **app-switcher
-  snapshot** (an opaque cover while the app is backgrounded) - a deliberate
-  screenshot of the live map is still possible.
+  snapshot**: whenever the app is not active (from `.inactive`, before iOS takes
+  the snapshot) an opaque cover is shown in its own window above everything
+  TacMap has on screen, including open sheets, the share sheet, file pickers and
+  alerts, so a join code, waypoint list or export preview stays out of the
+  thumbnail too. With the toggle off and App Lock on, the lock view only goes up
+  once the app is in the background. A deliberate screenshot of the live app is
+  still possible.
 - Online lookups off; enabling them sends provider queries described in §5.
 - Online basemaps off; enabling them exposes viewed tile coordinates as described in §5.
 - Mission data encrypted at rest with a device-bound key.

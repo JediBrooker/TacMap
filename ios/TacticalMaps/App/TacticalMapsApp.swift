@@ -71,23 +71,18 @@ private struct RootGate: View {
                 )
             }
 
-            // Privacy screen: opaque cover whenever app isn't active
-            // (armed on .inactive, before app-switcher snapshot) so
-            // the map with live position is never in the thumbnail.
-            if opsec.privacyScreen && scenePhase != .active && !locked {
-                PrivacyCoverView()
-            }
-
-            // Opaque lock overlay. Covers the map (and live position) while
-            // locked without tearing down the view underneath.
-            if locked {
-                LockView { locked = false }
-                    .transition(.opacity)
+            // The lock view and privacy cover live in their own window above
+            // every sheet and alert (SecurityCoverWindows), anything drawn in
+            // here sits under presented sheets. This just blacks out the root
+            // too in case that window ever fails to come up.
+            if cover != .none {
+                Color.black.ignoresSafeArea()
             }
         }
         .task {
             await store.start()
         }
+        .onChange(of: cover) { applyCover($0) }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 now = Date()
@@ -108,6 +103,7 @@ private struct RootGate: View {
         .onAppear {
             applyKeepScreenOn()
             if locked && DataKey.isAuthBound { DataKey.lockKey() }
+            applyCover(cover)
             NotificationCenter.default.post(
                 name: AppLock.stateChanged,
                 object: NSNumber(value: locked)
@@ -133,6 +129,16 @@ private struct RootGate: View {
         } message: { Text($0.message) }
     }
 
+    /// Privacy cover whenever the app isn't active (so the map with live
+    /// position never lands in the thumbnail), lock view while locked.
+    private var cover: SecurityCover {
+        SecurityCover.resolve(locked: locked, privacyScreen: opsec.privacyScreen, phase: scenePhase)
+    }
+
+    private func applyCover(_ cover: SecurityCover) {
+        SecurityCoverWindows.shared.apply(cover) { locked = false }
+    }
+
     /// Keep Screen On only suppresses auto-lock while TacMap is frontmost;
     /// iOS restores its normal idle timer whenever another app is active.
     private func applyKeepScreenOn() {
@@ -142,8 +148,9 @@ private struct RootGate: View {
 }
 
 /// Opaque branded cover for the privacy screen (app-switcher snapshot).
-/// Map and live position are never captured in the thumbnail.
-private struct PrivacyCoverView: View {
+/// Map and live position are never captured in the thumbnail. Shown by
+/// SecurityCoverWindows.
+struct PrivacyCoverView: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     var body: some View {
         ZStack {

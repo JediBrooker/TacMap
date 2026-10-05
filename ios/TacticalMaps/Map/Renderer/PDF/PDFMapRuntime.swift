@@ -28,6 +28,10 @@ final class PDFMapRuntime: ObservableObject {
     var physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
     /// the OD-F4 byte check, runs off main. tests swap it to order overlapping checks
     var fileCheck: (PDFMapSource) -> Bool = { ImportedMapLibrary.storedFileMatches($0) }
+    /// crash guard the install arms round openPage, tests point it at a temp file
+    var guardStore: PDFRenderGuard = .shared
+    /// tests wrap it to look at the guard while the page opens
+    var openPage: (URL, Int) throws -> (CGPDFDocument, CGPDFPage) = { try PDFTileRenderer.openPage(url: $0, pageIndex: $1) }
     /// OD-F4 verdict of the install on screen: true = the exact bytes are there
     /// (again), false = missing or changed. The library row follows it
     var onStoredFileVerdict: ((PDFMapSource, Bool) -> Void)?
@@ -95,7 +99,8 @@ final class PDFMapRuntime: ObservableObject {
         // was already flagged. the hash is memoised on the file stamp so an
         // untouched file costs a stat. no content key = nothing to check against
         let needsFileCheck = pdf.storedFileUnavailable || (isRetry && pdf.contentKey != nil)
-        let fileCheck = self.fileCheck
+        let fileCheck = self.fileCheck, guardStore = self.guardStore, openPage = self.openPage
+        let foreground = UIApplication.shared.applicationState != .background
         DispatchQueue.global(qos: .userInitiated).async { [weak self, weak src, weak pdf] in
             let built: Result<PDFRenderContext, PDFRenderFailure>
             var reader: PDFBakeReader?
@@ -111,7 +116,14 @@ final class PDFMapRuntime: ObservableObject {
                     }
                     fileCameBack = true
                 }
-                let (_, page) = try PDFTileRenderer.openPage(url: url, pageIndex: georef.page)
+                // openPage reads the raw file first (OCMD pre-pass), and on a launch
+                // restore this is the first thing to touch a stored PDF. arm base round
+                // it like a first render so a file that kills us here gets suppressed
+                // next launch instead of crash looping. comes off without verifying,
+                // the base render still arms (and verifies) on its own
+                let armed = guardStore.arm(kind: .base, token: token, foreground: foreground)
+                defer { if armed { guardStore.disarm(kind: .base, token: token) } }
+                let (_, page) = try openPage(url, georef.page)
                 let ctx = try PDFRenderContext(url: url, identity: identity, georef: georef,
                                                pageBox: PDFTileRenderer.pageBox(page), tilePx: tilePx,
                                                guardToken: token, baseBudgetPx: budget)

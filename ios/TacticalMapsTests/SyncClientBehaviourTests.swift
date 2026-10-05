@@ -806,7 +806,7 @@ final class SyncClientBehaviourTests: XCTestCase {
 
     // MARK: v2 (section 16)
 
-    func testLegacyV2CasingAndTieVectors() {
+    func testLegacyV2CasingAndTieVectors() throws {
         let v2 = section("v2")
         let vectors = v2["vectors"] as? [String: Any] ?? [:]
         for row in vectors["casing"] as? [[String: Any]] ?? [] {
@@ -821,8 +821,30 @@ final class SyncClientBehaviourTests: XCTestCase {
                 v: int(incoming["v"]), by: incoming["by"] as! String,
                 lastV: int(last["v"]), lastBy: last["by"] as? String), row["apply"] as? Bool, "\(row)")
         }
-        XCTAssertEqual(LegacyV2Ids.outboundId(UUID(uuidString: "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B")!),
-                       "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b")
+        // 3.0.1: iOS frame ids are uppercase again, state keys stay lowercase
+        var iosRows = 0
+        for row in vectors["outbound"] as? [[String: Any]] ?? [] where row["platform"] as? String == "ios" {
+            iosRows += 1
+            let uuid = try XCTUnwrap(UUID(uuidString: row["localId"] as! String))
+            let stateKey = row["expectStateKey"] as? String
+            XCTAssertEqual(LegacyV2Ids.outboundId(uuid), row["expectFrameId"] as? String, "\(row)")
+            XCTAssertEqual(LegacyV2Ids.stateKey(uuid), stateKey, "\(row)")
+            // the del path only has the state key to go on
+            XCTAssertEqual(stateKey.flatMap { LegacyV2Ids.outboundId(stateKey: $0) },
+                           row["expectFrameId"] as? String, "\(row)")
+            if let inbound = row["lastInboundRawId"] as? String {
+                XCTAssertEqual(LegacyV2Ids.stateKey(inbound), stateKey, "\(row)")
+            }
+            if let embedded = row["expectEmbeddedId"] as? String {
+                let waypoint = Waypoint(id: uuid, name: "v", latitude: 1, longitude: 2,
+                                        layerID: DrawingLayer.legacyFallbackID)
+                let content = try GeoJSONExporter.export(waypoints: [waypoint], drawings: [], layers: [])
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(content.utf8)) as? [String: Any])
+                let feature = try XCTUnwrap((object["features"] as? [[String: Any]])?.first)
+                XCTAssertEqual(feature["id"] as? String, embedded, "\(row)")
+            }
+        }
+        XCTAssertEqual(iosRows, 2)
     }
 
     // MARK: coverage of the scenario list
@@ -885,8 +907,14 @@ final class SyncClientBehaviourTests: XCTestCase {
             "object_too_large_not_reserved": [(Self.self, "testObjectTooLargeBoundary"),
                                               (SyncManagerSessionTests.self, "testObjectTooLargeIsNeitherReservedNorSent")],
             "v2_casing_and_tie": [(Self.self, "testLegacyV2CasingAndTieVectors"),
-                                  (SyncLegacyV2SessionTests.self, "testOutboundIdsAreLowercaseAndAndroidRecordsAreNotEchoedAsDeletes"),
-                                  (SyncLegacyV2SessionTests.self, "testEqualVersionTieGoesToTheHigherWriterLikeTheRelay")]
+                                  (SyncLegacyV2SessionTests.self, "testOutboundIdsAreUppercaseAndInboundRecordsAreNotEchoed"),
+                                  (SyncLegacyV2SessionTests.self, "testUnackedDeleteIsConfirmedByItsUppercaseTombstoneOnReconnect"),
+                                  (SyncLegacyV2ShippedIOSInteropTests.self, "testCreateByThisIOSSurvivesAShipped2xIOSPeer"),
+                                  (SyncLegacyV2ShippedIOSInteropTests.self, "testEditOfAShipped2xObjectSurvivesTheShippedPeer"),
+                                  (SyncLegacyV2ShippedIOSInteropTests.self, "testDeleteReachesTheShipped2xPeerWithoutAnEcho"),
+                                  (SyncLegacyV2ShippedIOSInteropTests.self, "testUpgradeFrom300LowercaseRelayStateResendsAndDeletesNothing"),
+                                  (SyncLegacyV2SessionTests.self, "testEqualVersionTieGoesToTheHigherWriterLikeTheRelay")],
+            "poison_embedded_id_skipped": [(SyncHostileRecordTests.self, "testEmbeddedIdCasesMatchTheFixtureOnTheClassifierSnapshotAndLivePaths")]
         ]
         // android only, its runner lives in the android suite
         let androidOnly: Set<String> = ["android_pause_keeps_room"]

@@ -1,31 +1,59 @@
 import Foundation
 import CoreGraphics
 
+/// why a legacy read is uncertain (contract s13.1 L3, libraryLoad.legacyCodes).
+/// mbtilesUnconvertible is ours, the fixture folds it into the PDF one
+enum LegacyMigrationCause: String, Sendable {
+    case corrupt, quarantinedOnly, sessionInvalid, pdfHashMismatch, pdfUnconvertible, v1PointsUnrebuildable
+    case mbtilesUnconvertible
+}
+
 /// One time move from the two old stores (ActiveMapSelectionStore's
 /// active/retained descriptor + PDFSessionStore's sealed session and per-file
 /// calibration library) into the one sealed ImportedMapLibrary (contract s8.2).
 ///
-/// Fail closed and idempotent:
+/// Fail closed and idempotent (s13.1 L6):
 /// 1. files are hard linked to their opaque names (copied if that fails),
-/// 2. the library is written (the single commit point),
-/// 3. only then are the legacy stores cleared and the old names unlinked.
-/// A crash before 2 just redoes it (the half made links are orphans reconcile
-/// removes), a crash after 2 leaves stale legacy bytes that the next load clears.
-/// Locked or unreadable legacy state migrates nothing and deletes nothing.
+/// 2. every migration draft is saved, each one has to land,
+/// 3. the library is written (the single commit point),
+/// 4. only then are the legacy stores cleared and the old names unlinked.
+/// A failure in 2 or 3 unlinks this attempt's links and clears nothing. A crash
+/// before 3 just redoes it (drafts are keyed by file + page so they get
+/// overwritten), a crash after 3 leaves stale legacy bytes the next load clears.
+/// Not clean though: links are made as files get inspected, before 3. A salvage
+/// killed in there leaves map-<uuid> links that the redo adopts as extra
+/// "Recovered map" rows for the same bytes, and a kill between 3 and 4 leaves
+/// the 2.x name as a second hard link nothing lists (a flagged library never
+/// reconciles it away). Nothing is lost either way.
+/// A locked key migrates nothing and deletes nothing. Legacy state the key can
+/// open but we can't fully read or convert gets salvaged (L5): what converts is
+/// written, every other map file adopted, the old stores left frozen, and the
+/// library flagged so nothing ever cleans up around it. Locked forever isn't an
+/// outcome any more (wp4-ios-1).
 enum ImportedMapLibraryMigration {
 
     enum Result: Equatable {
         /// the library already exists (or there was never anything to move)
         case notNeeded
-        /// key locked / legacy unreadable: try again after unlock, nothing touched
+        /// key locked, or a draft / library write failed: nothing written, cleared
+        /// or deleted, Retry and unlock run it again
         case blocked
         case migrated(uncalibratedName: String?)
-        case failed
+        /// L5: uncertain legacy read, written with recoveryPreservesOrphans, old
+        /// stores and every .corrupt-* copy left alone. Show the recovered notice
+        case salvaged
+        /// L7: no legacy at all but map files sitting in the managed dirs, adopted
+        /// the same way. Same notice
+        case adoptedOrphans
     }
 
     /// Run with the library still Empty. Off the main thread: the v1 session
-    /// path can re-parse a PDF.
-    static func migrateIfNeeded(now: Date = Date()) -> Result {
+    /// path can re-parse a PDF and salvage / adoption hash and inspect every file.
+    static func migrateIfNeeded(now: Date = Date(),
+                                drafts draftStore: CalibrationDraftStoring = CalibrationDraftStore.shared,
+                                write: (LibraryState) throws -> Void = ImportedMapLibrary.write,
+                                inFlight: Set<URL> = InFlightImportFiles.snapshot,
+                                inspect: (URL) -> PDFInspection? = ImportedMapLibraryRecovery.inspectForRecovery) -> Result {
         switch ImportedMapLibrary.load() {
         case .empty: break
         // no key, can't even tell whether there's a library: nothing moves yet
@@ -34,14 +62,24 @@ enum ImportedMapLibraryMigration {
         }
         let snapshot = ActiveMapSelectionStore.legacySnapshot()
         let sessionPresent = PDFSessionStore.hasStoredSession
-        if snapshot == .none && !sessionPresent { return .notNeeded }
+        if snapshot == .none && !sessionPresent {
+            // L7: nothing to migrate, but an Empty library next to map files can't
+            // be the authoritative first launch, the reconcile would eat them
+            guard ImportedMapLibraryRecovery.managedFilesPresent(inFlight: inFlight) else { return .notNeeded }
+            return adoptOrphans(now: now, draftStore: draftStore, write: write, inFlight: inFlight, inspect: inspect)
+        }
         // no key, no migration: the legacy bytes stay exactly as they are
         guard (try? SafeStore.keyProvider()) != nil else { return .blocked }
-        if snapshot == .unreadable { return .blocked }
 
+        var causes: [LegacyMigrationCause] = []
         var active: ActiveMapSelectionStore.LegacySelection?
         var retained: ActiveMapSelectionStore.LegacySelection?
-        if case let .loaded(a, r) = snapshot { active = a; retained = r }
+        switch snapshot {
+        case .locked: return .blocked
+        case .uncertain(let cause): causes.append(cause)
+        case let .loaded(a, r): active = a; retained = r
+        case .none: break
+        }
 
         var state = LibraryState()
         if case .online(let style)? = active {
@@ -56,22 +94,31 @@ enum ImportedMapLibraryMigration {
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
 
         // the PDF session, whichever descriptor pointed at it (or none did, v1).
-        // S3: fail closed. Only a file that's really gone is dropped, anything on
-        // disk we can't read, hash, link or open blocks the whole thing
+        // Only a file that's really gone is dropped. Anything on disk we can't
+        // read, hash, link or open makes the read uncertain: it isn't converted,
+        // the record stays frozen and its file gets adopted by the salvage below
         var pdfEntry: ImportedMapEntry?
         var drafts: [CalibrationDraft] = []
         if sessionPresent {
             switch PDFSessionStore.migrationRead() {
             case .none, .gone:
                 break
-            case .blocked:
+            case .locked:
                 return .blocked
-            case .source(let source):
+            case .uncertain(let cause):
+                causes.append(cause)
+            case let .source(source, parked):
+                // wp4-ios-8: the map still converts, but its v1 points are only in
+                // pdf_calibrations_v1 now, which a plain run would clear
+                if parked { causes.append(.v1PointsUnrebuildable) }
                 guard FileManager.default.fileExists(atPath: source.url.path) else { break }
-                guard let made = Self.pdfEntry(from: source, nowMs: nowMs) else { return .blocked }
-                pdfEntry = made.entry
-                links.append(made.link)
-                if let draft = made.draft { drafts.append(draft) }
+                if let made = Self.pdfEntry(from: source, nowMs: nowMs) {
+                    pdfEntry = made.entry
+                    links.append(made.link)
+                    if let draft = made.draft { drafts.append(draft) }
+                } else {
+                    causes.append(.pdfUnconvertible)
+                }
             }
         }
         if let e = pdfEntry {
@@ -97,34 +144,67 @@ enum ImportedMapLibraryMigration {
             return nil
         }()
         if let url = tilesURL {
-            // resolved means it's there, so a link/copy that fails blocks (S3)
-            guard let made = Self.mbtilesEntry(url, nowMs: nowMs) else {
-                for l in links where l.old.standardizedFileURL != l.new.standardizedFileURL { ImportedMapStorage.unlink(l.new) }
-                return .blocked
+            // resolved means it's there. a link/copy that fails leaves it to the
+            // salvage, which adopts it where it is
+            if let made = Self.mbtilesEntry(url, nowMs: nowMs) {
+                state.entries.append(made.entry)
+                if let link = made.link { links.append(link) }
+                if case .offlineTiles? = active { state.active = .entry(made.entry.id) }
+            } else {
+                causes.append(.mbtilesUnconvertible)
             }
-            state.entries.append(made.entry)
-            if let link = made.link { links.append(link) }
-            if case .offlineTiles? = active { state.active = .entry(made.entry.id) }
         }
         if state.active == nil { state.active = .online(state.preferredStyle) }
-        return finish(state: state, links: links, drafts: drafts, uncalibrated: uncalibratedName)
+        guard causes.isEmpty else {
+            NSLog("[LibraryMigration] legacy read uncertain (\(causes.map(\.rawValue).joined(separator: ","))), salvaging")
+            // L5: keep what converted, adopt every other map file, flag it, clear nothing.
+            // the recovered notice replaces the uncalibrated one
+            state.recoveryPreservesOrphans = true
+            // not twice: what a converted entry points at (a bake-dir MBTiles stays
+            // where it is, no link) and the old names of converted links
+            let converted = Set(links.flatMap { [$0.old, $0.new] } + state.entries.compactMap(ImportedMapLibrary.fileURL))
+            let adopted = ImportedMapLibraryRecovery.adopt(excluding: converted, inFlight: inFlight, now: now, inspect: inspect)
+            state.entries += adopted.entries
+            return commit(state, links: links + adopted.links, drafts: drafts, draftStore: draftStore, write: write,
+                          clearLegacyStores: false) ? .salvaged : .blocked
+        }
+        return commit(state, links: links, drafts: drafts, draftStore: draftStore, write: write, clearLegacyStores: true)
+            ? .migrated(uncalibratedName: uncalibratedName) : .blocked
     }
 
-    private static func finish(state: LibraryState, links: [(old: URL, new: URL)], drafts: [CalibrationDraft] = [],
-                               uncalibrated: String?) -> Result {
+    /// L7: the S2 rebuild over the managed dirs, written once with the flag
+    private static func adoptOrphans(now: Date, draftStore: CalibrationDraftStoring,
+                                     write: (LibraryState) throws -> Void, inFlight: Set<URL>,
+                                     inspect: (URL) -> PDFInspection?) -> Result {
+        var state = LibraryState()
+        state.recoveryPreservesOrphans = true
+        state.active = .online(OnlineRasterBasemapSource.defaultStyle)
+        let adopted = ImportedMapLibraryRecovery.adopt(excluding: [], inFlight: inFlight, now: now, inspect: inspect)
+        state.entries = adopted.entries
+        return commit(state, links: adopted.links, drafts: [], draftStore: draftStore, write: write,
+                      clearLegacyStores: false) ? .adoptedOrphans : .blocked
+    }
+
+    /// L6: drafts, then the one library write, then (plain runs only) clear the
+    /// old stores, then unlink the old names. false = nothing counts, this
+    /// attempt's links are gone again and nothing was cleared
+    private static func commit(_ state: LibraryState, links: [(old: URL, new: URL)], drafts: [CalibrationDraft],
+                               draftStore: CalibrationDraftStoring, write: (LibraryState) throws -> Void,
+                               clearLegacyStores: Bool) -> Bool {
+        let moved = links.filter { $0.old.standardizedFileURL != $0.new.standardizedFileURL }
         do {
-            try ImportedMapLibrary.write(state)
+            // wp4-android-8 on iOS too: a draft that didnt save must not be followed
+            // by a clear. keyed by file + page, so a retry just overwrites them
+            for d in drafts { try draftStore.save(d) }
+            try write(state)
         } catch {
-            // the links are orphans now, the next reconcile on a loaded library drops them
-            return .failed
+            NSLog("[LibraryMigration] migration write failed, nothing cleared")
+            for l in moved { ImportedMapStorage.unlink(l.new) }
+            return false
         }
-        // D8: drafts only once the library they belong to is durable
-        for d in drafts { try? CalibrationDraftStore.shared.save(d) }
-        clearLegacy()
-        for l in links where l.old.standardizedFileURL != l.new.standardizedFileURL {
-            ImportedMapStorage.unlink(l.old)
-        }
-        return .migrated(uncalibratedName: uncalibrated)
+        if clearLegacyStores { clearLegacy() }
+        for l in moved { ImportedMapStorage.unlink(l.old) }
+        return true
     }
 
     /// after the library is durable the old stores are dead weight
@@ -137,8 +217,17 @@ enum ImportedMapLibraryMigration {
     /// true while any of the old stores still has bytes (a crash after the write),
     /// or the old selector got quarantined: that's never "no legacy left" (S1)
     static var legacyPresent: Bool {
+        clearableLegacyPresent || ActiveMapSelectionStore.legacyStoreQuarantined
+    }
+
+    /// L2: what D8 may clear, the live stores only. a .corrupt-* copy never counts
+    static var clearableLegacyPresent: Bool {
         ActiveMapSelectionStore.legacyStoreExists || PDFSessionStore.hasStoredSession
-            || ActiveMapSelectionStore.legacyStoreQuarantined
+    }
+
+    /// the launch hop has work: legacy to move, or map files with no library (L7)
+    static var pending: Bool {
+        legacyPresent || ImportedMapLibraryRecovery.managedFilesPresent()
     }
 
     // MARK: - entries
@@ -254,6 +343,7 @@ enum ImportedMapLibraryMigration {
 /// nothing in flight owns gets an entry again (bakes excepted, they're derived
 /// and the sweep has them once the new library is loaded). Names and
 /// calibrations were only in the lost library, so they can't come back.
+/// The 3.0.1 migration salvage and orphan adoption use the same rules (adopt).
 /// Off the main thread, it hashes and inspects.
 enum ImportedMapLibraryRecovery {
     /// the rebuild's own crash breaker. Unlike the import marker it never
@@ -264,12 +354,14 @@ enum ImportedMapLibraryRecovery {
         try? ImportedMapStorage.importedMapsDirectory().appendingPathComponent(markerName)
     }
 
-    /// every map file a reconcile would have deleted, oldest first
+    /// every map file a reconcile would have deleted, oldest first. Not the one
+    /// a pending s9.8 marker names, recoverInterruptedImport removes that
     static func candidates(inFlight: Set<URL>, fileManager fm: FileManager = .default) -> [URL] {
         var dirs: [URL] = []
         if let d = try? ImportedMapStorage.importedMapsDirectory() { dirs.append(d) }
         dirs.append(ImportedMapLibrary.offlineTilesDirectory)
-        let busy = Set(inFlight.map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
+        let busy = Set(inFlight.union(MapImportPipeline.interruptedImportFiles())
+            .map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
         let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
         var found: [(url: URL, mtime: Date)] = []
         for dir in dirs {
@@ -289,39 +381,98 @@ enum ImportedMapLibraryRecovery {
             .map(\.url)
     }
 
+    /// s9.5 inspection with the import watchdog, what rebuild and salvage use
+    static let inspectForRecovery: (URL) -> PDFInspection? = { url in
+        try? MapImportPipeline.inspectWithWatchdog(url, isCancelled: { false }, progress: { _, _ in })
+    }
+
     /// the candidate library, not written. The caller does the one write
     static func rebuild(inFlight: Set<URL> = InFlightImportFiles.snapshot, now: Date = Date(),
-                        inspect: (URL) -> PDFInspection? = { url in
-                            try? MapImportPipeline.inspectWithWatchdog(url, isCancelled: { false }, progress: { _, _ in })
-                        }) -> LibraryState {
+                        inspect: (URL) -> PDFInspection? = inspectForRecovery) -> LibraryState {
         let style = OnlineRasterBasemapSource.defaultStyle
         var s = LibraryState()
         s.recoveryPreservesOrphans = true
         s.preferredOnlineStyle = style.rawValue
         s.active = .online(style)
+        s.entries = entries(for: candidates(inFlight: inFlight), now: now, inspect: inspect, linkLegacyNames: false).entries
+        return s
+    }
+
+    /// 3.0.1 L5 step 3-4 and L7: the same adoption for salvage and orphans,
+    /// minus the files a converted entry already owns. A file still under a 2.x
+    /// name keeps its stem as the name and gets linked to an opaque one like a
+    /// migrated file (adopted where it is if neither link nor copy works). Not
+    /// written: the caller saves, writes once, then unlinks the old names
+    static func adopt(excluding: Set<URL>, inFlight: Set<URL> = InFlightImportFiles.snapshot, now: Date = Date(),
+                      inspect: (URL) -> PDFInspection? = inspectForRecovery)
+        -> (entries: [ImportedMapEntry], links: [(old: URL, new: URL)]) {
+        let skip = Set(excluding.map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
+        let urls = candidates(inFlight: inFlight).filter { !skip.contains($0.standardizedFileURL.resolvingSymlinksInPath().path) }
+        return entries(for: urls, now: now, inspect: inspect, linkLegacyNames: true)
+    }
+
+    /// L7 managedFiles: after s9.8 a regular file in ImportedMaps or offline_tiles
+    /// that the reconcile or the bake sweep would delete and nothing in flight
+    /// owns. An Empty library next to one of those is never the authoritative
+    /// first launch. Doesn't make the dirs, just looks
+    static func managedFilesPresent(inFlight: Set<URL> = InFlightImportFiles.snapshot,
+                                    fileManager fm: FileManager = .default) -> Bool {
+        let support = ImportedMapStorage.applicationSupportDirectory()
+        let busy = Set(inFlight.union(MapImportPipeline.interruptedImportFiles())
+            .map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
+        for name in [ImportedMapStorage.importedDirectoryName, ImportedMapStorage.tilesDirectoryName] {
+            let dir = support.appendingPathComponent(name, isDirectory: true)
+            let kids = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+                                                    options: [.skipsSubdirectoryDescendants])) ?? []
+            for u in kids where ManagedImportedMapFileLifecycle.isCleanupCandidateName(u.lastPathComponent) {
+                guard !busy.contains(u.standardizedFileURL.resolvingSymlinksInPath().path),
+                      let v = try? u.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                      v.isRegularFile == true, v.isSymbolicLink != true else { continue }
+                return true
+            }
+        }
+        return false
+    }
+
+    /// ImportedMaps/map-<uuid>.<ext>, what every import and migration writes
+    static func isOpaqueImportName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        guard lower.hasPrefix("map-") else { return false }
+        return UUID(uuidString: String((lower as NSString).deletingPathExtension.dropFirst(4))) != nil
+    }
+
+    /// the stem of a file still under its 2.x name in ImportedMaps, nil for
+    /// opaque names and anything in offline_tiles (those were always ours)
+    private static func legacyStem(_ url: URL) -> String? {
+        guard url.deletingLastPathComponent().lastPathComponent == ImportedMapStorage.importedDirectoryName,
+              !isOpaqueImportName(url.lastPathComponent) else { return nil }
+        let stem = url.deletingPathExtension().lastPathComponent
+        return stem.isEmpty ? nil : stem
+    }
+
+    private static func entries(for urls: [URL], now: Date, inspect: (URL) -> PDFInspection?, linkLegacyNames: Bool)
+        -> (entries: [ImportedMapEntry], links: [(old: URL, new: URL)]) {
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
         let marker = markerURL
         // the last rebuild died in the parser on this file, dont open it again
         let crashedOn = marker.flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         defer { if let marker { try? FileManager.default.removeItem(at: marker) } }
+        var out: [ImportedMapEntry] = []
+        var links: [(old: URL, new: URL)] = []
         var n = 0
-        for url in candidates(inFlight: inFlight) {
-            guard let rel = ImportedMapStorage.relativePath(for: url) else { continue }
-            n += 1
-            let name = Messages.mapRecoveredName(DisplayFormat.number(Double(n), decimals: 0))
+        for url in urls {
+            guard ImportedMapStorage.relativePath(for: url) != nil else { continue }
+            let isPDF = url.pathExtension.lowercased() == "pdf"
             // a hash that won't come is still adopted (Delete only), never left for reconcile
             let key = PDFSessionStore.contentKey(for: url)
-            let bytes = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
-            var mtime = ImportedMapStorage.modifiedAtMs(url)
-            var entry = ImportedMapEntry(id: UUID(), kind: .pdf, fileName: rel, displayName: name, contentKey: key,
-                                         byteCount: bytes, fileModifiedAtMs: mtime, importedAtMs: nowMs,
-                                         derivedFromId: nil, pdf: nil)
-            if url.pathExtension.lowercased() == "pdf" {
+            var info: ImportedMapEntry.PDFInfo?
+            var opens = true
+            if isPDF {
                 // pageCount 0 = couldnt read it, always unavailable
-                var info = ImportedMapEntry.PDFInfo(pageCount: 0, pageIndex: 0, rotate: 0, pageBox: [], embedded: nil,
-                                                    embeddedIssue: nil, manual: nil)
-                info.renderGuardToken = UUID().uuidString
+                var pdf = ImportedMapEntry.PDFInfo(pageCount: 0, pageIndex: 0, rotate: 0, pageBox: [], embedded: nil,
+                                                   embeddedIssue: nil, manual: nil)
+                pdf.renderGuardToken = UUID().uuidString
                 if key != nil, url.lastPathComponent != crashedOn {
                     if let marker {
                         try? Data(url.lastPathComponent.utf8).write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -332,25 +483,44 @@ enum ImportedMapLibraryRecovery {
                     if let inspection {
                         let page = inspection.scanned.first { $0.georef != nil }?.index ?? 0
                         if let p = inspection.page(page) {
-                            info.pageCount = inspection.pageCount
-                            info.pageIndex = page
-                            info.rotate = p.geometry.rotation
-                            info.pageBox = CalibrationTarget.box(p.geometry.cropBox)
-                            info.embedded = p.georef
-                            info.embeddedIssue = p.issue?.rawValue
+                            pdf.pageCount = inspection.pageCount
+                            pdf.pageIndex = page
+                            pdf.rotate = p.geometry.rotation
+                            pdf.pageBox = CalibrationTarget.box(p.geometry.cropBox)
+                            pdf.embedded = p.georef
+                            pdf.embeddedIssue = p.issue?.rawValue
                         }
                     }
                 }
-                entry.pdf = info
+                info = pdf
+            } else if let store = MBTilesStore(url: url) {
+                store.closeForDeletion()
             } else {
-                entry.kind = .mbtiles
-                // validated. One that won't open is still adopted, as unavailable: a
-                // stamp that can never match the file
-                if let store = MBTilesStore(url: url) { store.closeForDeletion() } else { mtime = -1 }
-                entry.fileModifiedAtMs = mtime
+                opens = false
             }
-            s.entries.append(entry)
+            // linked only after the parse, so a crash in there never leaves a
+            // second name for the same bytes
+            var file = url
+            let name: String
+            if linkLegacyNames, let stem = legacyStem(url) {
+                name = stem
+                if let new = ImportedMapLibraryMigration.linkOpaque(url, ext: isPDF ? "pdf" : "mbtiles") {
+                    links.append((url, new))
+                    file = new
+                }
+            } else {
+                n += 1
+                name = Messages.mapRecoveredName(DisplayFormat.number(Double(n), decimals: 0))
+            }
+            guard let rel = ImportedMapStorage.relativePath(for: file) else { continue }
+            let bytes = Int64((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+            // an MBTiles that won't open is still adopted, as unavailable: a stamp
+            // that can never match the file
+            let mtime = opens ? ImportedMapStorage.modifiedAtMs(file) : -1
+            out.append(ImportedMapEntry(id: UUID(), kind: isPDF ? .pdf : .mbtiles, fileName: rel, displayName: name,
+                                        contentKey: key, byteCount: bytes, fileModifiedAtMs: mtime, importedAtMs: nowMs,
+                                        derivedFromId: nil, pdf: info))
         }
-        return s
+        return (out, links)
     }
 }

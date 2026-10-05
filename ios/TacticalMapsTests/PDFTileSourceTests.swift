@@ -616,6 +616,61 @@ final class PDFRenderGuardStoreTests: XCTestCase {
         XCTAssertFalse(g2.arm(kind: .base, token: "not-a-uuid"))
     }
 
+    /// 3.0.1 (threat-model-2): on a restore the install's openPage is the first
+    /// thing to read the stored file, and it runs the OCMD pre-pass over the raw
+    /// bytes. it has to run with the base marker down, so dying in there gets the
+    /// map suppressed next launch instead of a crash loop
+    func testRestoreInstallOpensThePageUnderTheGuard() throws {
+        let url = dir.appendingPathComponent("pdf_render_guard.json")
+        let store = PDFRenderGuard(url: url)
+        let src = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
+        let g = try XCTUnwrap(GeoPDFReader.read(url: src)?.georef)
+        let pdf = PDFMapSource(url: src, georef: g, contentKey: "sha256:" + String(repeating: "e", count: 64))
+        let token = pdf.renderGuardToken
+        final class Seen { var marker: PDFRenderGuardState.InProgress?; var onDisk: Data?; var calls = 0 }
+        let seen = Seen()
+        let runtime = PDFMapRuntime()
+        runtime.guardStore = store
+        runtime.openPage = { u, i in
+            seen.calls += 1
+            seen.marker = store.snapshot.inProgress
+            seen.onDisk = try? Data(contentsOf: url)
+            return try PDFTileRenderer.openPage(url: u, pageIndex: i)
+        }
+        _ = runtime.tileSource(for: pdf, screenScale: 2)
+        let end = Date().addingTimeInterval(20)
+        while runtime.status != .ready, Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        XCTAssertEqual(runtime.status, .ready)
+        XCTAssertEqual(seen.calls, 1)
+        XCTAssertEqual(seen.marker?.kind, .base)
+        XCTAssertEqual(seen.marker?.token, token)
+        // what a crash right there leaves for the next launch
+        let crashed = dir.appendingPathComponent("crashed.json")
+        try XCTUnwrap(seen.onDisk).write(to: crashed)
+        XCTAssertEqual(PDFRenderGuard(url: crashed).launchDecision(restoredToken: token).decision, .suppress)
+        // got through: marker off (on disk too), nothing verified, the base render does that itself
+        XCTAssertNil(store.snapshot.inProgress)
+        XCTAssertNil(PDFRenderGuard(url: url).snapshot.inProgress)
+        XCTAssertFalse(store.isVerified(kind: .base, token: token))
+        runtime.reset()
+    }
+
+    func testDisarmTakesOnlyItsOwnMarkerOffAndVerifiesNothing() {
+        let a = UUID().uuidString, b = UUID().uuidString
+        var s = PDFRenderGuardState()
+        XCTAssertTrue(PDFRenderGuardReducer.arm(&s, kind: .base, token: a))
+        PDFRenderGuardReducer.disarm(&s, kind: .base, token: b)
+        XCTAssertEqual(s.inProgress?.token, a, "someone elses marker stays")
+        PDFRenderGuardReducer.disarm(&s, kind: .vector, token: a)
+        XCTAssertEqual(s.inProgress?.kind, .base)
+        PDFRenderGuardReducer.disarm(&s, kind: .base, token: a)
+        XCTAssertNil(s.inProgress)
+        XCTAssertTrue(s.verifiedKinds(a).isEmpty)
+        PDFRenderGuardReducer.arm(&s, kind: .import, token: a)
+        PDFRenderGuardReducer.disarm(&s, kind: .import, token: a)
+        XCTAssertEqual(s.inProgress?.kind, .import, "never an import marker")
+    }
+
     func testJunkOnDiskStartsClean() throws {
         let url = dir.appendingPathComponent("pdf_render_guard.json")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -10,6 +10,35 @@ final class MBTilesStore: @unchecked Sendable {
 
     static let maximumTileBytes = 4 * 1024 * 1024
     static let maximumZoom = 30
+    static let maximumMetadataRows = 64
+    static let maximumKeyCharacters = 32
+    static let utf8PrefixBytesPerCharacter = 4
+    static let knownValueMaximumCharacters: [String: Int] = [
+        "name": 128, "format": 32, "minzoom": 16, "maxzoom": 16, "bounds": 256
+    ]
+    static let consumedBakeExtensionMaximumCharacters = 128
+    /// One deadline for the whole admission (relations, metadata, tile
+    /// aggregate). A view's row count isn't bounded by the file, so a
+    /// recursive view could otherwise spin the aggregate forever.
+    static let admissionBudgetMs = 30_000
+    /// Per statement against a view after admission (tile + extension reads).
+    static let viewQueryBudgetMs = 2_000
+
+    /// MBTiles 1.3 lets tiles and metadata be either. Deduplicated packs from
+    /// node-mbtiles, TileMill, mbutil and MapTiler make tiles a view.
+    private enum Relation {
+        case table
+        case view
+    }
+
+    /// Boxed so the C progress handler can read it through its void pointer.
+    private final class QueryDeadline {
+        let uptimeNanoseconds: UInt64
+        init(milliseconds: Int) {
+            uptimeNanoseconds = DispatchTime.now().uptimeNanoseconds
+                + UInt64(max(0, milliseconds)) * 1_000_000
+        }
+    }
 
     private enum MetadataValue {
         case missing
@@ -35,6 +64,8 @@ final class MBTilesStore: @unchecked Sendable {
     private(set) var metadata = Metadata()
     private var db: OpaquePointer?
     private var closedForDeletion = false
+    private var tilesRelation = Relation.table
+    private var metadataRelation = Relation.table
 #if DEBUG
     /// A regression-test seam proving an oversized length preflight never
     /// advances to the payload query that can make SQLite expose BLOB bytes.
@@ -45,16 +76,19 @@ final class MBTilesStore: @unchecked Sendable {
     /// every query behind this lock.
     private let lock = NSLock()
 
-    init?(url: URL) {
+    /// admissionBudgetMs is only a test seam, callers use the default.
+    init?(url: URL, admissionBudgetMs: Int = MBTilesStore.admissionBudgetMs) {
         self.url = url
-        guard openDatabaseIfNeeded() else { return nil }
+        guard openConnection() else { return nil }
         // Reject files that aren't actually MBTiles: sqlite3_open succeeds on any
         // path, so without this check a garbage/corrupt file would load as a
-        // "valid" but blank basemap. Both tables are mandatory, and all
+        // "valid" but blank basemap. Both relations are mandatory, and all
         // security-sensitive metadata is validated before publishing a source.
-        guard hasTable("tiles"),
-              hasTable("metadata"),
-              let validatedMetadata = loadMetadata() else {
+        let validated = withQueryBudget(milliseconds: admissionBudgetMs) { () -> Metadata? in
+            guard loadRelationTypes() else { return nil }
+            return loadMetadata()
+        }
+        guard let validatedMetadata = validated else {
             sqlite3_close(db)
             db = nil
             return nil
@@ -72,10 +106,11 @@ final class MBTilesStore: @unchecked Sendable {
 
     deinit { sqlite3_close(db) }
 
-    private func openDatabaseIfNeeded() -> Bool {
-        guard !closedForDeletion else { return false }
-        if db != nil { return true }
-        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    private func openConnection() -> Bool {
+        // trusted_schema off before anything touches the schema, so a hostile
+        // view can't reach functions that aren't marked innocuous
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              sqlite3_exec(db, "PRAGMA trusted_schema=OFF", nil, nil, nil) == SQLITE_OK else {
             sqlite3_close(db)
             db = nil
             return false
@@ -83,15 +118,68 @@ final class MBTilesStore: @unchecked Sendable {
         return true
     }
 
-    private func hasTable(_ name: String) -> Bool {
+    /// Lazy open for the prevalidated path. It still has to learn whether
+    /// each relation is a table or a view since the read paths differ.
+    private func openDatabaseIfNeeded() -> Bool {
+        guard !closedForDeletion else { return false }
+        if db != nil { return true }
+        guard openConnection() else { return false }
+        guard loadRelationTypes() else {
+            sqlite3_close(db)
+            db = nil
+            return false
+        }
+        return true
+    }
+
+    private func loadRelationTypes() -> Bool {
+        guard let tiles = relationType("tiles"),
+              let metadata = relationType("metadata") else { return false }
+        tilesRelation = tiles
+        metadataRelation = metadata
+        return true
+    }
+
+    /// Exactly one sqlite_master row by that name and it has to be a table
+    /// or a view. Index, trigger, missing or anything odd fails closed.
+    private func relationType(_ name: String) -> Relation? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-            -1, &stmt, nil) == SQLITE_OK else { return false }
+            "SELECT type FROM sqlite_master WHERE name=? LIMIT 2",
+            -1, &stmt, nil) == SQLITE_OK else { return nil }
         sqlite3_bind_text(stmt, 1, name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-        return sqlite3_step(stmt) == SQLITE_ROW
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              sqlite3_column_type(stmt, 0) == SQLITE_TEXT,
+              let typePointer = sqlite3_column_text(stmt, 0) else { return nil }
+        let type = String(cString: typePointer)
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return nil }
+        switch type {
+        case "table": return .table
+        case "view": return .view
+        default: return nil
+        }
+    }
+
+    /// Runs body with a progress handler that interrupts whatever statement
+    /// is stepping once the deadline passes. Interrupted steps come back as
+    /// SQLITE_INTERRUPT which every reader already treats as failure.
+    private func withQueryBudget<T>(milliseconds: Int, _ body: () -> T) -> T {
+        let deadline = QueryDeadline(milliseconds: milliseconds)
+        sqlite3_progress_handler(db, 1000, { context in
+            guard let context else { return 1 }
+            let deadline = Unmanaged<QueryDeadline>.fromOpaque(context).takeUnretainedValue()
+            return DispatchTime.now().uptimeNanoseconds >= deadline.uptimeNanoseconds ? 1 : 0
+        }, Unmanaged.passUnretained(deadline).toOpaque())
+        defer { sqlite3_progress_handler(db, 0, nil, nil) }
+        return withExtendedLifetime(deadline) { body() }
+    }
+
+    /// Tables get no per-read budget, views get viewQueryBudgetMs per statement.
+    private func budgetedRead<T>(on relation: Relation, _ body: () -> T) -> T {
+        guard relation == .view else { return body() }
+        return withQueryBudget(milliseconds: Self.viewQueryBudgetMs, body)
     }
 
     private func loadMetadata() -> Metadata? {
@@ -154,82 +242,157 @@ final class MBTilesStore: @unchecked Sendable {
         return (Int(minimum), Int(maximum))
     }
 
-    private func readKnownMetadataValues() -> [String: MetadataValue]? {
-        struct RowDescriptor {
-            let rowID: Int64
-            let nameType: String
-            let valueType: String
-        }
+    private struct MetadataDescriptor {
+        // table path reads by rowid, view path already has the name prefix
+        let rowID: Int64?
+        let nameType: String
+        let valueType: String
+        let namePrefix: Data
+        let nameByteCount: Int
+    }
 
-        var descriptors: [RowDescriptor] = []
+    private func readMetadataDescriptors() -> [MetadataDescriptor]? {
+        let isView = metadataRelation == .view
+        let prefixBytes = Self.maximumKeyCharacters * Self.utf8PrefixBytesPerCharacter
+        // a view has no rowid, so it gets the bounded name prefix up front
+        let sql = isView
+            ? "SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), " +
+              "substr(CAST(name AS BLOB), 1, \(prefixBytes)) FROM metadata LIMIT \(Self.maximumMetadataRows + 1)"
+            : "SELECT rowid, typeof(name), typeof(value) FROM metadata LIMIT \(Self.maximumMetadataRows + 1)"
         var rowStatement: OpaquePointer?
-        guard sqlite3_prepare_v2(
-            db,
-            "SELECT rowid, typeof(name), typeof(value) FROM metadata LIMIT 65",
-            -1,
-            &rowStatement,
-            nil
-        ) == SQLITE_OK else {
-            sqlite3_finalize(rowStatement)
-            return nil
-        }
+        defer { sqlite3_finalize(rowStatement) }
+        guard sqlite3_prepare_v2(db, sql, -1, &rowStatement, nil) == SQLITE_OK else { return nil }
+        let typeColumn: Int32 = isView ? 0 : 1
+        var descriptors: [MetadataDescriptor] = []
         while true {
             let step = sqlite3_step(rowStatement)
             if step == SQLITE_DONE { break }
-            guard step == SQLITE_ROW else {
-                sqlite3_finalize(rowStatement)
+            guard step == SQLITE_ROW,
+                  descriptors.count < Self.maximumMetadataRows,
+                  isView || sqlite3_column_type(rowStatement, 0) == SQLITE_INTEGER,
+                  sqlite3_column_type(rowStatement, typeColumn) == SQLITE_TEXT,
+                  sqlite3_column_type(rowStatement, typeColumn + 1) == SQLITE_TEXT,
+                  let nameTypePointer = sqlite3_column_text(rowStatement, typeColumn),
+                  let valueTypePointer = sqlite3_column_text(rowStatement, typeColumn + 1) else {
                 return nil
             }
-            guard descriptors.count < 64,
-                  sqlite3_column_type(rowStatement, 0) == SQLITE_INTEGER,
-                  sqlite3_column_type(rowStatement, 1) == SQLITE_TEXT,
-                  sqlite3_column_type(rowStatement, 2) == SQLITE_TEXT,
-                  let nameTypePointer = sqlite3_column_text(rowStatement, 1),
-                  let valueTypePointer = sqlite3_column_text(rowStatement, 2) else {
-                sqlite3_finalize(rowStatement)
-                return nil
+            let nameType = String(cString: nameTypePointer)
+            let valueType = String(cString: valueTypePointer)
+            if isView {
+                // non-text names fail below anyway, dont bother with their bytes
+                var prefix = Data()
+                var byteCount = 0
+                if nameType == "text" {
+                    guard sqlite3_column_type(rowStatement, 2) == SQLITE_INTEGER,
+                          let column = Self.boundedPrefixColumn(rowStatement, 3) else { return nil }
+                    byteCount = Int(sqlite3_column_int64(rowStatement, 2))
+                    prefix = column
+                }
+                descriptors.append(MetadataDescriptor(
+                    rowID: nil, nameType: nameType, valueType: valueType,
+                    namePrefix: prefix, nameByteCount: byteCount))
+            } else {
+                descriptors.append(MetadataDescriptor(
+                    rowID: sqlite3_column_int64(rowStatement, 0), nameType: nameType,
+                    valueType: valueType, namePrefix: Data(), nameByteCount: 0))
             }
-            descriptors.append(RowDescriptor(
-                rowID: sqlite3_column_int64(rowStatement, 0),
-                nameType: String(cString: nameTypePointer),
-                valueType: String(cString: valueTypePointer)
-            ))
         }
-        sqlite3_finalize(rowStatement)
+        return descriptors
+    }
 
-        let limits: [String: (characters: Int, truncates: Bool)] = [
-            "name": (128, true),
-            "format": (32, true),
-            "minzoom": (16, false),
-            "maxzoom": (16, false),
-            "bounds": (256, false)
-        ]
+    private func readKnownMetadataValues() -> [String: MetadataValue]? {
+        guard let descriptors = readMetadataDescriptors() else { return nil }
+
+        let truncatedKeys: Set<String> = ["name", "format"]
         var result: [String: MetadataValue] = [:]
         for descriptor in descriptors {
-            guard descriptor.nameType == "text",
-                  case let .value(rawKey) = readMetadataText(
-                    rowID: descriptor.rowID,
+            guard descriptor.nameType == "text" else { return nil }
+            // Known MBTiles keys are short. A bounded prefix is enough
+            // to classify an arbitrarily long extension key as unknown
+            // without rejecting the otherwise-valid map or reading it.
+            let keyValue: MetadataValue
+            if let rowID = descriptor.rowID {
+                keyValue = readMetadataText(
+                    rowID: rowID,
                     column: "name",
-                    maximumCharacters: 32,
-                    // Known MBTiles keys are short. A bounded prefix is enough
-                    // to classify an arbitrarily long extension key as unknown
-                    // without rejecting the otherwise-valid map or reading it.
+                    maximumCharacters: Self.maximumKeyCharacters,
                     truncateOversized: true
-                  ) else { return nil }
+                )
+            } else {
+                keyValue = Self.boundedText(
+                    prefix: descriptor.namePrefix,
+                    encodedByteCount: descriptor.nameByteCount,
+                    maximumCharacters: Self.maximumKeyCharacters,
+                    truncateOversized: true
+                )
+            }
+            guard case let .value(rawKey) = keyValue else { return nil }
             let key = rawKey.lowercased()
-            guard let limit = limits[key] else { continue }
+            guard let characters = Self.knownValueMaximumCharacters[key] else { continue }
             guard result[key] == nil,
                   descriptor.valueType == "text" else { return nil }
-            let value = readMetadataText(
-                rowID: descriptor.rowID,
-                column: "value",
-                maximumCharacters: limit.characters,
-                truncateOversized: limit.truncates
-            )
+            let truncates = truncatedKeys.contains(key)
+            let value: MetadataValue
+            if let rowID = descriptor.rowID {
+                value = readMetadataText(
+                    rowID: rowID,
+                    column: "value",
+                    maximumCharacters: characters,
+                    truncateOversized: truncates
+                )
+            } else {
+                value = readMetadataValue(
+                    forKey: key,
+                    maximumCharacters: characters,
+                    truncateOversized: truncates
+                )
+            }
             guard !value.isInvalid else { return nil }
             result[key] = value
         }
         return result
+    }
+
+    /// Key-addressed read for a metadata view. Exactly one TEXT row or it's
+    /// invalid, and only a bounded prefix ever leaves SQLite.
+    private func readMetadataValue(
+        forKey key: String,
+        maximumCharacters: Int,
+        truncateOversized: Bool
+    ) -> MetadataValue {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(
+            db,
+            "SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, ?2) " +
+            "FROM metadata WHERE lower(name) = ?1 LIMIT 2",
+            -1, &stmt, nil
+        ) == SQLITE_OK else { return .invalid }
+        sqlite3_bind_text(stmt, 1, key, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_int64(stmt, 2, Int64(maximumCharacters * Self.utf8PrefixBytesPerCharacter))
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              let typePointer = sqlite3_column_text(stmt, 0),
+              String(cString: typePointer) == "text",
+              sqlite3_column_type(stmt, 1) == SQLITE_INTEGER,
+              let prefix = Self.boundedPrefixColumn(stmt, 2) else { return .invalid }
+        let byteCount = Int(sqlite3_column_int64(stmt, 1))
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return .invalid }
+        return Self.boundedText(
+            prefix: prefix,
+            encodedByteCount: byteCount,
+            maximumCharacters: maximumCharacters,
+            truncateOversized: truncateOversized
+        )
+    }
+
+    /// The substr() column is already capped by SQLite, so copying it is bounded.
+    private static func boundedPrefixColumn(_ stmt: OpaquePointer?, _ column: Int32) -> Data? {
+        let type = sqlite3_column_type(stmt, column)
+        guard type == SQLITE_BLOB || type == SQLITE_NULL else { return nil }
+        let count = Int(sqlite3_column_bytes(stmt, column))
+        guard count > 0 else { return Data() }
+        guard let bytes = sqlite3_column_blob(stmt, column) else { return nil }
+        return Data(bytes: bytes, count: count)
     }
 
     private func readMetadataText(
@@ -258,7 +421,7 @@ final class MBTilesStore: @unchecked Sendable {
         defer { sqlite3_blob_close(blob) }
 
         let encodedByteCount = Int(sqlite3_blob_bytes(blob))
-        let maximumPrefixBytes = maximumCharacters * 4
+        let maximumPrefixBytes = maximumCharacters * Self.utf8PrefixBytesPerCharacter
         guard encodedByteCount >= 0,
               truncateOversized || encodedByteCount <= maximumPrefixBytes else {
             return .invalid
@@ -270,9 +433,33 @@ final class MBTilesStore: @unchecked Sendable {
         let readResult = prefix.withUnsafeMutableBytes { bytes in
             sqlite3_blob_read(blob, bytes.baseAddress, Int32(bytesToRead), 0)
         }
-        guard readResult == SQLITE_OK, !prefix.contains(0) else { return .invalid }
+        guard readResult == SQLITE_OK else { return .invalid }
+        return Self.boundedText(
+            prefix: prefix,
+            encodedByteCount: encodedByteCount,
+            maximumCharacters: maximumCharacters,
+            truncateOversized: truncateOversized
+        )
+    }
 
-        let wasTruncated = bytesToRead < encodedByteCount
+    /// Shared by the blob and substr paths: length bound, NUL, and UTF-8 with
+    /// up to 3 bytes dropped when the prefix cut a scalar in half.
+    private static func boundedText(
+        prefix: Data,
+        encodedByteCount: Int,
+        maximumCharacters: Int,
+        truncateOversized: Bool
+    ) -> MetadataValue {
+        let maximumPrefixBytes = maximumCharacters * utf8PrefixBytesPerCharacter
+        guard encodedByteCount >= 0,
+              truncateOversized || encodedByteCount <= maximumPrefixBytes else {
+            return .invalid
+        }
+        if encodedByteCount == 0 { return .value("") }
+        guard prefix.count == min(encodedByteCount, maximumPrefixBytes),
+              !prefix.contains(0) else { return .invalid }
+
+        let wasTruncated = prefix.count < encodedByteCount
         let drops = wasTruncated ? 0...min(3, prefix.count) : 0...0
         for droppedByteCount in drops {
             let candidate = prefix.dropLast(droppedByteCount)
@@ -428,21 +615,35 @@ final class MBTilesStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard openDatabaseIfNeeded() else { return nil }
-        guard let length = tilePayloadLength(z: z, x: x, tmsRow: tmsRow) else { return nil }
+        guard let length = budgetedRead(on: tilesRelation, {
+            tilePayloadLength(z: z, x: x, tmsRow: tmsRow)
+        }) else { return nil }
 #if DEBUG
         payloadQueryCountForTesting += 1
 #endif
-        return readTilePayload(z: z, x: x, tmsRow: tmsRow, expectedLength: length)
+        return budgetedRead(on: tilesRelation) {
+            readTilePayload(z: z, x: x, tmsRow: tmsRow, expectedLength: length)
+        }
     }
 
     /// Only the two values the bake reader consumes. Ordinary map admission
     /// ignores unused extensions; consumption independently fails closed.
-    func extensionMetadata(_ key: String, maximumCharacters: Int = 128) -> String? {
+    func extensionMetadata(
+        _ key: String,
+        maximumCharacters: Int = MBTilesStore.consumedBakeExtensionMaximumCharacters
+    ) -> String? {
         guard ["tacmap_bake_key", "tacmap_tile_px"].contains(key),
-              (1...128).contains(maximumCharacters) else { return nil }
+              (1...Self.consumedBakeExtensionMaximumCharacters).contains(maximumCharacters) else { return nil }
         lock.lock()
         defer { lock.unlock() }
         guard openDatabaseIfNeeded() else { return nil }
+        if metadataRelation == .view {
+            let value = budgetedRead(on: .view) {
+                readMetadataValue(forKey: key, maximumCharacters: maximumCharacters, truncateOversized: false)
+            }
+            guard case let .value(text) = value else { return nil }
+            return text
+        }
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(
             db,
