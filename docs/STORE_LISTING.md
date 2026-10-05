@@ -1,118 +1,54 @@
 # Store listing copy - App Store & Google Play
 
-Paste-ready listing text. **Repositioned for a broad field audience** - outdoor
-recreation (hikers, hunters, overlanders), public safety / search-and-rescue,
-professional / field-GIS, and military - while keeping the wedges against the
-nearest competitor (TacticMap): pay-once vs subscription, offline-anywhere vs
-region-locked, open interchange (GeoJSON/KML/GPX) vs a proprietary format, broad
-device support, and no TacMap account, ads, or analytics. Keep this in sync with
-the screenshots in `docs/store/`.
+Positioning notes and release-note history. **The maintained listing text is
+`docs/store/localizations/en-US.json` and `de-DE.json`**; that is what ships.
+For paste-ready fields run
+
+```sh
+python3 scripts/export_store_localizations.py --output <folder>
+```
+
+which also checks every field against the store limits. Don't keep a second
+copy of the description here: the old paste-ready block drifted from the JSON
+and would have reverted the 3.0 copy if anyone had pasted it.
+
+The copy is pitched at a broad field audience (hikers, hunters, overlanders,
+public safety / search-and-rescue, field-GIS and military users) and keeps the
+wedges against the nearest competitor (TacticMap): pay once vs subscription,
+offline anywhere vs region-locked, open interchange (GeoJSON/KML/GPX) vs a
+proprietary format, and no TacMap account, ads or analytics.
 
 > Positioning one-liner: **"Buy once. Works offline anywhere on Earth. Your
 > maps, your data, your tools."**
 
 ---
 
-## App name / title
-- **App Store**: 30-char title is `TacMap` (the brand carries the tactical nod).
-- **Google Play title (≤30)**: **TacMap: Offline GPS Field Maps** *(30)*
-
-## App Store subtitle (≤30 chars)
-- **Offline GPS field maps + grid** *(29)*
-- Alt (keeps MGRS visible): **Offline field maps, MGRS grid** *(29)*
-
-## Google Play short description (≤80 chars)
-- **Pay once. Offline field maps for hiking, hunting, SAR, survey & tactical work.** *(78)*
-
-## App Store promotional text (≤170 chars, editable without review)
-- **New in 3.0: GeoPDFs line up with the printed MGRS grid, easy PDF calibration, sharp maps at every zoom, line of sight, red night mode and KML export.** *(149)*
-- German: **Neu in 3.0: GeoPDFs passen auf das gedruckte MGRS-Gitter, einfache PDF-Kalibrierung, scharfe Karten beim Zoomen, Sichtlinie, roter Nachtmodus, KML-Export.** *(154)*
-- Previous (2.1): range rings, offline sun & moon times, symbol list sorting and Keep screen on. 2.2 never shipped; its features are in 3.0.
-
----
+## Current field values (3.0, from the JSON)
+- **App Store name**: `TacMap` (de-DE `TacMap: Offline-Karten`).
+- **App Store subtitle (≤30)**: `Offline GPS field maps + grid` *(29)*;
+  de-DE `Offline-Karten, GPS und MGRS` *(28)*.
+- **Google Play title (≤30)**: `TacMap: Offline GPS Field Maps` *(30)*;
+  de-DE `TacMap: Offline-Karten und GPS`.
+- **Google Play short description (≤80)**: `Offline field maps, MGRS, waypoints
+  and encrypted team sharing. No subscription.` *(80)*; de-DE `Offline-Karten,
+  MGRS, Wegpunkte und verschlüsselter Austausch. Ohne Abo.` *(72)*.
+- **App Store promotional text (≤170, editable without review)**: `New in 3.0:
+  GeoPDFs line up with the printed MGRS grid, easy PDF calibration, sharp maps
+  at every zoom, line of sight, red night mode and KML export.` *(149)*; the
+  German one is 154. Previous (2.1): range rings, offline sun & moon times,
+  symbol list sorting and Keep screen on. 2.2 never shipped; its features are
+  in 3.0.
 
 ## Full description
-
 Both stores render plain text only (markdown asterisks show up literally), so
-the paste-ready copy below uses line breaks and `•` bullets that display
-correctly. The two versions are intentionally near-identical for consistent
-branding, with platform-correct tweaks (device wording, biometrics, pricing).
-Both are well under the 4,000-character limit.
+the JSON uses line breaks and `•` bullets. Google Play reuses the App Store
+description (`googlePlay.descriptionFromAppStore`) with the explicit
+`descriptionReplacements` for the app-lock and store-price lines.
 
-### Apple App Store
-
-```
-TacMap is a serious offline map for the field - buy it once and own it. No subscription. No TacMap account, ads, or analytics.
-
-Built for where signal drops: hiking, hunting, overlanding, SAR, fire/EMS, survey, forestry, drone mapping, and military or cadet MGRS users.
-
-
-WORKS OFFLINE, ANYWHERE ON EARTH
-• Import a GeoPDF or a scanned map sheet saved as PDF and georeference it on-device
-• Calibrate an ungeoreferenced PDF with a 3-point fit and review its reported residual
-• Sideload MBTiles offline tile sets - no regional lock-in, no network required
-• Red night mode with adjustable brightness protects your night vision
-
-KNOW EXACTLY WHERE YOU ARE
-• Live position readout in MGRS (to 10 figures), lat/long, and UTM
-• North Up or Heading Up - rotate by touch or let the compass turn the map
-• North reference in degrees or NATO mils, for true, magnetic, or grid north
-• Measure distance, area, and bearing - in degrees and mils
-• Elevation profile of any line, with climb, descent and a height readout (online lookups)
-• Line of sight between two points - observer and target heights, earth curvature, dead ground shown
-• Offline sun & moon times: BMNT/EENT, twilight, sunrise/sunset, moonrise/moonset, illumination
-• Drop and label waypoints; record and export your route as a GPX track
-
-MARK UP THE MAP
-• Hold the map for a point menu: place a symbol, measure from there, add range rings, see sun & moon times, or copy the coordinate
-• Points, lines, areas, and freehand sketch - with colour, width, and opacity, on named layers
-• Range rings - up to 10 geodesic rings around a symbol that follow it when it moves
-• Full undo/redo
-• Search & Rescue, Points of Interest, airsoft, and milsim marker sets
-• NATO APP-6 symbology - build units, add HQ flags, and place control measures and task graphics
-• Import your own symbol packs, e.g. German emergency services (BOS), with offline search
-• Sort the symbol list by newest, name, distance, affiliation or layer
-
-SHARE THE PICTURE, LIVE
-• Unit Sync - share drawings and symbols across iOS and Android, end-to-end encrypted
-• Live presence - see your team's callsign, heading, and position, end-to-end encrypted
-• TacMap Chat - send encrypted text or reports to the entire room or one selected live unit
-• Optional screen-off presence with a separate OPSEC switch
-• The relay cannot decrypt mission content, but sees admission/routing, session/control, Chat recipient, IP, timing, and size metadata. "Routed" is not delivery/read proof
-• Conflict alerts instead of silent overwrites when a teammate edits the same object
-• Optional online weather + drone flight-safety read: wind, gusts, visibility, SAFE / CAUTION / DANGER
-
-OPEN BY DESIGN - YOUR DATA STAYS YOURS
-• GeoJSON (RFC 7946) import and export - round-trips through QGIS, ArcGIS, and Felt
-• Import and export KML / KMZ for Google Earth and ATAK - layers become folders, symbols keep their MGRS grid and icon
-• Record and export GPX tracks
-• One-tap export of every symbol, drawing, waypoint, and layer - no proprietary format
-
-PRIVACY CONTROLS
-• Mission data is encrypted in app-private storage; imported maps stay under device file protection
-• Online basemaps and lookups are off on first launch and can be enabled independently; while enabled, providers receive your IP and requested map area, query, or coordinates. Coordinate and mission search stays on-device
-• No TacMap account, behavioural analytics, advertising identifiers, ads, or developer crash uploads
-• Optional Face ID / Touch ID app lock
-• Universal iPhone and iPad - not gated behind the newest OS
-
-EASY TO START, IN ENGLISH OR GERMAN
-• A guided tour points at each map control on first launch; replay it any time from About
-• Choose English, German or device language in Settings
-• Optional Keep screen on while TacMap is open
-
-
-PAY ONCE - LOCALISED PRICE SHOWN BY THE APP STORE
-3-day free trial, then a one-time unlock. No subscription, ever.
-```
-
-### Google Play
-
-Same body as the App Store block above, with these platform swaps:
-- `PRIVACY CONTROLS` - replace the two Apple device/lock lines with:
-  - `• Optional PIN or biometric app lock`
-  - `• Broad Android support - not gated behind the newest OS version`
-- Keep the final line as the store-localised-price wording; do not hard-code a
-  currency that may differ from the product configured in Play Console.
+Only claim what the apps actually import. Maps come in as PDF, GeoPDF or
+MBTiles; there is no image import, so a scan or phone photo of a paper map has
+to be saved as PDF first and the copy has to say so. 3.0.0 shipped saying "a
+photo of a paper map" without that qualifier; fixed in the 3.0.1 copy.
 
 ---
 
@@ -127,26 +63,32 @@ Same body as the App Store block above, with these platform swaps:
   (`mgrs, utm, geopdf, geojson, kml, survey, gis`), military (`nato`).
 - ~5 chars spare - add one short term to lean an audience harder if you like:
   `4x4` (overland), `rescue` (SAR), or `camp`.
-- Google Play has no keyword field (it indexes the description); the copy above
-  already works those terms in naturally.
+- Google Play has no keyword field (it indexes the description); the JSON
+  description already works those terms in naturally.
 
 ## What's New (release note snippet)
 
 The source of truth is `docs/store/localizations/en-US.json` and `de-DE.json`
-(`appStore.whatsNew` / `googlePlay.releaseNotes`); keep the blocks below in sync
-with them and run `scripts/export_store_localizations.py` to check limits.
+(`appStore.whatsNew` / `googlePlay.releaseNotes`); run
+`scripts/export_store_localizations.py` to check limits. The JSON only holds
+the current release, so copy the notes into the history below when a version
+ships.
 
-3.0.0 (build 73) replaces the unreleased 2.2.0: builds 70-72 only went to
-TestFlight, so 3.0's notes carry the 2.2 features too. The full description in
-the JSON also gained the 3.0 map features (projection-accurate GeoPDFs,
-grid-reference calibration, sharp zoom, offline tiles, several maps) and the
-2.2 tools. The German copy needs a native speaker's review.
+### 3.0.1 (build 74)
+Bug-fix release. The App Store notes list the iOS fixes and the Google Play
+notes the Android ones; both mention the fix for maps going missing after an
+update from 2.x and the relay hardening. Keep them in plain user language with
+no exploit detail. See the JSON for the text (en-US App Store 463 / 4,000,
+Play 355 / 500; de-DE App Store 623 / 4,000, Play 453 / 500).
 
-### 3.0.0 — Apple App Store, English (1,333 / 4,000 characters)
-See `appStore.whatsNew` in `docs/store/localizations/en-US.json` (MAPS, FIELD
-TOOLS, UNIT SYNC sections).
+### 3.0.0 (build 73)
+3.0.0 replaced the unreleased 2.2.0: builds 70-72 only went to TestFlight, so
+3.0's notes carried the 2.2 features too. The shipped App Store text (MAPS,
+FIELD TOOLS, UNIT SYNC sections, en-US 1,333 and de-DE 1,668 characters) is
+`docs/store/localizations/*.json` at e1714b1. Its calibration bullet wrongly
+said a photo of a paper map could be calibrated; don't reuse it as is.
 
-### 3.0.0 — Google Play, English (384 / 500 Unicode characters)
+Google Play, English (384 / 500 Unicode characters):
 ```
 TacMap 3.0
 • GeoPDFs line up with the printed MGRS grid; USGS sheets import again.
@@ -158,9 +100,17 @@ TacMap 3.0
 • Steadier Unit Sync; fingerprint or face App Lock.
 ```
 
-### 3.0.0 — German (de-DE)
-App Store 1,668 / 4,000 and Google Play 411 / 500 characters; see
-`docs/store/localizations/de-DE.json`.
+Google Play, German (411 / 500 Unicode characters):
+```
+TacMap 3.0
+• GeoPDFs passen auf das gedruckte MGRS-Gitter; USGS-Blätter wieder importierbar.
+• PDF per Gitterkoordinaten kalibrieren, mit Genauigkeit je Punkt.
+• Scharfe Karten beim Zoomen, Offline-Kacheln, mehrere Karten.
+• Höhenprofil und Sichtlinie.
+• Roter Nachtmodus und KML/KMZ-Export.
+• Punktmenü per langem Drücken; geführte Tour.
+• Stabilere Synchronisierung; App-Sperre per Fingerabdruck oder Gesicht.
+```
 
 2.2.0 drafts below are kept for history only; that version never shipped.
 
@@ -316,8 +266,8 @@ New in TacMap 2.0:
 - **Wedges still lead the pitch** - "buy once / no subscription" and "offline
   anywhere on Earth" are the cleanest differentiators for any store browser vs
   the subscription, region-locked competitor.
-- **Military tooling is now depth, not identity** - MGRS / NATO / mils moved
-  under "know exactly where you are" and "mark up the map" so the outdoor / pro
+- **Military tooling is now depth, not identity** - MGRS / NATO / mils sit
+  under NAVIGATE AND PLAN rather than leading the copy, so the outdoor / pro
   segments don't bounce, while users who search for it still find it (`nato`,
   `mgrs`, `utm`).
 - **Marker sets** (SAR / POI / airsoft) are called out in the copy - a concrete
@@ -327,16 +277,10 @@ New in TacMap 2.0:
   basemaps/lookups are disabled on first launch, can be enabled independently,
   and can disclose the IP plus requested map area, query, or lookup coordinates
   to their providers. Platform stores can also reconcile entitlement.
-- **Screenshots are platform-specific** in `docs/store/{ios,android}/`. Use only
-  the release-approved subsets named in each folder's README. Android phone
-  screens 01 and 02 are approved for 2.0; its remaining phone/tablet artwork is
-  still blocked. Review every image against its submitted native build rather
-  than copying captions across platforms.
-- **2.2 screenshot set (in progress)** - 8 slides in the same order on iPhone,
-  iPad and Android: hero, line of sight, night mode, Unit Sync, sun & moon,
-  GeoPDF, symbol builder, export. Captured by the `testStore*` UI tests from
-  `docs/store/store_situation.geojson`. Until they replace the 2.0 set, the
-  new features (profile/LOS, night mode, KMZ export) appear only in the copy.
-- **Space budget** - the App Store description sits at ~3,930 / 4,000
-  characters after the 2.2 additions. Trim an existing bullet before adding a
-  new one.
+- **Screenshots are platform-specific** in `docs/store/{ios,android}/`. The
+  3.0 set is the five slides named in each folder's README (10, 11, 12, 13,
+  07); review every image against the native build it ships with rather than
+  copying captions across platforms.
+- **Space budget** - the German App Store description is the long one
+  (3,328 / 4,000 characters in 3.0.1; en-US is 2,852). Check both with the
+  export script before adding a bullet.

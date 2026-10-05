@@ -1,6 +1,6 @@
 # TacMap — Datenschutzerklärung
 
-*Stand der englischen Erklärung und deutschen Übersetzung: 2. Oktober 2026.*
+*Stand der englischen Erklärung und deutschen Übersetzung: 5. Oktober 2026.*
 
 *Gilt für TacMap unter iOS und Android.*
 
@@ -30,10 +30,11 @@ Apple und Google können Entwicklern freiwillig freigegebene Absturzdiagnosen de
 | **TacMap-Chatverlauf und Schutz vor wiederholten Nachrichten** | Gesendete und empfangene Texte und Meldungen, ihr Empfängerkreis (Raum oder ausgewählte Einheit), lokaler Weiterleitungsstatus und Daten zum Schutz vor Wiederholungen werden in einer größenbegrenzten, verschlüsselten privaten Datei für den jeweiligen Synchronisierungsraum gespeichert. TacMap Chat v1 hat keine Zustell- oder Lesebestätigungen. |
 | **Kalibrierungsdaten und Auswahl importierter Karten** | Werden in verschlüsselten privaten Dateien gespeichert. Daraus können Identität und geografische Abdeckung einer importierten Karte hervorgehen. |
 | **Importierte PDF-/GeoPDF- und MBTiles-Karten** | Werden als ursprüngliche Dateidaten in den privaten App-Speicher kopiert. Sie unterliegen dem Dateischutz des Betriebssystems, werden aber nicht mit dem Einsatzdatenschlüssel von TacMap verschlüsselt. Die Dateifreigabe über iOS Dateien/Finder ist deaktiviert. Android verwendet die Systemdateiauswahl und verlangt keinen umfassenden Speicherzugriff. |
+| **Erstellte Offline-Kacheln** | **Offline-Kacheln erstellen** speichert eine Rasterkopie des Gebiets einer georeferenzierten PDF-Karte als MBTiles-Datei (`offline_tiles/tacmap-bake-<id>.mbtiles`) im privaten App-Speicher. Wie die importierte Karte liegt sie unverschlüsselt vor: Sie unterliegt dem Dateischutz des Betriebssystems und ist von iOS-Backups ausgeschlossen (Android-App-Backups sind deaktiviert), wird aber nicht mit dem Einsatzdatenschlüssel von TacMap verschlüsselt. Ihre Metadaten nennen die Karte nicht. **Offline-Kacheln entfernen** oder das Entfernen der Karte löscht sie. |
 | **App-Einstellungen** | OPSEC-Schalter, Ebenensichtbarkeit, Kartenansicht und andere Bedienoberflächen-Einstellungen werden privat gespeichert. |
 | **Kaufberechtigung** | Eine lokal überprüfte dauerhafte Freischaltung wird im iOS-Schlüsselbund oder in privaten Android-App-Einstellungen gespeichert, damit ein bekannter Käufer offline weiterarbeiten kann. |
 
-TacMap verschlüsselt gespeicherte Einsatzdateien mit AES-256-GCM. Der Datenschlüssel wird durch den iOS-Schlüsselbund bzw. Android Keystore geschützt. Importierte Kartendateien und lokale Absturzberichte sind die beschriebenen Ausnahmen. Ein kompromittiertes oder entsperrtes Gerät, Exporte und optionale Netzwerkdienste bleiben gesonderte Risiken. Die Grenzen erläutert das veröffentlichte Bedrohungsmodell.
+TacMap verschlüsselt gespeicherte Einsatzdateien mit AES-256-GCM. Der Datenschlüssel wird durch den iOS-Schlüsselbund bzw. Android Keystore geschützt. Importierte Kartendateien, daraus erstellte Offline-Kacheln und lokale Absturzberichte sind die beschriebenen Ausnahmen. Ein kompromittiertes oder entsperrtes Gerät, Exporte und optionale Netzwerkdienste bleiben gesonderte Risiken. Die Grenzen erläutert das veröffentlichte Bedrohungsmodell.
 
 Eine bereits gestartete Aufzeichnung darf eine private Kopie des Einsatzdatenschlüssels behalten, um nach dem Sperren der allgemeinen Bedienoberfläche weitere verschlüsselte Positionsdaten anzuhängen. Diese Kopie ist der allgemeine Schlüssel, kein kryptografisch getrennter Schlüssel nur für Tracks. Das Sperren verspricht auch keine Löschung sämtlicher bereits entschlüsselter Objekte oder Kartenkacheln im Arbeitsspeicher. Das Beenden des Prozesses beendet die aktive Aufzeichnung. Das Bedrohungsmodell und ADR-002 erläutern die Grenzen bei Geräteschutz und Zugriffskontrolle.
 

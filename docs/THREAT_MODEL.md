@@ -517,7 +517,7 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   excluded from backup and not exposed through Files/Finder file sharing; on
   Android, app-private storage with backup disabled) but as their original bytes.
   They reveal your area of interest to anyone who extracts them at the filesystem
-  level. The files have opaque names (`map-<uuid>` on iOS, `import-<16 hex>` on
+  level. The files have opaque names (`map-<uuid>` on iOS, `import-<32 hex>` on
   Android). The imported-map library (each map's original file name, content hash,
   page, embedded or hand-made georeference and calibration points, its offline-tile
   bake record and its crash-guard token) and any calibration still in progress are
