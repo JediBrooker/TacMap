@@ -134,13 +134,23 @@ class ImportedMapLibraryMigrationTest {
     }
 
     @Test
-    fun aFileOutsideTheManagedDirectoriesFailsClosed() {
-        // fail closed: no library is built (and so the old stores are never cleared)
+    fun aFileOutsideTheManagedDirectoriesIsLeftOutAndListedNeverDropped() {
+        // 3.0.1: the rest still converts, the stray file is named so the migration salvages
+        // (old stores frozen) instead of writing a library that silently lost it
         val d = dir()
         val stray = LegacyPdf(
             file = file(d, "elsewhere/map.pdf"), displayName = "x", geometry = geometry(100.0), pageCount = 1,
             contentKey = "sha256:" + "bb".repeat(32),
         )
-        assertNull(ImportedMapLibraryMigration.build(LegacyMapInputs(LegacyActive.Pdf, "OSM_TOPO", stray, emptyList()), d, 9L, ::id))
+        val strayPack = file(d, "elsewhere/tiles.mbtiles")
+        val tiles = file(d, "mbtiles/import-fedcba9876543210.mbtiles")
+        val r = ImportedMapLibraryMigration.build(
+            LegacyMapInputs(LegacyActive.Pdf, "OSM_TOPO", stray, listOf(LegacyOffline(strayPack, "Stray"), LegacyOffline(tiles, "Tiles"))),
+            d, 9L, ::id,
+        )
+        assertEquals(listOf(stray.file, strayPack), r.unconverted)
+        assertEquals(listOf("mbtiles/import-fedcba9876543210.mbtiles"), r.state.entries.map { it.fileName })
+        assertEquals(ActiveRef.online("OSM_TOPO"), r.state.active)
+        assertNull(r.uncalibratedActiveName)
     }
 }

@@ -169,7 +169,7 @@ internal class FakeV3Peer(private val keys: SyncCrypto.V3RoomKeys) {
     var epoch = 1L
 
     fun wireId(localId: String): String =
-        SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(localId))
+        SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(localId)!!)
 
     fun hello(): JSONObject {
         val epochHex = VersionStamp.counterHex16(epoch)
@@ -369,7 +369,8 @@ internal class SyncHarness(
         return wp
     }
 
-    fun close() {
+    /** [deleteFiles] false keeps [dir] so a second harness can play the app after a restart. */
+    fun close(deleteFiles: Boolean = true) {
         manager.dispose()
         scope.cancel()
         // Non-cancellable durable completions own the serial replay order until
@@ -380,7 +381,7 @@ internal class SyncHarness(
             deriveDispatcher.runCurrent()
             scheduler.runCurrent()
         }
-        dir.deleteRecursively()
+        if (deleteFiles) dir.deleteRecursively()
     }
 
     companion object {

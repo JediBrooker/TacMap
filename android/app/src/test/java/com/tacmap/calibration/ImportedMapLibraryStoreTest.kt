@@ -149,6 +149,129 @@ class ImportedMapLibraryStoreTest {
         assertFalse(oldPartial.exists())
     }
 
+    // ------------------------------------------------------------------ guarded writes
+
+    private fun ok(r: LibraryReduction): LibraryState = (r as LibraryReduction.Ok).state
+
+    private fun written(c: LibraryCommit): LibraryState = (c as LibraryCommit.Written).state
+
+    private fun online(style: String = "OSM_TOPO") = LibraryState(active = ActiveRef.online(style), preferredOnlineStyle = style)
+
+    private val georef = PdfGeoreference(
+        page = 0,
+        crs = GeoCrs.Geographic,
+        datum = GeoDatums.WGS84,
+        affine = PlaneAffine(1e-4, 0.0, 151.0, 0.0, 1e-4, -33.0),
+        crop = listOf(PagePoint(0.0, 0.0), PagePoint(10.0, 0.0), PagePoint(10.0, 10.0), PagePoint(0.0, 10.0)),
+        origin = GeorefOrigin.ADOBE_VP,
+    )
+
+    @Test
+    fun aStaleCopyCanNeverShrinkTheLibraryOrPutBackAnOldCalibration() {
+        // two holders on one sealed library, like a second MainActivity's view model or a bake
+        // that outlived its screen: each has the copy it read, only a current one may write
+        val dir = tempDir()
+        val store = ImportedMapLibraryStore(dir)
+        val p = entry(dir, "p")
+        written(store.commit(online().copy(active = ActiveRef.entry("p"), entries = listOf(p))))
+        val a = (store.load() as LibraryLoad.Loaded).state
+        val b = (store.load() as LibraryLoad.Loaded).state
+
+        // B imports M and calibrates P
+        val m = entry(dir, "m")
+        val b1 = written(store.commit(ok(LibraryReducer.apply(LibraryTransition.AddEntry(m, activate = false), b))))
+        val manual = ManualCalibration("WGS84", emptyList(), PdfGeoreferenceCodec.encode(georef), 3, savedAtMs = 9)
+        val b2 = written(store.commit(ok(LibraryReducer.apply(LibraryTransition.CommitCalibration("p", manual, p.contentKey!!, 0), b1))))
+
+        // A, still on the copy from before both, picks a basemap: refused, nothing written
+        val stale = store.commit(ok(LibraryReducer.apply(LibraryTransition.SelectOnline("ESRI_TOPO"), a)))
+        assertTrue("$stale", stale is LibraryCommit.Stale)
+        assertEquals(LibraryLoad.Loaded(b2), store.load())
+        // and cleanup keeps by the sealed library, whatever A thinks
+        assertEquals(true, LibraryMapFiles.reconcile(dir) { (store.load() as LibraryLoad.Loaded).state })
+        assertTrue(store.fileOf(m)!!.isFile)
+
+        // A rebases on what's there now and its pick lands on top of B's work
+        val fresh = ((stale as LibraryCommit.Stale).current as LibraryLoad.Loaded).state
+        val landed = written(store.commit(ok(LibraryReducer.apply(LibraryTransition.SelectOnline("ESRI_TOPO"), fresh))))
+        assertEquals(listOf("p", "m"), landed.entries.map { it.id })
+        assertEquals(manual, landed.entry("p")!!.pdf!!.manual)
+        assertEquals(ActiveRef.online("ESRI_TOPO"), landed.active)
+        assertEquals(LibraryLoad.Loaded(landed), store.load())
+    }
+
+    @Test
+    fun twoFirstLaunchCopiesOnlyGetOneWriteBetweenThem() {
+        // nothing written yet: both screens start from the same unwritten library (generation 0)
+        val dir = tempDir()
+        val store = ImportedMapLibraryStore(dir)
+        assertEquals(LibraryLoad.Empty, store.load())
+        val first = written(store.commit(online().copy(entries = listOf(entry(dir, "a")))))
+        assertTrue(first.generation > 0)
+        assertTrue(store.commit(online("OSM_STREET")) is LibraryCommit.Stale)
+        assertEquals(LibraryLoad.Loaded(first), store.load())
+    }
+
+    @Test
+    fun nothingGoesDownWhileLockedOrOverAnUnreadableLibrary() {
+        val dir = tempDir()
+        val store = ImportedMapLibraryStore(dir)
+        val there = written(store.commit(online()))
+        locked = true
+        assertEquals(LibraryCommit.Stale(LibraryLoad.Locked), store.commit(there.copy(preferredOnlineStyle = "OSM_STREET")))
+        assertEquals(LibraryCommit.Stale(LibraryLoad.Locked), store.create(online("OSM_STREET")))
+        locked = false
+        assertEquals(LibraryLoad.Loaded(there), store.load())
+        val f = File(dir, ImportedMapLibraryStore.FILE_NAME)
+        f.writeBytes(f.readBytes().also { it[it.size - 3] = (it[it.size - 3] + 1).toByte() })
+        assertEquals(LibraryCommit.Stale(LibraryLoad.Corrupt), store.commit(there))
+        assertFalse("a stale copy never stands in for a corrupt library", f.exists())
+    }
+
+    @Test
+    fun aKeyStoreFailureOnTheReReadWritesNothing() {
+        // every transition reads the sealed library again now: a key store error there is a
+        // refused write like it always was, never a crash and never a write on a guess
+        val dir = tempDir()
+        val store = ImportedMapLibraryStore(dir)
+        val there = written(store.commit(online()))
+        SafeStore.keyProvider = SafeStore.KeyProvider { throw IllegalStateException("keystore hiccup") }
+        assertEquals(LibraryLoad.Locked, store.loadCurrent())
+        assertEquals(LibraryCommit.Stale(LibraryLoad.Locked), store.commit(there.copy(preferredOnlineStyle = "OSM_STREET")))
+        assertEquals(LibraryCommit.Stale(LibraryLoad.Locked), store.create(online("OSM_STREET")))
+        SafeStore.keyProvider = SafeStore.KeyProvider { key }
+        assertEquals(LibraryLoad.Loaded(there), store.load())
+    }
+
+    @Test
+    fun createNeverWritesOverALibraryThatLoads() {
+        val dir = tempDir()
+        val store = ImportedMapLibraryStore(dir)
+        val there = written(store.create(online().copy(entries = listOf(entry(dir, "a")))))
+        assertEquals(LibraryCommit.Stale(LibraryLoad.Loaded(there)), store.create(online("OSM_STREET")))
+        assertEquals(LibraryLoad.Loaded(there), store.load())
+    }
+
+    @Test
+    fun aRebuiltLibraryNeverReusesAGenerationAnOldCopyHolds() {
+        val dir = tempDir()
+        val store = ImportedMapLibraryStore(dir)
+        var s = written(store.commit(online()))
+        repeat(3) { s = written(store.commit(s.copy(preferredOnlineStyle = "OSM_STREET"))) }
+        val old = s
+        // the file goes bad and gets rebuilt from scratch
+        val f = File(dir, ImportedMapLibraryStore.FILE_NAME)
+        f.writeBytes(f.readBytes().also { it[it.size - 3] = (it[it.size - 3] + 1).toByte() })
+        assertEquals(LibraryLoad.Corrupt, store.load())
+        var rebuilt = written(store.create(online().copy(recoveryPreservesOrphans = true)))
+        // however many writes follow, the copy from before never matches by accident
+        repeat(old.generation.toInt() + 2) {
+            assertTrue("write ${it + 1}", store.commit(old.copy(preferredOnlineStyle = "ESRI_TOPO")) is LibraryCommit.Stale)
+            rebuilt = written(store.commit(rebuilt))
+        }
+        assertEquals(LibraryLoad.Loaded(rebuilt), store.load())
+    }
+
     // ------------------------------------------------------------------ drafts (s8.1)
 
     private fun draft(contentKey: String, page: Int = 0, at: Long = 0L, points: Int = 1) = CalibrationDraft(

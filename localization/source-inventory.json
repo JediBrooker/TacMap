@@ -1766,6 +1766,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/sync/LegacyV2IdStore.kt",
+    "platform": "android",
+    "area": "sync-chat",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/sync/SnapshotValidator.kt",
     "platform": "android",
     "area": "sync-chat",
@@ -1827,6 +1833,12 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/util/DataKeyAuthModeTransition.kt",
+    "platform": "android",
+    "area": "shared-data-security",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/util/DataKeyCache.kt",
     "platform": "android",
     "area": "shared-data-security",
     "reviewStatus": "manual-review-needed"
@@ -2661,6 +2673,12 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/calibration/LibraryRecovery.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LegacyLibraryMigrator.kt",
     "platform": "android",
     "area": "import-export",
     "reviewStatus": "manual-review-needed"

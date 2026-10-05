@@ -94,12 +94,28 @@ class ActiveMapSelectionStore private constructor(
     internal fun loadRetainedImportedState(): ActiveMapSelectionLoadState =
         when (val container = loadActiveContainer()) {
             is ActiveMapSelectionContainerLoad.Loaded -> {
-                if (container.isLegacy) load(retainedFile, RETAINED_LABEL)
+                if (container.isLegacy) loadRetainedFile()
                 else container.state.retainedImported.asLoadState()
             }
-            ActiveMapSelectionContainerLoad.Missing -> load(retainedFile, RETAINED_LABEL)
+            ActiveMapSelectionContainerLoad.Missing -> loadRetainedFile()
             is ActiveMapSelectionContainerLoad.Unavailable ->
                 ActiveMapSelectionLoadState.Unavailable(container.reason)
+        }
+
+    /**
+     * the pre-v2 retained file. gone with its .corrupt copy next to it means an earlier read
+     * quarantined it, so it's corrupt, never "no retained map" (its pack would drop out of the
+     * migration and get reconciled away)
+     */
+    private fun loadRetainedFile(): ActiveMapSelectionLoadState =
+        when (val result = load(retainedFile, RETAINED_LABEL)) {
+            ActiveMapSelectionLoadState.Missing ->
+                if (hasQuarantinedRetainedSelection()) {
+                    ActiveMapSelectionLoadState.Unavailable(ActiveMapSelectionFailure.CORRUPT)
+                } else {
+                    result
+                }
+            else -> result
         }
 
     /**
@@ -254,8 +270,21 @@ class ActiveMapSelectionStore private constructor(
      */
     internal fun legacyPdfMigrationPending(): Boolean = !migrationMarker.isFile
 
-    /** anything for the library migration to read at all */
-    internal fun hasLegacyState(): Boolean = file.exists() || retainedFile.exists()
+    /**
+     * anything for the library migration to read at all. a quarantined selector counts too, on
+     * every pass: the read that moved it aside doesn't make it "no legacy left" (s13.1 L1)
+     */
+    internal fun hasLegacyState(): Boolean =
+        hasClearableLegacyState() ||
+            hasQuarantinedActiveSelectionRecovery() ||
+            hasQuarantinedRetainedSelection()
+
+    /** the live selector files, all D8 may clear. a .corrupt copy is never cleared (L2) */
+    internal fun hasClearableLegacyState(): Boolean = file.exists() || retainedFile.exists()
+
+    /** before a read that might quarantine them: corrupt vs only the copy left */
+    internal fun hasActiveSelectorFile(): Boolean = file.exists()
+    internal fun hasRetainedSelectorFile(): Boolean = retainedFile.exists()
 
     /**
      * After the imported-map library has durably taken over (contract s8.2), the
@@ -419,6 +448,11 @@ class ActiveMapSelectionStore private constructor(
     private fun hasQuarantinedActiveSelectionRecovery(): Boolean =
         filesDir.listFiles()?.any { candidate ->
             candidate.name.startsWith("$FILE_NAME.corrupt-")
+        } == true
+
+    private fun hasQuarantinedRetainedSelection(): Boolean =
+        filesDir.listFiles()?.any { candidate ->
+            candidate.name.startsWith("$RETAINED_FILE_NAME.corrupt-")
         } == true
 
     private fun saveSnapshot(snapshot: ActiveMapSelectionSnapshot): Boolean {

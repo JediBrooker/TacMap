@@ -2267,6 +2267,7 @@ internal fun MapScreen(
                 Text(
                     when (alert) {
                         is MapLaunchAlert.MigrationUncalibrated -> Messages.mapMigrationUncalibrated(alert.name)
+                        MapLaunchAlert.LibraryRecovered -> Messages.mapLibraryRecoveredNotice()
                         MapLaunchAlert.ImportInterrupted -> Messages.mapImportInterrupted()
                         MapLaunchAlert.ActiveFileChanged -> Messages.mapStateUnavailable()
                     }

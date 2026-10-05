@@ -246,6 +246,16 @@ internal class MapImportPipeline(
             }
         }
 
+        /**
+         * the copies a stuck marker names (and their .partial), what the launch sweep deletes.
+         * a restore that adopts orphan map files leaves these out, the parse already killed us once
+         */
+        fun interruptedFiles(journal: DocumentImportCopyStateStore): Set<File> =
+            runCatching { journal.all() }.getOrDefault(emptyList())
+                .filter { it.inspectStartedAtEpochMs != null }
+                .flatMap { st -> st.resultPath?.let { listOf(File(it), File("$it.partial")) }.orEmpty() }
+                .toSet()
+
         /** launch sweep: any marker still set means an inspection killed the process */
         fun sweepInterrupted(journal: DocumentImportCopyStateStore): Boolean {
             val stuck = runCatching { journal.all() }.getOrDefault(emptyList()).filter { it.inspectStartedAtEpochMs != null }

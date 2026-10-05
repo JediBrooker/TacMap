@@ -2,23 +2,34 @@ package com.tacmap.map
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.tacmap.calibration.InFlightImportFiles
 import com.tacmap.calibration.MBTilesStore
+import com.tacmap.map.render.TileIndex
 import com.tacmap.map.render.pdf.PdfBakeReader
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
+import com.tacmap.util.MissionKeyUnlockRule
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
 import java.io.File
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.serialization.json.*
 
 @RunWith(AndroidJUnit4::class)
 class MBTilesLifecycleInstrumentedTest {
+    @get:Rule val missionKey = MissionKeyUnlockRule()
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
@@ -93,16 +104,141 @@ class MBTilesLifecycleInstrumentedTest {
     }
 
     @Test
-    fun sixtyFourRowsAndBoundedUtf8PrefixAreAcceptedButViewsAreRejected() {
+    fun sixtyFourRowsAndBoundedUtf8PrefixAreAcceptedAndSoAreViews() {
         val file = makeMBTiles("row-boundary", (0..62).associate { "extension_$it" to "value" } +
             ("name" to ("a".repeat(511) + "😀" + "suffix")))
         requireNotNull(MBTilesStore.open(file.path)).use { assertEquals("a".repeat(128), it.metadata.name) }
-        val view = makeMBTiles("metadata-view")
+        // 3.0.0 refused this, MBTiles 1.3 allows views and 2.x opened them (contract s13.2)
+        val view = makeMBTiles("metadata-view", (0..62).associate { "extension_$it" to "value" } +
+            ("name" to ("a".repeat(511) + "😀" + "suffix")))
         SQLiteDatabase.openDatabase(view.path, null, SQLiteDatabase.OPEN_READWRITE).use {
             it.execSQL("ALTER TABLE metadata RENAME TO metadata_base")
             it.execSQL("CREATE VIEW metadata AS SELECT name,value FROM metadata_base")
+            it.execSQL("ALTER TABLE tiles RENAME TO tiles_base")
+            it.execSQL("CREATE VIEW tiles AS SELECT * FROM tiles_base")
+        }
+        requireNotNull(MBTilesStore.open(view.path)).use {
+            assertEquals("a".repeat(128), it.metadata.name)
+            assertEquals("010203", it.tileData(8, 0, 255)?.hex())
+        }
+        // and the 65 row cap still holds on a view
+        SQLiteDatabase.openDatabase(view.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("INSERT INTO metadata_base VALUES ('extension_63', 'value')")
         }
         assertNull(MBTilesStore.open(view.path))
+    }
+
+    @Test
+    fun deduplicatedNodeMbtilesPackImportsOpensAndDraws() {
+        // the node-mbtiles / TileMill / MapTiler schema, tiles is a view over map + images
+        val png = ByteArrayOutputStream().use { out ->
+            val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+        val file = File(context.cacheDir, "${System.nanoTime()}-dedup.mbtiles")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            db.execSQL("CREATE TABLE metadata (name text, value text)")
+            db.execSQL("INSERT INTO metadata VALUES ('name', 'Dedup pack'), ('format', 'png'), " +
+                "('minzoom', '0'), ('maxzoom', '1'), ('bounds', '-180,-85,180,85'), ('tacmap_tile_px', '256')")
+            db.execSQL("CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text, grid_id text)")
+            db.execSQL("CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)")
+            db.execSQL("CREATE TABLE images (tile_data blob, tile_id text)")
+            db.execSQL("CREATE UNIQUE INDEX images_id ON images (tile_id)")
+            // five tiles share one image, which is the whole point of the dedup schema
+            db.execSQL("INSERT INTO map VALUES (0,0,0,'red',NULL), (1,0,0,'red',NULL), (1,1,0,'red',NULL), " +
+                "(1,0,1,'red',NULL), (1,1,1,'red',NULL)")
+            db.execSQL("INSERT INTO images VALUES (?, 'red')", arrayOf(png))
+            db.execSQL("CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, " +
+                "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = map.tile_id")
+        }
+
+        requireNotNull(MBTilesStore.open(file.path)).use { store ->
+            assertEquals("Dedup pack", store.metadata.name)
+            assertEquals("png", store.metadata.format)
+            assertEquals(0, store.metadata.minZoom)
+            assertEquals(1, store.metadata.maxZoom)
+            assertEquals("256", store.rawMetadata("tacmap_tile_px"))
+        }
+        val source = requireNotNull(OfflineTileMapSourceAndroid.open(file.path))
+        try {
+            assertEquals("Dedup pack", source.displayName)
+            val tile = runBlocking { source.renderTileSource().loadTile(TileIndex(1, 1, 0)) }
+            assertNotNull("dedup tile must draw", tile)
+            assertEquals(Color.RED, tile!!.getPixel(128, 128))
+            tile.recycle()
+        } finally {
+            source.close()
+        }
+
+        // import admission goes through the same open, so a re-import is accepted too
+        val journalDir = File(context.cacheDir, "mbtiles-import-journal-${System.nanoTime()}").apply { mkdirs() }
+        val pipeline = MapImportPipeline(context, DocumentImportCopyJournal.forTests(journalDir))
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val outcome = runBlocking { pipeline.runMbtiles(Uri.fromFile(file), "dedup-${System.nanoTime()}", snapshot) { } }
+        assertTrue("import refused: $outcome", outcome is PreparedOutcome.Mbtiles)
+        val prepared = (outcome as PreparedOutcome.Mbtiles).prepared
+        InFlightImportFiles.release(prepared.file)
+        prepared.file.delete()
+    }
+
+    @Test
+    fun aTileReadThatNeverEndsOnAViewIsCutOffAsAMissingTile() {
+        // the aggregate never touches tile_data so this passes admission, then every read spins forever
+        val file = makeMBTiles("endless-tile-read")
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("ALTER TABLE tiles RENAME TO tiles_base")
+            it.execSQL("CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, " +
+                "(WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) SELECT X'01' FROM n WHERE i < 0 LIMIT 1) " +
+                "AS tile_data FROM tiles_base")
+        }
+        requireNotNull(MBTilesStore.open(file.path)).use { store ->
+            val started = System.nanoTime()
+            assertNull(store.tileData(8, 0, 255))
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            val budget = admissionFixture()["viewQueryBudgetMs"]!!.jsonPrimitive.long
+            assertTrue("read took $elapsedMs ms", elapsedMs in (budget - 10)..(budget + 5_000))
+        }
+    }
+
+    @Test
+    fun generatedRelationCasesAdmitTablesAndViewsTheSameWay() {
+        val fixture = admissionFixture()
+        val cases = fixture["relationCases"]!!.jsonArray.map { it.jsonObject }
+        // a generator change that drops rows shouldn't pass by testing less
+        assertTrue("only ${cases.size} relation cases", cases.size >= 14)
+        assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "nodeMbtilesDedup" })
+        assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "tilesViewEndless" })
+        cases.forEach { case ->
+            val id = case["id"]!!.jsonPrimitive.content
+            val file = File(context.cacheDir, "${System.nanoTime()}-relation-$id.mbtiles")
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+            }
+            val testBudget = case["testBudgetMs"]?.jsonPrimitive?.long
+            val started = System.nanoTime()
+            val store = MBTilesStore.open(file.path, testBudget ?: fixture["admissionBudgetMs"]!!.jsonPrimitive.long)
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            val expect = case["expect"]!!.jsonObject
+            assertEquals(id, expect["accepted"]!!.jsonPrimitive.boolean, store != null)
+            // the budget is what stopped it, not some other limit after a long hang
+            if (testBudget != null) assertTrue("$id took $elapsedMs ms", elapsedMs in (testBudget - 10)..(testBudget + 5_000))
+            store?.use { s ->
+                assertEquals(id, expect["minZoom"]!!.jsonPrimitive.int, s.metadata.minZoom)
+                assertEquals(id, expect["maxZoom"]!!.jsonPrimitive.int, s.metadata.maxZoom)
+                assertEquals(id, expect["name"]?.jsonPrimitive?.contentOrNull, s.metadata.name)
+                assertEquals(id, expect["format"]?.jsonPrimitive?.contentOrNull, s.metadata.format)
+                expect["tiles"]?.jsonArray?.forEach { probe ->
+                    val p = probe.jsonObject
+                    val z = p["z"]!!.jsonPrimitive.int; val x = p["x"]!!.jsonPrimitive.int; val y = p["y"]!!.jsonPrimitive.int
+                    assertEquals("$id $z/$x/$y", p["hex"]!!.jsonPrimitive.contentOrNull, s.tileData(z, x, y)?.hex())
+                }
+                expect["extensions"]?.jsonObject?.forEach { (key, value) ->
+                    assertEquals("$id $key", value.jsonPrimitive.contentOrNull, s.rawMetadata(key))
+                }
+            }
+        }
     }
 
     @Test
@@ -188,10 +324,10 @@ class MBTilesLifecycleInstrumentedTest {
         fixture["knownValueMaxCharacters"]!!.jsonObject.forEach { (key, bound) ->
             assertEquals(bound.jsonPrimitive.int, MBTilesStore.METADATA_VALUE_LIMITS[key]!!.first)
         }
-        fixture["cases"]!!.jsonArray.forEach { item ->
+        for (variant in listOf(null, "metadataView", "bothViews")) fixture["cases"]!!.jsonArray.forEach { item ->
             val case = item.jsonObject
-            val id = case["id"]!!.jsonPrimitive.content
-            val file = makeMBTiles("generated-$id")
+            val id = case["id"]!!.jsonPrimitive.content + (variant?.let { " ($it)" } ?: "")
+            val file = makeMBTiles("generated-${case["id"]!!.jsonPrimitive.content}")
             SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.execSQL("DROP TABLE metadata")
                 db.execSQL("CREATE TABLE metadata(name,value)")
@@ -212,6 +348,7 @@ class MBTilesLifecycleInstrumentedTest {
                         db.execSQL("INSERT INTO metadata VALUES (?,?)", arrayOf(key, value))
                     }
                 }
+                variantSql(fixture, variant).forEach(db::execSQL)
             }
             val store = MBTilesStore.open(file.path)
             assertEquals(id, case["accepted"]!!.jsonPrimitive.boolean, store != null)
@@ -228,9 +365,10 @@ class MBTilesLifecycleInstrumentedTest {
             .use { Json.parseToJsonElement(it.reader().readText()).jsonObject["mbtilesMetadataAdmission"]!!.jsonObject }
         assertEquals(0, fixture["tileZoomMin"]!!.jsonPrimitive.int)
         assertEquals(MBTilesStore.MAX_ZOOM, fixture["tileZoomMax"]!!.jsonPrimitive.int)
-        fixture["tileZoomCases"]!!.jsonArray.forEach { element ->
-            val case = element.jsonObject; val id = case["id"]!!.jsonPrimitive.content
-            val file = makeMBTiles("generated-zoom-$id")
+        for (variant in listOf(null, "tilesView", "bothViews")) fixture["tileZoomCases"]!!.jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val id = case["id"]!!.jsonPrimitive.content + (variant?.let { " ($it)" } ?: "")
+            val file = makeMBTiles("generated-zoom-${case["id"]!!.jsonPrimitive.content}")
             SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.execSQL("DROP TABLE tiles")
                 db.execSQL("CREATE TABLE tiles(zoom_level,tile_column,tile_row,tile_data)")
@@ -243,6 +381,7 @@ class MBTilesLifecycleInstrumentedTest {
                     else -> error("unsupported generated type")
                 }
                 db.execSQL("INSERT INTO tiles VALUES (?,0,0,X'010203')", arrayOf(value))
+                variantSql(fixture, variant).forEach(db::execSQL)
             }
             val store = MBTilesStore.open(file.path)
             assertEquals(id, case["accepted"]!!.jsonPrimitive.boolean, store != null)
@@ -273,9 +412,10 @@ class MBTilesLifecycleInstrumentedTest {
     fun generatedLazyBakeExtensionAdmissionIsBoundedAndKeepsOrdinaryPacks() {
         val fixture = InstrumentationRegistry.getInstrumentation().context.assets.open("import_limits.json")
             .use { Json.parseToJsonElement(it.reader().readText()).jsonObject["mbtilesMetadataAdmission"]!!.jsonObject }
-        fixture["extensionCases"]!!.jsonArray.forEach { element ->
-            val case = element.jsonObject; val id = case["id"]!!.jsonPrimitive.content
-            val file = makeMBTiles("generated-extension-$id")
+        for (variant in listOf(null, "metadataView", "bothViews")) fixture["extensionCases"]!!.jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val id = case["id"]!!.jsonPrimitive.content + (variant?.let { " ($it)" } ?: "")
+            val file = makeMBTiles("generated-extension-${case["id"]!!.jsonPrimitive.content}")
             SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
                 db.execSQL("DROP TABLE metadata")
                 db.execSQL("CREATE TABLE metadata(name,value)")
@@ -293,6 +433,7 @@ class MBTilesLifecycleInstrumentedTest {
                         db.execSQL("INSERT INTO metadata VALUES (?,?)", arrayOf(key, value))
                     }
                 }
+                variantSql(fixture, variant).forEach(db::execSQL)
             }
             val store = MBTilesStore.open(file.path)
             assertEquals(id, case["mapAccepted"]!!.jsonPrimitive.boolean, store != null)
@@ -302,6 +443,17 @@ class MBTilesLifecycleInstrumentedTest {
             }
         }
     }
+
+    private fun admissionFixture(): JsonObject =
+        InstrumentationRegistry.getInstrumentation().context.assets.open("import_limits.json")
+            .use { Json.parseToJsonElement(it.reader().readText()).jsonObject["mbtilesMetadataAdmission"]!!.jsonObject }
+
+    /** variantRule: null is the plain table, otherwise the fixture's SQL turns relations into views */
+    private fun variantSql(fixture: JsonObject, variant: String?): List<String> =
+        if (variant == null) emptyList() else fixture["relationVariants"]!!.jsonArray.map { it.jsonObject }
+            .single { it["id"]!!.jsonPrimitive.content == variant }["sql"]!!.jsonArray.map { it.jsonPrimitive.content }
+
+    private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
 
     private fun makeMBTiles(
         name: String,

@@ -155,6 +155,15 @@ class UnitSyncRuntime(
             _foregroundEpoch.value + 1L
         }
         val current = manager ?: return
+        pauseForKeyLock(current)
+        // whichever way that went it may have queued the presence clean point on the
+        // persistence worker. let it (and whatever was already sealing there) land while the
+        // key is still cached, the DEK locks as soon as this returns and nothing may unwrap
+        // it again after that
+        current.awaitPersistenceWorkerIdle(SyncManager.KEY_LOCK_DRAIN_MS)
+    }
+
+    private fun pauseForKeyLock(current: SyncManager) {
         val optedInV3Location = opsec.backgroundUnitSyncLocation.value &&
             current.canArmBackgroundLocationService()
         val eligible = optedInV3Location && authorizedServiceGeneration != null &&

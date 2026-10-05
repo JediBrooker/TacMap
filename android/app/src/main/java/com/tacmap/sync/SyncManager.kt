@@ -27,6 +27,9 @@ import com.tacmap.util.SealedEnvelope
 import com.tacmap.util.DurablePreferenceCommit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -312,6 +315,8 @@ class SyncManager internal constructor(
     private val suppressedUntilLocalEdit = HashMap<String, Long>() // localId -> journal generation
     private var mutationsPaused = false
     private val lastByV2 = HashMap<String, String>()
+    // v2 casing a 2.x iOS sender used per object, sticky and sealed per room (plans/04 section 16)
+    private var legacyV2Ids: LegacyV2IdStore? = null
     private var observeJob: Job? = null
     private var revisionJob: Job? = null
     private val modelRevisionJournal = LocalModelRevisionJournal(appFilesDir)
@@ -582,6 +587,7 @@ class SyncManager internal constructor(
         val stagedKinds = HashMap<String, String>()
 
         fun localKind(localId: String): String? = stagedKinds[localId] ?: before.kind(localId)
+        fun localIdOf(canonical: String): String? = before.localIdOf(canonical)
         var peers: Map<String, PresencePeer>? = null
         var onlineMembers: Map<String, OnlineMember>? = null
         var chatRecipientsDirty = false
@@ -598,6 +604,8 @@ class SyncManager internal constructor(
         val committedLayers: List<com.tacmap.drawings.DrawingLayer>,
         /** localId -> kind at snapshot-begin, a copy the worker can read safely. */
         private val localKinds: Map<String, String>,
+        /** lowercase UUID -> stored id for objects kept in another casing, same snapshot-begin copy */
+        private val localIdAliases: Map<String, String>,
         private val stageEligible: (SyncReplayState.AuthenticatedMutation) -> Boolean,
         parent: Job,
         dispatcher: kotlinx.coroutines.CoroutineDispatcher,
@@ -622,7 +630,7 @@ class SyncManager internal constructor(
                 previous?.join()
                 for ((rec, wireId) in items) {
                     val check = try {
-                        SnapshotRecordClassifier.classify(validator, rec, wireId, staged, localKinds::get)
+                        SnapshotRecordClassifier.classify(validator, rec, wireId, staged, localKinds::get, localIdAliases::get)
                     } catch (cancel: kotlinx.coroutines.CancellationException) {
                         throw cancel
                     } catch (_: Throwable) {
@@ -690,6 +698,13 @@ class SyncManager internal constructor(
             id in features -> "drawing"
             else -> null
         }
+
+        private val caseAliases: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
+            SnapshotValidator.caseAliases(waypoints.keys + features.keys) { it in waypoints || it in features }
+        }
+
+        /** the id an object with this lowercase UUID is stored under, when that isn't lowercase */
+        fun localIdOf(canonical: String): String? = caseAliases[canonical]
     }
 
     private var presenceJob: Job? = null
@@ -731,6 +746,7 @@ class SyncManager internal constructor(
         get() = surfacedIssueKeys.mapTo(HashSet()) { it.substringBefore('|') }
     internal fun skippedCategoryForTests(wireId: String): SnapshotRecordCategory? = skippedWireIds[wireId]
     internal val lastSnapshotVerifiedCleanForTests: Boolean get() = pendingVerifiedClean
+    internal fun rememberedV2IdForTests(stateKey: String): String? = legacyV2Ids?.remembered(stateKey)
     internal val mutationsPausedForTests: Boolean get() = mutationsPaused
 
     /** The dialog's Retry after a stop. Clears every failure counter and connects. */
@@ -1418,7 +1434,15 @@ class SyncManager internal constructor(
                 )
                 return
             }
+            // learned 2.x iOS casing goes in before the first diff can send anything
+            val v2Ids = LegacyV2IdStore(File(appFilesDir, LegacyV2IdStore.DIRECTORY_NAME), keys.roomId)
+            withContext(env.persistenceDispatcher) { v2Ids.load() }
+            if (lifecycleGate.isDisposed || token != joinToken) {
+                wipeDerived(keys)
+                return
+            }
             protocolVersion = 2
+            legacyV2Ids = v2Ids
             chatHistoryStore.close()
             clearChatTransport(markPendingFailed = true)
             roomKey = keys.roomKey
@@ -1478,6 +1502,7 @@ class SyncManager internal constructor(
         versions.clear(); lastContent.clear(); kindById.clear(); exportCache.clear()
         forcedLocalDiff.clear(); resolvingPendingModel = false
         forcedLegacyDeletes.clear()
+        legacyV2Ids = null
         clearOutboundDeliveries(markForReconciliation = false)
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
@@ -1647,6 +1672,7 @@ class SyncManager internal constructor(
         versions.clear(); lastContent.clear(); kindById.clear(); exportCache.clear()
         forcedLocalDiff.clear(); resolvingPendingModel = false
         forcedLegacyDeletes.clear()
+        legacyV2Ids = null
         clearOutboundDeliveries(markForReconciliation = false)
         v2SnapshotTimeoutJob?.cancel(); v2SnapshotTimeoutJob = null
         v2SnapshotGate.cancel()
@@ -1938,6 +1964,21 @@ class SyncManager internal constructor(
             }
         }
         flushLiveBatch()
+        persistLegacyV2Ids()
+    }
+
+    /** At most one sealed write per inbound batch (a v2 snapshot lands in one), and only if something new was learned. */
+    private suspend fun persistLegacyV2Ids() {
+        val store = legacyV2Ids ?: return
+        // nothing durable behind the key lock, it stays dirty for the next batch after unlock
+        if (lifecycleGate.isDisposed || backgroundPresenceOnly || awaitingForegroundStores) return
+        val text = store.takePendingWrite() ?: return
+        val written = withContext(kotlinx.coroutines.NonCancellable) {
+            withContext(env.persistenceDispatcher) { store.write(text) }
+        }
+        // key locked in between, full disk: keep it dirty so the next batch tries again. otherwise
+        // a session that learns nothing new never writes it and a restart sends lowercase
+        if (!written) store.writeFailed()
     }
 
     private fun onSocketOpened(webSocket: SyncWebSocket, connectionGeneration: Long) {
@@ -2553,11 +2594,15 @@ class SyncManager internal constructor(
                     if (!revisionJournalAvailable) { persistenceFailure(); return@collect }
                     if (event.origin != ModelMutationOrigin.REMOTE_SYNC &&
                         !modelRevisionJournal.bumpAllOffMain(event.localIds, env.persistenceDispatcher)) {
+                        // the bump is NonCancellable, so it comes back here even after a pause
+                        // detached the stores and relocked the key it needed. thats not a
+                        // security stop and must not kill background presence, the foreground
+                        // attach reloads the journal from disk
+                        if (!currentCoroutineContext().isActive || lifecycleGate.isDisposed ||
+                            waypointStoreRef !== observedWaypoints || drawingStoreRef !== observedDrawings) return@collect
                         revisionJournalAvailable = false
-                        if (!lifecycleGate.isDisposed) {
-                            reportError(Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(), SyncIssueKind.SECURITY)
-                            persistenceFailure()
-                        }
+                        reportError(Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsMessage(), SyncIssueKind.SECURITY)
+                        persistenceFailure()
                         return@collect
                     }
                 }
@@ -2717,40 +2762,51 @@ class SyncManager internal constructor(
         }
     }
 
+    /**
+     * v2 frame id for a local object. An object that reached us under a 2.x
+     * iOS uppercase id goes back out under that exact id, AAD and signature
+     * included, or 2.x iOS echoes a put plus a del of our casing and the
+     * object is gone room wide (gap-v2-room-2x-interop-2).
+     */
+    private fun legacyV2WireId(localId: String): String =
+        LegacyV2Ids.outboundId(localId, LegacyV2Ids.stateKey(localId)?.let { legacyV2Ids?.remembered(it) })
+
     private fun sendPut(id: String, v: Long, kind: String, content: String) {
         val key = roomKey ?: return
+        val wireId = legacyV2WireId(id)
         // Sign the write, then seal {content, pub, sig} together. The signature
         // rides INSIDE the sealed blob so the relay stays E2E-blind to device
         // identity; a receiver proves room-key possession by opening it and
         // device authorship by verifying the sig against the pinned key.
-        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, kind, clientId, content))
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(wireId, v, kind, clientId, content))
         val inner = JSONObject().apply { put("c", content); put("pub", myPublicKey); put("sig", sig) }
-        val aad = SyncCrypto.aad(id, v, kind)
+        val aad = SyncCrypto.aad(wireId, v, kind)
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
         val rid = newDeliveryRequestId()
         val frame = JSONObject().apply {
-            put("t", "put"); put("id", id); put("v", v); put("by", clientId); put("kind", kind); put("ct", ct)
+            put("t", "put"); put("id", wireId); put("v", v); put("by", clientId); put("kind", kind); put("ct", ct)
             put("rid", rid)
         }.toString()
         queueDelivery(PendingOutboundDelivery(
-            id, rid, activeConnectionGeneration, clientId, null, id, v.toString(), kind,
+            id, rid, activeConnectionGeneration, clientId, null, wireId, v.toString(), kind,
             ciphertextHash(ct), contentHash(content), content, frame,
         ))
     }
 
     private fun sendDel(id: String, v: Long) {
         val key = roomKey ?: return
-        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(id, v, "del", clientId, ""))
+        val wireId = legacyV2WireId(id)
+        val sig = SyncSigning.sign(deviceSeed, SyncSigning.objectMessage(wireId, v, "del", clientId, ""))
         val inner = JSONObject().apply { put("pub", myPublicKey); put("sig", sig) }
-        val aad = SyncCrypto.aad(id, v, "del")
+        val aad = SyncCrypto.aad(wireId, v, "del")
         val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(key, inner.toString().toByteArray(Charsets.UTF_8), aad))
         val rid = newDeliveryRequestId()
         val frame = JSONObject().apply {
-            put("t", "del"); put("id", id); put("v", v); put("by", clientId); put("ct", ct)
+            put("t", "del"); put("id", wireId); put("v", v); put("by", clientId); put("ct", ct)
             put("rid", rid)
         }.toString()
         queueDelivery(PendingOutboundDelivery(
-            id, rid, activeConnectionGeneration, clientId, null, id, v.toString(), "del",
+            id, rid, activeConnectionGeneration, clientId, null, wireId, v.toString(), "del",
             ciphertextHash(ct), null, null, frame,
         ))
     }
@@ -3192,6 +3248,8 @@ class SyncManager internal constructor(
         private const val MAX_SNAPSHOT_ITEMS = 10_000
         private const val MAX_SNAPSHOT_AGGREGATE_BYTES = 54_525_952L
         internal const val V2_SNAPSHOT_TIMEOUT_MS = 10_000L
+        /** How long the pause holds the main thread for sealed writes before the DEK locks. */
+        internal const val KEY_LOCK_DRAIN_MS = 2_000L
         private const val CHAT_KEY_RETRY_DELAY_MS = 2_000L
         private const val CHAT_KEY_MAX_ATTEMPTS = 4
         private const val MAX_VERSION = 1_000_000_000_000L   // matches relay MAX_V
@@ -3411,6 +3469,23 @@ class SyncManager internal constructor(
         }
     }
 
+    /**
+     * Parks the caller until every sealed write already handed to the persistence worker has
+     * landed, at most [timeoutMs]. UnitSyncRuntime runs this right before MainActivity locks
+     * the DEK, so the clean point a pause queues seals with the key that's still cached
+     * instead of hitting the lock. The worker is a single FIFO lane, so a marker posted now
+     * runs after all of it. Writes still waiting on the owner thread can't move while it's
+     * parked here; they fail closed after the lock and a failed clean point keeps the safe floor.
+     */
+    internal fun awaitPersistenceWorkerIdle(timeoutMs: Long): Boolean {
+        val worker = env.persistenceDispatcher
+        // same dispatcher as the owner = withContext(io) ran inline, nothing can be queued
+        if (worker === env.dispatcher) return true
+        val drained = java.util.concurrent.CountDownLatch(1)
+        worker.asExecutor().execute { drained.countDown() }
+        return drained.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
     /** Peers as this frame should see them: the open batch's staged copy, or live. */
     private var peersView: Map<String, PresencePeer>
         get() = liveBatch?.peers ?: _peers.value
@@ -3528,10 +3603,12 @@ class SyncManager internal constructor(
                 val pins = replay.actorPinsCopy()
                 val model = ModelLookup()
                 val generations = modelRevisionJournal.generationsCopy()
+                val kinds = localObjectKinds()
                 snapshotRun = SnapshotRun(
                     validator = SnapshotValidator(key, keys.roomIdRaw, keys.metadataKey, pins::get, displayDensity),
                     committedLayers = drawingStore.committedDocument.value.layers,
-                    localKinds = localObjectKinds(),
+                    localKinds = kinds,
+                    localIdAliases = SnapshotValidator.caseAliases(kinds.keys, kinds::containsKey),
                     stageEligible = replay.snapshotStageEligibility(model::hash, { generations[it] ?: 0L }),
                     parent = managerJob,
                     dispatcher = env.validationDispatcher,
@@ -3659,6 +3736,9 @@ class SyncManager internal constructor(
             modelRevisionJournal.awaitPersistence()
             if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
             before = ModelLookup()
+            // an object kept under an uppercase id may have come or gone while validation ran,
+            // a put has to land on whatever id the stores use now
+            val rebound = rebindLocalIds(validated, before)
             // Stores may have changed while validation ran. A newly created
             // opposite-kind object is unsupported before any replay commit.
             val collided = validated.removeAll { record ->
@@ -3667,7 +3747,7 @@ class SyncManager internal constructor(
                     true
                 } else false
             }
-            restageIfLayersChanged(validated, run.committedLayers, before.document.layers, skips, collided)
+            restageIfLayersChanged(validated, run.committedLayers, before.document.layers, skips, collided || rebound)
             if (!stillCurrent(socket, connectionGeneration) || replayState !== replay) return
             if (before.isCurrent()) break
         }
@@ -3738,6 +3818,26 @@ class SyncManager internal constructor(
         !lifecycleGate.isDisposed && !backgroundPresenceOnly && !awaitingForegroundStores &&
             ws === socket && activeConnectionGeneration == connectionGeneration
 
+    /**
+     * Puts whose local id no longer matches the casing the stores keep that UUID under now.
+     * They get the current one, and true means the caller restages so the folded object and
+     * its expected hash follow. Nothing stored under that UUID any more keeps what it had,
+     * the bookkeeping for a delete is still keyed by it.
+     */
+    private fun rebindLocalIds(validated: MutableList<ValidatedV3>, model: ModelLookup): Boolean {
+        var changed = false
+        val iterator = validated.listIterator()
+        while (iterator.hasNext()) {
+            val record = iterator.next() as? ValidatedV3.Put ?: continue
+            val canonical = SyncIdentity.canonicalUuid(record.localId) ?: continue
+            val now = model.localIdOf(canonical) ?: canonical
+            if (now == record.localId || model.kind(now) == null) continue
+            iterator.set(record.copy(localId = now))
+            changed = true
+        }
+        return changed
+    }
+
     /** User touched layers while the snapshot was in flight: recompute against what's committed now (section 3). */
     private suspend fun restageIfLayersChanged(
         validated: MutableList<ValidatedV3>,
@@ -3760,7 +3860,7 @@ class SyncManager internal constructor(
                 val parsed = runCatching { GeoJsonImporter.parse(
                     record.content, staged, staged.firstOrNull()?.id ?: DrawingDocument.DEFAULT_LAYER_ID,
                     density = displayDensity, keepRingAnchors = true,
-                ) }.getOrNull()
+                ) }.getOrNull()?.let { SnapshotValidator.withLocalId(it, record.localId) }
                 val hash = parsed?.let {
                     SnapshotValidator.expectedModelHash(it, record.localId, staged, displayDensity)
                 }
@@ -3919,6 +4019,8 @@ class SyncManager internal constructor(
             )
         }.getOrNull() ?: return
         if (!isValidLegacySyncPut(rawId, kind, imported)) return
+        // accepted, applied or not, so learn the casing a 2.x iOS sender used
+        legacyV2Ids?.learn(rawId)
         // the local object lives under the lowercase key too, otherwise the next
         // diff would see two ids and echo a delete back (S3-01 in reverse)
         val parsed = imported.copy(
@@ -3991,6 +4093,8 @@ class SyncManager internal constructor(
         val plain = SyncCrypto.open(key, SyncCrypto.decodeBase64(ctB64), aad) ?: return
         val inner = runCatching { JSONObject(String(plain, Charsets.UTF_8)) }.getOrNull() ?: return
         if (!verifyObjectSig(by, inner, SyncSigning.objectMessage(rawId, v, "del", by, ""))) return
+        // same as a put: accepted is enough, the entry outlives the delete so an undo keeps the casing
+        legacyV2Ids?.learn(rawId)
         val recovery = forcedLegacyDeletes[id]
         if (recovery != null) {
             val exactSnapshotConfirmation = snapshotGeneration != null &&
@@ -4402,7 +4506,9 @@ class SyncManager internal constructor(
         val batch = openLiveBatch() ?: return
         try {
             val validator = liveValidatorOrNull() ?: return
-            val checked = SnapshotRecordClassifier.classify(validator, rec, wireId, batch.layers, batch::localKind)
+            val checked = SnapshotRecordClassifier.classify(
+                validator, rec, wireId, batch.layers, batch::localKind, batch::localIdOf,
+            )
             var validated = when (checked) {
                 is V3Check.Skip -> {
                     recordSkip(wireId, checked.reason.category)

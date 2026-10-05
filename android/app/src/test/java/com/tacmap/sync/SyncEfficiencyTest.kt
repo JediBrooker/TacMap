@@ -218,11 +218,11 @@ class SyncEfficiencyTest {
             var found: String? = null
             for (id in ids) {
                 oldHmacs++
-                if (SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id)) == wire) { found = id; break }
+                if (SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id)!!) == wire) { found = id; break }
             }
             if (found == null) for (id in ids) {
                 oldHmacs++
-                if (SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id)) == wire) { found = id; break }
+                if (SyncIdentity.wireObjectId(keys.metadataKey, SyncIdentity.uuidToBytes(id)!!) == wire) { found = id; break }
             }
             assertNull(found)
         }

@@ -522,7 +522,29 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   [ADR-002](https://github.com/JediBrooker/TacMap/blob/main/docs/security/ADR-002-key-lifetime-and-rotation.md).
 
   Android detaches mission stores and clears its general-key cache on Activity
-  pause. iOS keeps the map view mounted to preserve authorized recording:
+  pause. The one exception is TacMap's own share sheet: that translucent chooser
+  pauses the Activity with the map still visible behind it, so the same lock runs
+  at the following onStop instead (as soon as you actually leave: the share
+  target opens, Home, recents or screen off), and closing the sheet back into
+  TacMap locks nothing. While that sheet is up the mission stores stay attached,
+  the key stays cached and Unit Sync keeps processing. Before clearing the cache,
+  Android waits up to two seconds for Unit Sync sealed writes already handed to
+  its persistence worker, the presence clean point included. Once cleared, the
+  general key is not unwrapped again in either mode until the foreground unlock
+  (device-mode resume, the App Lock PIN, a platform credential or a confirmed
+  protection change). A write still in flight behind the lock fails closed
+  instead of re-caching the key: a Unit Sync write that missed the two seconds
+  is dropped without a security stop, and a map import still copying, or a
+  map-library change still being written, when the app leaves the foreground
+  (or while the Activity is recreated for a configuration change it doesn't
+  handle) fails without deleting anything and has to be retried. A PDF bake that
+  finishes in the background doesn't try to write: its finished tiles wait,
+  unrecorded, in the app-private bake work folder (cleared at the next process
+  start) until the foreground unlock, then are recorded on their PDF's library
+  entry. With no map screen open at that point the bake is recorded straight
+  into the sealed library, under the same write-counter check. Cancelling the
+  bake while it waits deletes the file.
+  iOS keeps the map view mounted to preserve authorized recording:
   previously decrypted mission/library objects, track points and rendered tiles
   may remain in memory beneath the opaque lock view. AUTH mode clears the
   general key cache; DEVICE mode may retain it under the accepted lifecycle
@@ -633,7 +655,16 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
   migration (a quarantined legacy store included), the sweep is skipped. The same rule
   holds for the managed-file reconcile and the calibration-draft prune: none of them ever
-  runs from a library state the app made up to stand in for one it couldn't read. A bake record the app would not have written names nothing, and nothing
+  runs from a library state the app made up to stand in for one it couldn't read. Nor
+  from an older copy of the library a screen kept in memory: on Android the reconcile's
+  keep set, its list of files still being written, the bake sweep and the draft prune all
+  come from the sealed library read under the managed-files lock, and every library write
+  is checked under that lock against the sealed library's write counter. A second copy of
+  the map screen, or a bake that finishes after the screen that started it has closed,
+  therefore can't write back an older library or get another screen's imports,
+  calibrations or baked tiles deleted; it re-reads the library and applies its change on
+  top, or the change is refused. The Unit Sync notification brings the running app to the
+  front instead of opening a second copy of it. A bake record the app would not have written names nothing, and nothing
   treats a name outside the `tacmap-bake-<id>.mbtiles` form as a bake. It does not
   depend on the PDF being present, so plaintext tiles left by a failed delete don't
   outlive the next launch. Files from the pre-WP2 tiler (`tacmap-<uuid>.mbtiles`) and
@@ -666,7 +697,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   never deletes anything it can't vouch for: a stored PDF content key must match a fresh hash before its calibration
   is migrated, and a document that will not open never gets a fabricated page count.
   If the mission-data key is locked, or a write the migration needs (calibration drafts first, then the
-  library) fails, nothing is written, cleared or deleted and Retry is offered. If a legacy store is damaged
+  library) fails, nothing is written, cleared or deleted and Retry is offered. One exception on Android: the
+  store records a library as sealed-only before its bytes go down, so a library write that fails partway (a
+  full disk) leaves that record, the never-written library then counts as unreadable, and its Retry is the
+  rebuild above; the old stores stay as they are and still nothing is deleted. If a legacy store is damaged
   or was quarantined (only its `.corrupt-<time>` copy is left), or a legacy PDF is present but can't be read
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
@@ -678,8 +712,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
   leftovers). Nothing is lost in either case.
   Old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather than
-  being dropped. A library that was never written while map files sit in app storage is handled the same way, so a
-  missing or quarantined index can never authorise deleting those files. Downgrading to an implementation that knows only one retained map is
+  being dropped. A library that was never written, with no old stores left to migrate, while map files sit in app
+  storage is handled the same way, so neither a missing nor a quarantined index can authorise deleting those
+  files. When old stores that read cleanly are migrated instead, the library written from them permits
+  cleanup, so the reconcile after it keeps the files those stores name and removes any other map file in app
+  storage, much like 2.x's own cold-start cleanup, which kept only the active and retained map. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
   recognize as retained, requiring re-import. This is a library-format/lifecycle
   boundary, not a marketing-version boundary.
@@ -837,14 +874,17 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   reload raises each stored counter's acceptance floor by 15, capped at the
   largest valid counter, so a crash cannot make an already exposed position
   acceptable again. Clean points write exact counters; a failed clean point
-  keeps the preceding safe floor (ADR-001 section 8).
+  keeps the preceding safe floor (ADR-001 section 8). On Android the pause gives
+  its clean point up to two seconds to seal before the mission key locks; one
+  that misses that bound fails against the lock and keeps the floor.
 - **A joined room survives a pause (iOS and Android).** Backgrounding pauses
   mission processing even when the mission-data key stays available. Key lock,
   App Lock or detached stores also close the ordinary session; an explicitly
   eligible v3 background-presence bridge is the separate exception above.
-  Android Activity pause detaches mission stores and clears the general key
-  cache. Without the eligible presence bridge, the socket closes without a
-  signed leave; with it, only presence continues. The joined room is kept,
+  Android Activity pause (behind TacMap's own share sheet, the onStop after it)
+  detaches mission stores, lets the queued clean point seal and then clears the
+  general key cache. Without the eligible presence bridge, the socket closes
+  without a signed leave; with it, only presence continues. The joined room is kept,
   v2 or v3, with or without location sharing: the derived room keys, the device signing seed and the replay-state
   object stay **in memory only**, and the app reconnects by itself once the
   key is unlocked and fresh stores are attached. On iOS a transient
@@ -853,7 +893,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   (device-bound mode) and no App Lock overlay is shown; in auth-bound mode the
   key locks on `.inactive` and the session ends as before. That in-memory
   material is cleared on leave, on a join-code change and at process death.
-  Android detaches the mission stores and clears the general-key cache;
+  Android detaches the mission stores and clears the general-key cache, and
+  nothing re-caches it before the foreground unlock;
   iOS gates inbound processing and covers the mounted UI, presented sheets
   included, without erasing every already decrypted model or tile. The
   authorized recording-key exception and DEVICE cache policy above still apply.

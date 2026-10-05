@@ -42,8 +42,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.tacmap.util.MissionKeyUnlockRule
 import java.io.File
 import java.util.UUID
 
@@ -58,6 +60,7 @@ import java.util.UUID
  */
 @RunWith(AndroidJUnit4::class)
 class PdfDeleteMapInstrumentedTest {
+    @get:Rule val missionKey = MissionKeyUnlockRule()
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val app = context.applicationContext as Application
     private val files = context.filesDir
