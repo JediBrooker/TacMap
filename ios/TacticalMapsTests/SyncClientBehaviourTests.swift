@@ -913,7 +913,8 @@ final class SyncClientBehaviourTests: XCTestCase {
                                   (SyncLegacyV2ShippedIOSInteropTests.self, "testEditOfAShipped2xObjectSurvivesTheShippedPeer"),
                                   (SyncLegacyV2ShippedIOSInteropTests.self, "testDeleteReachesTheShipped2xPeerWithoutAnEcho"),
                                   (SyncLegacyV2ShippedIOSInteropTests.self, "testUpgradeFrom300LowercaseRelayStateResendsAndDeletesNothing"),
-                                  (SyncLegacyV2SessionTests.self, "testEqualVersionTieGoesToTheHigherWriterLikeTheRelay")]
+                                  (SyncLegacyV2SessionTests.self, "testEqualVersionTieGoesToTheHigherWriterLikeTheRelay")],
+            "poison_embedded_id_skipped": [(SyncHostileRecordTests.self, "testEmbeddedIdCasesMatchTheFixtureOnTheClassifierSnapshotAndLivePaths")]
         ]
         // android only, its runner lives in the android suite
         let androidOnly: Set<String> = ["android_pause_keeps_room"]
