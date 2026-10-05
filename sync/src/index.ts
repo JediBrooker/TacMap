@@ -1247,8 +1247,10 @@ export class SyncRoom {
   // returning client neither rolls back, nor trips the counter window, nor
   // sees a delete come back, and nobody holding the join code can replay an
   // older session of someone else's (ADR-001 §14), until the idle purge takes
-  // the rest (purgeIdleRoom). A room that never accepted a write has no
-  // records to roll back and is wiped outright, pins and all, like before SP1.
+  // the rest (purgeIdleRoom). A room that never accepted a write and has no
+  // epoch to keep (v2, or nobody ever said hello) is wiped outright like
+  // before SP1. One where devices only shared presence or chat keeps its
+  // floors like any other, or a captured hello would replay there after 7 days.
   // Runs under bCW so no join or write lands between the scan and the rewrite.
   //
   // Crash safety: seq, horizonSeq and the meta:expiring marker are written
@@ -1296,9 +1298,10 @@ export class SyncRoom {
         }
         const seq = (await this.state.storage.get<number>("meta:seq")) ?? 0
         const highWater = (await this.state.storage.get<string>("meta:highWater")) ?? ZERO_COUNTER
-        if (seq === 0 && keptRecords === 0 && highWater === ZERO_COUNTER) {
-          // no seq, counter or delete a returning device could be rolled back
-          // on. v3 room ids are bound to the token so this can't be squatted
+        if (seq === 0 && keptRecords === 0 && highWater === ZERO_COUNTER && floors.size === 0) {
+          // no seq, counter, delete or hello epoch a returning device could be
+          // rolled back or replayed on. v3 room ids are bound to the token so
+          // this can't be squatted
           await this.wipeRoom()
           metric("room_expired", { removed: doomed.length, kept: 0, purged: 1 })
           return "purged"

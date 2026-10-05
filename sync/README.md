@@ -371,9 +371,11 @@ chat and chat keys are never stored.
   row per device counted against the room quota like the pin was, and no hello
   writes anything extra for it. These rows hold no mission content, but the
   token hash still confirms join-code guesses like the room ID does, until the
-  idle purge takes them. A room that never accepted a write is deleted
-  entirely, pins included and without floors, since it has no record a
-  replayed session could bring back. A pass that fails half way has already
+  idle purge takes them. A room that never accepted a write and has no hello
+  epoch to keep (v2, or nobody said hello) is deleted entirely. One whose
+  devices only shared positions or chatted keeps its floors like any other
+  room and its `seq` moves to 1, otherwise a captured session's presence and
+  chat would be accepted again after 7 days. A pass that fails half way has already
   advanced `seq` and stores every floor before it drops any pin; the alarm
   retries within an hour and a join in between recounts the counters.
 - **Idle purge.** About 90 days after the last recorded activity (after the

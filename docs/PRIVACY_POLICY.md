@@ -148,7 +148,8 @@ returning devices resume cleanly. Once a room has been idle for 90 days in a
 row the relay deletes everything it holds for it, including these values, the
 device IDs and session numbers, and any deletion records still kept; any use
 of the room before then restarts that period. A room in which nothing was ever
-stored is deleted entirely after seven idle days. A device that comes back to a
+stored and no device ever started a session is deleted entirely after seven
+idle days. A device that comes back to a
 room after it was deleted finds it empty and shows a rollback warning; start a
 new room with a new join code instead. Live location presence is forwarded to
 connected peers and held only as current in-memory session state. TacMap Chat

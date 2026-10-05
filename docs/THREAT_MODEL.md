@@ -155,8 +155,10 @@ Presence, chat, and chat keys are never written to storage.
 
 - About 7 days after the last recorded activity, with no connection open, the
   relay deletes every live object and swaps every actor pin for its epoch
-  floor. A room that never stored an object or a delete is deleted entirely,
-  its pins too, with no floors left behind. Otherwise the relay keeps the token
+  floor. A room that never stored an object or a delete and in which no
+  device ever announced a session (a legacy v2 room nobody wrote to, or a
+  drive-by connection) is deleted entirely. Otherwise, rooms used only for
+  position sharing or chat included, the relay keeps the token
   hash, protocol, sequence and high-water values, counters, last-activity time,
   the bookkeeping above, the floors and tombstones, so a device that returns
   later is not rolled back, is not locked out by the counter window, and
@@ -444,12 +446,12 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   capture them. The relay refuses an announcement that is not newer than the
   device's latest one, and since 3.0.1 it keeps that number (the epoch floor,
   §4) through idle expiry until the 90-day purge, so neither an old session nor
-  the old object versions it carried can be brought back while the room
-  exists. A room that never stored an object keeps no floors and is wiped
-  whole after 7 idle days; there, and in any room after its 90-day purge, an
-  insider can replay a captured session (its presence and chat, and after a
-  purge its records too) to devices that never saw a newer one, such as a
-  fresh install. Devices that kept their replay state reject it. A relay that
+  the old object versions, positions or chat it carried can be brought back
+  while the room exists, also in a room only ever used for position sharing.
+  After the 90-day purge the relay has nothing left to check against, and an
+  insider can replay a captured session (its records, presence and chat) to
+  devices that never saw a newer one, such as a fresh install. Devices that
+  kept their replay state reject it. A relay that
   is itself hostile can always do this (see *A coerced relay* above), and
   older or self-hosted relays without the floor forget it at the first idle
   expiry. After a purge, move to a new join code.
@@ -716,7 +718,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   inside a crash handler is fragile. Stack traces rarely contain coordinates but
   can carry an imported map's file name; clear it if that matters.
 - **Expired rooms are remembered for up to 90 days.** A room that ever stored
-  anything keeps about a dozen small relay rows (token hash, sequence and
+  anything, or in which any device announced a session (so every v3 room
+  that was actually used, position sharing only included), keeps about a
+  dozen small relay rows (token hash, sequence and
   high-water values, counters, timestamps) plus its remaining tombstones and
   one epoch floor per device (room-scoped device ID and latest session number)
   after idle expiry, so devices returning within that time resume cleanly and
@@ -726,7 +730,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   through each floor, when each device joined at the latest, and the token
   hash lets whoever holds relay storage confirm a join-code guess just as the
   routing ID does (see *A weak join code*). After 90 days with no activity the relay deletes
-  all of it; rooms that never stored anything go at 7 days. Room creation is
+  all of it; rooms that never stored anything and never saw a session
+  announcement go at 7 days. Room creation is
   only rate limited per IP address, so relay storage holds rows for every room
   used in the last 90 days. A device returning after the purge gets the
   rollback warning and must move to a new join code (§4). If even 90 days is

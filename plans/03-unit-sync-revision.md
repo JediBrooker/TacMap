@@ -41,7 +41,9 @@ audit scratch copies; they are re-created as real tests here.
    wiped outright (coordinator decision, owner confirms before deploy). 3.0.1
    (relay-ref-1, owner decision): each dropped pin leaves an epoch floor
    (epoch:<actorId> -> helloEpoch, counted like the pin) until that purge, so a
-   captured older hello stays refused across expiry (ADR-001 sections 14 and 16).
+   captured older hello stays refused across expiry (ADR-001 sections 14 and 16),
+   in presence-only rooms too: only a room with no write and no floor to keep is
+   still wiped whole at expiry.
 3. Tombstone/record compaction (S1-08, S3-13, S4-05): tombstones older than
    TOMBSTONE_TTL (e.g. 30 days, recorded server-side without changing the stored
    record shape that snapshots send) are compacted; quotas count what is actually

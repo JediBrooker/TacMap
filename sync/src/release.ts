@@ -6,4 +6,4 @@ export const RELAY_RELEASE_ID = "tacmap-sync-3.0.1-epoch-floor"
 // sha256 of what that id ships: src/index.ts, src/limits.ts and wrangler.jsonc
 // (test/contract.test.ts recomputes it). once it goes stale the suite fails,
 // which is the reminder to move the id above as well
-export const RELAY_RELEASE_SOURCE_SHA256 = "7c5ee0dba567605ffc955d4808d06c0743f19ee8b7ce1486205c558f16ab6808"
+export const RELAY_RELEASE_SOURCE_SHA256 = "24ba66f78e5dd2aef34d86b31c56300968d9ff6b5477b99c7757c8227a004eeb"

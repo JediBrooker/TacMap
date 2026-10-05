@@ -540,7 +540,8 @@ Storage key: `meta:protocol` -> `2 | 3`
   clean `v3:<roomId>` object, and the old dormant object goes through idle
   expiry like any other room (§16): its live objects are deleted and its pins
   swapped for epoch floors, its tombstones are compacted later, and the rest
-  is wiped by the 90-day idle purge (or at once if it never accepted a write). Test/staging users must
+  is wiped by the 90-day idle purge (or at once if it never accepted a write
+  and has no epoch floor to keep). Test/staging users must
   recreate those rooms. These objects predate activation and contain no
   released v3 room data.
 - v3 generation is active and generated codes use `3:`. Clients display an
@@ -562,13 +563,12 @@ A join-code holder CANNOT:
   still requires a counter strictly above the client's durable high-water.
   The relay refuses such a hello at ingress for as long as it holds the room:
   its epoch floor keeps each actor's newest epoch through idle expiry until
-  the 90-day purge (§16). A room that never accepted a write is wiped whole
-  at its 7-day idle expiry instead and keeps no floors. In that room after the
-  wipe, and in any room after its purge, the relay holds nothing to check
-  against, so a captured hello can be accepted again and its session's
-  presence and chat (and after a purge its records) replayed to devices that
-  never saw a newer session; devices that kept their replay state still
-  reject them. The guidance after a purge is a new join code.
+  the 90-day purge (§16), also in a room that only ever carried presence or
+  chat. After the purge the relay holds nothing to check against, so a
+  captured hello can be accepted again and its session's records, presence
+  and chat replayed to devices that never saw a newer session; devices that
+  kept their replay state still reject them. The guidance after a purge is a
+  new join code.
 
 The relay CANNOT:
 - Read plaintext (no room key).
@@ -780,13 +780,16 @@ extra write for it; floors are only written by an expiry pass, for pins whose
 epoch is above the stored floor.
 
 A room that never accepted a write (`seq` 0, no tombstone, zero high-water)
-has nothing a returning device could be rolled back on, so expiry deletes it
-entirely, pins included and without floors, as before SP1. v3 room IDs are
-bound to the token (§1), so the fresh trust-on-first-use pin on its next use
-cannot be squatted; v2 behaves as it always did. The cost is that §14's
-epoch guarantee ends at that wipe: only the session's own presence and chat
-(never a record) could be replayed there, to devices that never saw a newer
-session.
+and has no epoch floor to keep (no pin with a `helloEpoch` and no floor from
+an earlier pass: a v2 room, or one where nobody ever said hello) has nothing
+a returning device could be rolled back or replayed on, so expiry deletes it
+entirely, as before SP1. v3 room IDs are bound to the token (§1), so the
+fresh trust-on-first-use pin on its next use cannot be squatted; v2 behaves
+as it always did. A v3 room whose devices only said hello and shared presence
+or chat is not wiped: it goes through the expiry above, its pins become
+floors and its `seq` advances to 1 like any pass that drops something, so
+§14 holds there until the purge as well, and a device that saw that `seq`
+gets the usual rollback notice if it comes back after the purge.
 
 Every other room keeps its meta rows (about a dozen, no mission content), its
 epoch floors and its remaining tombstones until the idle purge. While they
@@ -910,7 +913,7 @@ floor; it only changes what the relay refuses.
 ## Consequences
 
 - v2 and v3 rooms are completely separate. No cross-protocol communication.
-- Rooms (v2 and v3) idle for 7 days lose their live objects and actor pins but keep sequence, high-water and tombstone state, and v3 rooms keep one epoch floor per device in place of its pin (§16); rooms that never stored anything are deleted outright, pins included. Tombstones are compacted after 30 days once their author is gone (v2: once the room has been unused for 30 days). After 90 idle days the whole room is deleted, and a device returning after that needs a new join code.
+- Rooms (v2 and v3) idle for 7 days lose their live objects and actor pins but keep sequence, high-water and tombstone state, and v3 rooms keep one epoch floor per device in place of its pin (§16); rooms that never stored anything and have no epoch floor to keep are deleted outright. Tombstones are compacted after 30 days once their author is gone (v2: once the room has been unused for 30 days). After 90 idle days the whole room is deleted, and a device returning after that needs a new join code.
 - Client storage grows: sealed replay state file per room (~1-10 KB typically).
 - Join codes are longer (2 chars for `3:` prefix).
 - The relay stores the latest signed hello and epoch with each durable actor

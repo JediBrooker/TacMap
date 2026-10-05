@@ -512,10 +512,9 @@ describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
     b.close()
   })
 
-  it("purges a room that never accepted a write instead of keeping its meta rows", async () => {
+  it("purges a room nobody wrote to or said hello in instead of keeping its meta rows", async () => {
     const stub = room("sp1-expiry-drive-by")
     const a = await openV3Socket(stub); await drainSnapshot(a)
-    await helloOn(a, hello())
     const closed = waitForClose(a); a.close(1000, "bye"); await closed
     await sleep(50)
     await runInDurableObject(stub, async (_instance, state) => {
@@ -525,7 +524,8 @@ describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
     })
     expect(await runDurableObjectAlarm(stub)).toBe(true)
     await runInDurableObject(stub, async (_instance, state) => {
-      // the pin goes without leaving an epoch floor, there's no record to roll back
+      // no record to roll back and no hello epoch to hold anyone to. a room
+      // where someone did say hello keeps its floor, see relay-ref-1 below
       expect([...(await state.storage.list()).keys()]).toEqual([])
       expect(await state.storage.getAlarm()).toBeNull()
     })
@@ -871,6 +871,49 @@ describe("3.0.1 relay-ref-1: the hello epoch floor outlives idle expiry", () => 
     expect(await floors(stub)).toEqual({ [floorOf(A.actor_id)]: "0000000000000002" })
     await expectExactAccounting(stub)
     fresh.close()
+  })
+
+  it("keeps the floor in a room that only ever shared positions, so a captured session can't come back there either", async () => {
+    // position sharing only: A in session 1 then session 2, nothing written.
+    // any member saw both hellos and session 1's loc
+    const stub = room("floor-presence-only")
+    const first = await openV3Socket(stub); await drainSnapshot(first)
+    await helloOn(first, hello())
+    first.send(JSON.stringify(loc(1)))
+    const superseded = waitForClose(first)
+    const second = await openV3Socket(stub); await drainSnapshot(second)
+    await helloOn(second, hello2())
+    expect((await superseded)?.code).toBe(4015)
+    second.send(JSON.stringify(loc(1, { sd: SD_2 })))
+    await leave(second)
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.get("meta:seq")).toBeUndefined()
+      expect(await state.storage.get("meta:highWater")).toBeUndefined()
+      expect((await state.storage.list({ prefix: "obj:" })).size).toBe(0)
+    })
+    await idle(stub, 8)
+    // this used to wipe the room whole, pin and all, so the replay below got
+    // hello-ack and a fresh joiner saw A's old session and position as live
+    const observer = await openV3Socket(stub); await drainSnapshot(observer)
+    const leaked = collectUntil(observer, frame => frame.by === A.actor_id, 1_500)
+    expect(await tryHello(stub, hello(), loc(2))).toEqual({ result: 4014, op: null })
+    expect((await tryHello(stub, hello2())).result).toBe(4014)
+    expect(await leaked).toBeNull()
+    await leave(observer)
+    expect(await floors(stub)).toEqual({ [floorOf(A.actor_id)]: "0000000000000002" })
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.get(`actor:${A.actor_id}`)).toBeUndefined()
+      expect(await state.storage.get("meta:auth")).toBeDefined()
+      // seq moves like any expiry that drops something, so a device back
+      // after the purge gets the rollback notice and a new join code
+      expect(await state.storage.get("meta:seq")).toBe(1)
+    })
+    await expectExactAccounting(stub)
+    // A's own next session still gets in
+    expect((await tryHello(stub, await signedHello(A, session(0x71), 3))).result).toBe("hello-ack")
+    // and the 90-day purge takes all of it
+    await idle(stub, 91)
+    expect(await runInDurableObject(stub, async (_instance, state) => [...(await state.storage.list()).keys()])).toEqual([])
   })
 
   it("takes a device back on its next session after expiry, swaps its floor for a pin, and keeps that session's retry idempotent", async () => {
