@@ -750,11 +750,19 @@ describe("3.0.1 relay-ref-1: the hello epoch floor outlives idle expiry", () => 
   const floorOf = (actor: string): string => `epoch:${actor}`
   const session = (byte: number): Uint8Array => new Uint8Array(32).fill(byte)
 
+  const sockets = (stub: DurableObjectStub): Promise<number> =>
+    runInDurableObject(stub, async (_instance, state) => state.getWebSockets().length)
+
   // a hello on a fresh socket, plus one frame right behind it. result is
-  // "hello-ack" or the close code, op whatever the follow-up got back
+  // "hello-ack" or the close code, op whatever the follow-up got back.
+  // doesn't return till the relay has dropped the socket: its close callback
+  // only runs once the client sends or echoes the close and it writes
+  // lastActivity. one that landed inside idle() put the idle clock back to
+  // now and the expiry quietly didn't happen (flaked on a cold full run)
   async function tryHello(
     stub: DurableObjectStub, frame: Record<string, unknown>, follow?: Record<string, unknown>,
   ): Promise<{ result: string | number | null; op: any }> {
+    const before = await sockets(stub)
     const ws = await openV3Socket(stub); await drainSnapshot(ws)
     const acked = collectUntil(ws, message => message.t === "hello-ack", 2_000)
     const closed = waitForClose(ws, 2_000)
@@ -769,6 +777,10 @@ describe("3.0.1 relay-ref-1: the hello epoch floor outlives idle expiry", () => 
     ])
     const reply = await op
     try { ws.close() } catch { /* the relay closed it */ }
+    for (let tries = 0; await sockets(stub) > before; tries++) {
+      if (tries === 200) throw new Error("relay never let go of the tryHello socket")
+      await sleep(10)
+    }
     return { result, op: reply }
   }
 
@@ -792,6 +804,13 @@ describe("3.0.1 relay-ref-1: the hello epoch floor outlives idle expiry", () => 
       await state.storage.setAlarm(Date.now() + 60_000)
     })
     expect(await runDurableObjectAlarm(stub)).toBe(true)
+    // make sure the pass actually ran: the room is gone, or an expiry from
+    // after that activity is on record. anything that wrote lastActivity in
+    // between (a late close) skips it and every check after this is moot
+    await runInDurableObject(stub, async (_instance, state) => {
+      if ((await state.storage.list({ limit: 1 })).size === 0) return
+      expect(await state.storage.get<number>("meta:expiredAt")).toBeGreaterThanOrEqual(last)
+    })
     return last
   }
 
