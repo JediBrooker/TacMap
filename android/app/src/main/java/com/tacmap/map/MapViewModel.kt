@@ -15,7 +15,6 @@ import com.tacmap.calibration.Calibration
 import com.tacmap.calibration.CalibrationDraftStore
 import com.tacmap.calibration.EntryFileStatus
 import com.tacmap.calibration.ImportedMapEntry
-import com.tacmap.calibration.ImportedMapLibraryMigration
 import com.tacmap.calibration.ImportedMapLibraryStore
 import com.tacmap.calibration.InFlightImportFiles
 import com.tacmap.calibration.LegacyMapReader
@@ -51,11 +50,10 @@ import com.tacmap.calibration.AutoResumeAction
 import com.tacmap.calibration.AutoResumeEntry
 import com.tacmap.calibration.AutoResumeRules
 import com.tacmap.calibration.BackgroundHashRules
-import com.tacmap.calibration.LegacyLibraryState
+import com.tacmap.calibration.LegacyLibraryMigrator
 import com.tacmap.calibration.LibraryRebuild
-import com.tacmap.calibration.LibraryRestoreRules
 import com.tacmap.calibration.MismatchAction
-import com.tacmap.calibration.RestoreMigration
+import com.tacmap.calibration.RestoreNotice
 import com.tacmap.calibration.RestoreStatus
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LocationService
@@ -112,6 +110,8 @@ internal enum class LibraryStatus { LOADING, LOADED, LOCKED, CORRUPT }
 /** one-off notices at launch / after an import that need a dialog, not a toast */
 internal sealed class MapLaunchAlert {
     data class MigrationUncalibrated(val name: String) : MapLaunchAlert()
+    /** a salvage or an orphan adoption kept every map file, some names or calibrations may be gone (s13.1 L10) */
+    data object LibraryRecovered : MapLaunchAlert()
     data object ImportInterrupted : MapLaunchAlert()
     data object ActiveFileChanged : MapLaunchAlert()
 }
@@ -221,6 +221,21 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private val defaultStyle: BasemapStyle =
         if (com.tacmap.calibration.EsriKey.isAvailable) BasemapStyle.ESRI_SATELLITE
         else BasemapStyle.OSM_TOPO
+
+    /** the old stores' migration, a salvage or an orphan adoption, the S2 rebuild's rules */
+    private val migrator = LegacyLibraryMigrator(
+        filesDir = filesDir,
+        library = library,
+        drafts = draftStore,
+        legacy = legacyReader,
+        defaultStyle = defaultStyle.name,
+        recoveredName = ::recoveredName,
+        inspectPdf = { f -> inspectForRecovery(f) },
+        validateMbtiles = ::opensAsMbtiles,
+        interruptedImports = {
+            runCatching { MapImportPipeline.interruptedFiles(DocumentImportCopyJournal(app)) }.getOrDefault(emptySet())
+        },
+    )
 
     private val _mapSource = MutableStateFlow<MapSource>(OnlineRasterMapSourceAndroid(defaultStyle))
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
@@ -394,13 +409,6 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ library: load, migrate, restore
 
-    private sealed class MigrationOutcome {
-        /** the library's durable now, the legacy stores are cleared */
-        data class Migrated(val uncalibratedName: String?, val activeEntryId: String?) : MigrationOutcome()
-        /** fail closed: nothing written, cleared or deleted (S3, locked or quarantined legacy) */
-        data object Blocked : MigrationOutcome()
-    }
-
     /** a restore pass (migration hop included) or a corrupt rebuild is running, don't start another */
     private var restoring = false
     private var rebuilding = false
@@ -410,58 +418,22 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private var libraryIssueShown = false
 
     /**
-     * Contract s8.2 r1: one-time migration, fail closed and idempotent. Library write, then
-     * the drafts, then (only with the library durable) the old stores go (D8)
-     */
-    private fun migrateLegacyStores(): MigrationOutcome = try {
-        val read = legacyReader.read(defaultStyle.name)
-        when (LibraryRestoreRules.plan(LibraryLoad.Empty, LibraryRestoreRules.legacyState(read)).migration) {
-            RestoreMigration.RUN -> {
-                val inputs = (read as LegacyMapReader.Read.Present).inputs
-                // null = something in there won't convert (a PDF outside our dirs): block, don't drop it (S3)
-                val result = ImportedMapLibraryMigration.build(inputs, filesDir, System.currentTimeMillis())
-                // create, not write: another screen that got its migration down first stands
-                if (result == null || library.create(result.state) !is LibraryCommit.Written) {
-                    MigrationOutcome.Blocked
-                } else {
-                    result.drafts.forEach { draftStore.save(it) }
-                    legacyReader.clearAfterMigration()
-                    MigrationOutcome.Migrated(result.uncalibratedActiveName, result.state.active.entryId)
-                }
-            }
-            // S4: an authenticated read that names nothing still there. an empty library, then
-            // clear, or it'd read as locked on every launch from here on
-            RestoreMigration.WRITE_EMPTY_AND_CLEAR -> {
-                val empty = LibraryState(active = ActiveRef.online(defaultStyle.name), preferredOnlineStyle = defaultStyle.name)
-                if (library.create(empty) !is LibraryCommit.Written) MigrationOutcome.Blocked
-                else {
-                    legacyReader.clearAfterMigration()
-                    MigrationOutcome.Migrated(null, null)
-                }
-            }
-            else -> MigrationOutcome.Blocked
-        }
-    } catch (e: Exception) {
-        QuietLog.w("MapViewModel", "legacy map migration failed")
-        MigrationOutcome.Blocked
-    }
-
-    /**
-     * One restore pass (s8.2 r1, F3): load, run the migration if it's due, then adopt what was
-     * read or put up the locked / corrupt issue. Launch, the locked issue's Retry and every
-     * mission-data unlock come through here
+     * One restore pass (s8.2 r1 + s13.1, F3): load, run the migration hop if it's due, then
+     * adopt what was read or put up the locked / corrupt issue. Launch, the locked issue's Retry
+     * and every mission-data unlock come through here
      */
     private fun restoreLibrary() {
         if (restoring || rebuilding) return
         val load = library.load()
-        if (load == LibraryLoad.Empty && legacyReader.hasLegacyState()) {
-            // the migration can hash and re-parse a PDF, so off main; the online map stands in
-            // meanwhile, unpersisted
+        if (load == LibraryLoad.Empty && migrator.isDue()) {
+            // old stores to migrate or map files to adopt: that hashes and parses, so off main.
+            // the online map stands in meanwhile, unpersisted, and with the library still LOADING
+            // nothing imports, reconciles or sweeps till the write lands
             restoring = true
             if (_mapSource.value !is OnlineRasterMapSourceAndroid) publish(onlineBasemap(), frame = false)
             viewModelScope.launch {
                 val migrated = try {
-                    withContext(Dispatchers.IO) { migrateLegacyStores() }
+                    withContext(Dispatchers.IO) { migrator.migrate() }
                 } finally {
                     restoring = false
                 }
@@ -472,25 +444,25 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         applyRestore(load, null)
     }
 
-    private fun applyRestore(load: LibraryLoad, migrated: MigrationOutcome?) {
-        val legacy = when {
-            migrated == MigrationOutcome.Blocked -> LegacyLibraryState.LOCKED
-            legacyReader.hasLegacyState() -> LegacyLibraryState.READABLE
-            else -> LegacyLibraryState.NONE
-        }
-        val plan = LibraryRestoreRules.plan(load, legacy)
+    private fun applyRestore(load: LibraryLoad, migrated: LegacyLibraryMigrator.Outcome?) {
+        // D8 happens in settle when the plan says so
+        val plan = migrator.settle(load, migrated)
         when (plan.status) {
             RestoreStatus.LOADED, RestoreStatus.EMPTY -> {
-                // D8: leftovers from an earlier migration go now the library's read back durable
-                if (plan.clearLegacy && load is LibraryLoad.Loaded) legacyReader.clearAfterMigration()
                 val state = (load as? LibraryLoad.Loaded)?.state
                     ?: LibraryState(active = ActiveRef.online(defaultStyle.name), preferredOnlineStyle = defaultStyle.name)
-                val m = migrated as? MigrationOutcome.Migrated
-                adoptLoaded(state, frameActive = m?.activeEntryId != null)
-                m?.uncalibratedName?.let { _launchAlert.value = MapLaunchAlert.MigrationUncalibrated(it) }
+                val written = migrated as? LegacyLibraryMigrator.Outcome.Written
+                adoptLoaded(state, frameActive = written?.activeEntryId != null)
+                if (plan.notice == RestoreNotice.RECOVERED) {
+                    // once, and it stands in for the uncalibrated notice on this launch (L10)
+                    _launchAlert.value = MapLaunchAlert.LibraryRecovered
+                } else {
+                    written?.uncalibratedName?.let { _launchAlert.value = MapLaunchAlert.MigrationUncalibrated(it) }
+                }
             }
             RestoreStatus.LOCKED, RestoreStatus.MIGRATION_PENDING -> {
-                // nothing written, no reconcile, sweep or prune; Retry and an unlock come back here
+                // nothing written, no reconcile, sweep or prune; Retry and an unlock come back here.
+                // only a locked key or a write that failed ends up here now, both can clear up
                 _libraryStatus.value = LibraryStatus.LOCKED
                 if (_mapSource.value !is OnlineRasterMapSourceAndroid) publish(onlineBasemap(), frame = false)
                 libraryIssueShown = true
@@ -735,7 +707,6 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         if (_libraryStatus.value != LibraryStatus.CORRUPT) return true
         if (rebuilding || restoring) return false
         rebuilding = true
-        val app = getApplication<Application>()
         viewModelScope.launch {
             val rebuilt = try {
                 withContext(Dispatchers.IO) {
@@ -743,9 +714,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                         filesDir = filesDir,
                         defaultStyle = defaultStyle.name,
                         nowMs = System.currentTimeMillis(),
-                        recoveredName = { n -> Messages.mapRecoveredName(n.toString()) },
-                        inspectPdf = { f -> LibraryRebuild.withWatchdog { stop -> com.tacmap.calibration.PdfInspector.inspect(app, f, stop) { _, _ -> } } },
-                        validateMbtiles = { f -> com.tacmap.calibration.MBTilesStore.open(f.path)?.let { it.close(); true } ?: false },
+                        recoveredName = ::recoveredName,
+                        inspectPdf = { f -> inspectForRecovery(f) },
+                        validateMbtiles = ::opensAsMbtiles,
                     )
                 }
             } catch (e: Exception) {
@@ -765,6 +736,15 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
         return true
     }
+
+    // the S2 rebuild's rules, the salvage and the orphan adoption use them too
+    private fun recoveredName(n: Int): String = Messages.mapRecoveredName(n.toString())
+
+    private fun inspectForRecovery(f: File): com.tacmap.calibration.InspectionResult? =
+        LibraryRebuild.withWatchdog { stop -> com.tacmap.calibration.PdfInspector.inspect(getApplication(), f, stop) { _, _ -> } }
+
+    private fun opensAsMbtiles(f: File): Boolean =
+        com.tacmap.calibration.MBTilesStore.open(f.path)?.let { it.close(); true } ?: false
 
     /** D7: a Try Again that verified the bytes takes the new size + mtime, else it'd stay unavailable */
     private fun refreshFileStamp(id: String) {
@@ -862,7 +842,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         if (cleared || _libraryStatus.value != LibraryStatus.LOADED) return null
         return when (val load = library.load()) {
             is LibraryLoad.Loaded -> load.state
-            LibraryLoad.Empty -> _libraryState.value?.takeIf { it.generation == 0L && it.entries.isEmpty() }
+            // only while there's nothing it could delete: old stores waiting to migrate (a
+            // quarantined one too) or map files without a library get migrated or adopted,
+            // never reconciled away (s13.1)
+            LibraryLoad.Empty -> _libraryState.value?.takeIf { it.generation == 0L && it.entries.isEmpty() && !migrator.isDue() }
             else -> null
         }
     }

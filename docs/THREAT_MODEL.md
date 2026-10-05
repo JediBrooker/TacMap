@@ -638,7 +638,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   never deletes anything it can't vouch for: a stored PDF content key must match a fresh hash before its calibration
   is migrated, and a document that will not open never gets a fabricated page count.
   If the mission-data key is locked, or a write the migration needs (calibration drafts first, then the
-  library) fails, nothing is written, cleared or deleted and Retry is offered. If a legacy store is damaged
+  library) fails, nothing is written, cleared or deleted and Retry is offered. One exception on Android: the
+  store records a library as sealed-only before its bytes go down, so a library write that fails partway (a
+  full disk) leaves that record, the never-written library then counts as unreadable, and its Retry is the
+  rebuild above; the old stores stay as they are and still nothing is deleted. If a legacy store is damaged
   or was quarantined (only its `.corrupt-<time>` copy is left), or a legacy PDF is present but can't be read
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,

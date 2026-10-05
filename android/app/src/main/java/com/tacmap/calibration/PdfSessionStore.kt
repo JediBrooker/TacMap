@@ -377,6 +377,17 @@ class PdfSessionStore(private val context: Context) {
     fun hasActivePdf(): Boolean = prefs.contains(KEY_PDF)
 
     /**
+     * the content-keyed calibration library as the library migration sees it, never re-sealed
+     * or cleared here. null = none stored, false = stored but it won't open or decode (the
+     * migration then leaves it where it is instead of clearing it)
+     */
+    internal fun calibrationsReadable(): Boolean? {
+        val stored = prefs.getString(KEY_LIBRARY, null) ?: return null
+        val raw = openPref(LABEL_LIBRARY, stored) ?: return false
+        return runCatching { json.decodeFromString<Map<String, PersistedCalibration>>(raw) }.isSuccess
+    }
+
+    /**
      * The library owns calibrations now (contract s8.2), so after a migration both
      * the active session and the content-hash calibration library go. Calibrations
      * for files that aren't in the library any more just disappear with it (D5-19).

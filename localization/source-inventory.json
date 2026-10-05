@@ -2665,6 +2665,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/calibration/LegacyLibraryMigrator.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/map/ImportUiRules.kt",
     "platform": "android",
     "area": "import-export",

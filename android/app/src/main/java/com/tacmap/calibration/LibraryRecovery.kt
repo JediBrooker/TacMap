@@ -6,15 +6,29 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.util.UUID
 
-/** the legacy side of a restore, the libraryLoad fixture's `legacy` column */
+/** the legacy side of a restore, the libraryLoad fixture's legacy column (legacyCodes) */
 internal enum class LegacyLibraryState(val code: String) {
     NONE("none"),
     READABLE("readable"),
     LOCKED("locked"),
-    CORRUPT("corrupt"),
-    PDF_UNCONVERTIBLE("pdfUnconvertible"),
     NAMES_NOTHING("namesNothing"),
+    // 3.0.1: the read authenticated but something in the old stores won't read or convert.
+    // these salvage now, they used to block forever (or read as none on the next pass)
+    CORRUPT("corrupt"),
+    QUARANTINED_ONLY("quarantinedOnly"),
+    RETAINED_CORRUPT("retainedCorrupt"),
+    RETAINED_QUARANTINED_ONLY("retainedQuarantinedOnly"),
+    SESSION_INVALID("sessionInvalid"),
+    PDF_HASH_MISMATCH("pdfHashMismatch"),
+    PDF_UNCONVERTIBLE("pdfUnconvertible"),
+    ;
+
+    /** a live store D8 could clear. only a .corrupt copy left isn't one, nothing ever clears that (L2) */
+    val clearable: Boolean get() = this != NONE && this != QUARANTINED_ONLY && this != RETAINED_QUARANTINED_ONLY
 }
+
+/** how this pass's writes went, the fixture's given.writes */
+internal enum class LibraryWrites(val code: String) { OK("ok"), DRAFT_FAILS("draftFails"), LIBRARY_FAILS("libraryFails") }
 
 internal enum class RestoreStatus(val code: String) {
     LOADED("loaded"), EMPTY("empty"), LOCKED("locked"), CORRUPT("corrupt"), MIGRATION_PENDING("migrationPending"),
@@ -22,9 +36,12 @@ internal enum class RestoreStatus(val code: String) {
 
 internal enum class RestoreMigration(val code: String) {
     NONE("none"), RUN("run"), BLOCKED("blocked"), WRITE_EMPTY_AND_CLEAR("writeEmptyAndClear"),
+    SALVAGE("salvage"), ADOPT_ORPHANS("adoptOrphans"),
 }
 
 internal enum class RestoreIssue(val code: String) { LOCKED_RETRY("lockedRetry"), CORRUPT_RETRY("corruptRetry") }
+
+internal enum class RestoreNotice(val code: String) { RECOVERED("recovered") }
 
 internal data class RestorePlan(
     val status: RestoreStatus,
@@ -33,35 +50,73 @@ internal data class RestorePlan(
     val authoritative: Boolean,
     val clearLegacy: Boolean,
     val issue: RestoreIssue?,
-)
+    /** map_library_recovered_notice, once, after a salvage or an orphan adoption */
+    val notice: RestoreNotice? = null,
+    /** the usable library's sealed flag, null when there's no usable library */
+    val recoveryPreservesOrphans: Boolean? = null,
+) {
+    /** the s9.2 import pre-check and every library transition need this */
+    val usable: Boolean get() = status == RestoreStatus.LOADED || status == RestoreStatus.EMPTY
+}
 
 /**
- * Contract s8.2 r1 load + recovery (import_limits.json libraryLoad), pure so the fixture
- * rows run on the JVM against the same function MapViewModel restores with.
+ * Contract s8.2 r1 + s13.1 load + recovery (import_limits.json libraryLoad), pure so the
+ * fixture rows run on the JVM against the same function MapViewModel restores with.
  */
 internal object LibraryRestoreRules {
-    fun plan(load: LibraryLoad, legacy: LegacyLibraryState): RestorePlan = when (load) {
-        // D8: legacy prefs still hanging round after a Loaded restore just go
-        is LibraryLoad.Loaded -> RestorePlan(RestoreStatus.LOADED, RestoreMigration.NONE, load.state.permitsCleanup, legacy != LegacyLibraryState.NONE, null)
-        LibraryLoad.Locked -> RestorePlan(RestoreStatus.LOCKED, RestoreMigration.NONE, false, false, RestoreIssue.LOCKED_RETRY)
-        LibraryLoad.Corrupt -> RestorePlan(RestoreStatus.CORRUPT, RestoreMigration.NONE, false, false, RestoreIssue.CORRUPT_RETRY)
-        LibraryLoad.Empty -> when (legacy) {
-            LegacyLibraryState.NONE -> RestorePlan(RestoreStatus.EMPTY, RestoreMigration.NONE, true, false, null)
-            LegacyLibraryState.READABLE -> RestorePlan(RestoreStatus.LOADED, RestoreMigration.RUN, true, true, null)
-            // S4: an authenticated read that names nothing still on disk: write empty, clear
-            LegacyLibraryState.NAMES_NOTHING ->
-                RestorePlan(RestoreStatus.LOADED, RestoreMigration.WRITE_EMPTY_AND_CLEAR, true, true, null)
-            // fail closed, nothing written cleared or deleted (S1, S3)
-            LegacyLibraryState.LOCKED, LegacyLibraryState.CORRUPT, LegacyLibraryState.PDF_UNCONVERTIBLE ->
-                RestorePlan(RestoreStatus.MIGRATION_PENDING, RestoreMigration.BLOCKED, false, false, RestoreIssue.LOCKED_RETRY)
+    private val PENDING = RestorePlan(RestoreStatus.MIGRATION_PENDING, RestoreMigration.BLOCKED, false, false, RestoreIssue.LOCKED_RETRY)
+
+    /**
+     * One launch / unlock / Retry restore, the generator's restore_plan. [managedFiles] = map
+     * files sit in the managed dirs that nothing's writing, [writes] = how the pass's drafts and
+     * library write went (OK until they've been tried)
+     */
+    fun plan(
+        load: LibraryLoad,
+        legacy: LegacyLibraryState,
+        managedFiles: Boolean = false,
+        writes: LibraryWrites = LibraryWrites.OK,
+    ): RestorePlan {
+        // drafts first, then the one library write. either failing writes nothing that counts
+        // and clears nothing, so it's pending with Retry (L4, L6)
+        fun written(migration: RestoreMigration, clear: Boolean, recovered: Boolean, drafts: Boolean): RestorePlan =
+            if (writes == LibraryWrites.LIBRARY_FAILS || (writes == LibraryWrites.DRAFT_FAILS && drafts)) PENDING
+            else RestorePlan(RestoreStatus.LOADED, migration, !recovered, clear, null, RestoreNotice.RECOVERED.takeIf { recovered }, recovered)
+        return when (load) {
+            // D8 only off a library that may clean up, a salvaged or rebuilt one keeps the old stores frozen (L8)
+            is LibraryLoad.Loaded -> {
+                val cleanup = load.state.permitsCleanup
+                RestorePlan(RestoreStatus.LOADED, RestoreMigration.NONE, cleanup, cleanup && legacy.clearable, null, null, !cleanup)
+            }
+            LibraryLoad.Locked -> RestorePlan(RestoreStatus.LOCKED, RestoreMigration.NONE, false, false, RestoreIssue.LOCKED_RETRY)
+            LibraryLoad.Corrupt -> RestorePlan(RestoreStatus.CORRUPT, RestoreMigration.NONE, false, false, RestoreIssue.CORRUPT_RETRY)
+            LibraryLoad.Empty -> when (legacy) {
+                // map files with no library and nothing to migrate get adopted, never reconciled
+                // away. only an Empty with nothing in the dirs is authoritative (L7)
+                LegacyLibraryState.NONE ->
+                    if (managedFiles) written(RestoreMigration.ADOPT_ORPHANS, clear = false, recovered = true, drafts = false)
+                    else RestorePlan(RestoreStatus.EMPTY, RestoreMigration.NONE, true, false, null, null, false)
+                // no key, nothing's known: nothing written cleared or deleted, Retry and unlock re-run it
+                LegacyLibraryState.LOCKED -> PENDING
+                LegacyLibraryState.READABLE -> written(RestoreMigration.RUN, clear = true, recovered = false, drafts = true)
+                // S4: an authenticated read that names nothing still on disk: write empty, clear
+                LegacyLibraryState.NAMES_NOTHING ->
+                    written(RestoreMigration.WRITE_EMPTY_AND_CLEAR, clear = true, recovered = false, drafts = false)
+                // L5 salvage: what converts, every other map file adopted, the old stores frozen
+                else -> written(RestoreMigration.SALVAGE, clear = false, recovered = true, drafts = true)
+            }
         }
     }
 
-    /** the reader's answer as a fixture state. Unavailable covers locked, quarantined and unconvertible */
+    /** pending with Retry, for an Empty that still has something to migrate or adopt */
+    fun pending(): RestorePlan = PENDING
+
+    /** the reader's answer as the fixture's legacy column. any uncertain cause makes the read uncertain */
     fun legacyState(read: LegacyMapReader.Read): LegacyLibraryState = when (read) {
         is LegacyMapReader.Read.Present -> LegacyLibraryState.READABLE
         LegacyMapReader.Read.Absent -> LegacyLibraryState.NAMES_NOTHING
-        LegacyMapReader.Read.Unavailable -> LegacyLibraryState.LOCKED
+        LegacyMapReader.Read.Locked -> LegacyLibraryState.LOCKED
+        is LegacyMapReader.Read.Uncertain -> read.causes.first()
     }
 }
 
@@ -147,6 +202,22 @@ internal object LibraryRebuild {
     /** what one PDF parse came back with. null from the callback = watchdog fired */
     fun interface PdfInspect {
         fun inspect(file: File): InspectionResult?
+    }
+
+    /**
+     * s13.1 managedFiles: a regular file in the map dirs the reconcile or the bake sweep would
+     * delete (map file, sidecar, .partial, bake) that isn't in [skip] (in flight, or a stuck
+     * s9.8 copy the launch sweep deletes anyway). With one there an Empty library adopts
+     */
+    fun hasManagedFiles(filesDir: File, skip: Set<File>): Boolean {
+        val skipped = skip.mapNotNull { runCatching { it.canonicalFile }.getOrNull() }.toSet()
+        return ImportedMapLibraryStore.MANAGED_DIRECTORIES.any { dirName ->
+            File(filesDir, dirName).listFiles().orEmpty().any { f ->
+                ManagedImportedMapFileLifecycle.isManagedCandidateName(f.name) &&
+                    Files.isRegularFile(f.toPath(), LinkOption.NOFOLLOW_LINKS) &&
+                    runCatching { f.canonicalFile }.getOrNull()?.let { it !in skipped } == true
+            }
+        }
     }
 
     /** every opaque map file no in-flight import owns, bakes left out, oldest first */
