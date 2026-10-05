@@ -382,9 +382,10 @@ def embedded_id_cases():
     canon_bytes = canon.replace("-", "")
     rows = [
         ("lowercase_canonical", canon, "what both apps send in v3 today (iOS GeoJSONExporter.wire, Android UUID.toString)"),
-        ("uppercase_canonical", canon.upper(), "RFC 9562: case-insensitive on input. Accepted on both; Android folds the "
-                                               "local id to lowercase so one object never gets two local ids"),
-        ("mixed_case_canonical", "3F2a1B4c-0D5e-4F60-8a7B-9c8D7e6F5a4B", "same as uppercase"),
+        ("uppercase_canonical", canon.upper(), "RFC 9562: case-insensitive on input. Accepted on both. 3.0.2: with no "
+                                               "local twin Android keeps the sender's casing as the local id (3.0.1 "
+                                               "folded it to lowercase); lookups go through the lowercase state key"),
+        ("mixed_case_canonical", "3F2a1B4c-0D5e-4F60-8a7B-9c8D7e6F5a4B", "same as uppercase, kept verbatim"),
         ("hex32_no_dashes", canon_bytes, "sync-android-2: 3.0.0 Android hashed it to the canonical wire id, then "
                                           "validRemote refused it and sync stopped for the room"),
         ("nonhex32", "zyxwvutsrqponmlkjihgzyxwvutsrqpo", "32 non-hex chars: Character.digit gave -1 per nibble, "
@@ -406,7 +407,9 @@ def embedded_id_cases():
             outer, outer_from = lenient, "lenientBytes"
         else:
             outer, outer_from = canon_bytes, "nearestCanonicalBytes"
-        expect = ({"category": "valid", "localId": embedded.lower()} if ok else
+        # 3.0.2 (interop-v3-android-fold-duplicates-on-300): with no local object under that UUID the id is kept
+        # as the sender wrote it, so a later edit re-publishes the casing shipped Android holders already store
+        expect = ({"category": "valid", "localId": embedded, "stateKey": embedded.lower()} if ok else
                   {"category": "skipUnsupported", "reason": "embedded_uuid_does_not_match_wire_id"})
         expect.update({"paths": ["snapshot", "live"], "stopsSync": False, "persistenceFailure": False,
                        "issueIfSkipped": None if ok else "SKIPPED_UNSUPPORTED"})
@@ -425,10 +428,48 @@ SNAPSHOT["embeddedIdRule"] = (
     "whole-string match of embeddedIdPattern, ASCII hex in either case, exactly 36 characters, no trimming. "
     "Anything else is skipUnsupported embedded_uuid_does_not_match_wire_id on both the snapshot and the live "
     "path, never a sync stop. The wire-id hasher refuses non-canonical input too (null, never lenient bytes). "
-    "An accepted id is the local model id in lowercase (Android folds it; iOS keeps a UUID value). Every "
-    "record the validator accepts must also pass the replay commit's own checks, so a validated record can never "
-    "end in persistenceFailure. v3 senders keep sending lowercase")
+    "An accepted id names one local object: Android resolves it through the lowercase state key to the id a local "
+    "object already has (any casing), and with no such object keeps the id exactly as received (3.0.2; 3.0.1 "
+    "folded it to lowercase, which duplicated the object on shipped Android holders of the uppercase id); iOS "
+    "keeps a UUID value. Every record the validator accepts must also pass the replay commit's own checks, so a "
+    "validated record can never end in persistenceFailure. Outbound embedded ids are the local id as stored: iOS "
+    "lowercase, Android lowercase for what it created and the stored casing otherwise")
 SNAPSHOT["embeddedIdCases"] = embedded_id_cases()
+
+
+def embedded_id_casing_cases():
+    """3.0.2, Android only: which local id an accepted v3 record lands on and what this device re-publishes"""
+    lower = "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+    upper, mixed = lower.upper(), "3F2a1B4c-0D5e-4F60-8a7B-9c8D7e6F5a4B"
+    rows = [
+        ("no_twin_lowercase", None, lower, "what both apps send for their own objects"),
+        ("no_twin_uppercase", None, upper,
+         "interop-v3-android-fold-duplicates-on-300: a legacy uppercase object met for the first time is stored as "
+         "sent, so this device's edit goes out uppercase and 3.0.0/2.x Android holders (exact-id upsert) update "
+         "their copy instead of adding a lowercase second one"),
+        ("no_twin_mixed_case", None, mixed, "kept verbatim too"),
+        ("twin_uppercase_inbound_lowercase", upper, lower, "3.0.1 alias rule, unchanged: the stored id wins"),
+        ("twin_lowercase_inbound_uppercase", lower, upper, "an exact lowercase twin wins"),
+        ("twin_mixed_inbound_uppercase", mixed, upper, "any stored casing wins"),
+    ]
+    out = []
+    for cid, stored, inbound, note in rows:
+        local = stored if stored is not None else inbound
+        assert local.lower() == inbound.lower() == lower
+        out.append({"id": cid, "platforms": ["android"], "storedLocalId": stored, "embeddedId": inbound,
+                    "expect": {"localId": local, "stateKey": lower, "outboundEmbeddedId": local, "localObjects": 1},
+                    "note": note})
+    return out
+
+
+SNAPSHOT["embeddedIdCasingCases"] = embedded_id_casing_cases()
+SNAPSHOT["embeddedIdCasingRule"] = (
+    "Android only (3.0.2). Build a validly sealed and signed v3 waypoint put whose embedded id is embeddedId on a "
+    "device that holds storedLocalId (null: no local object with that UUID). Through the real snapshot and live "
+    "paths the object lands on expect.localId, the device holds exactly localObjects objects with that UUID, and "
+    "its next local edit exports outboundEmbeddedId. Every lookup (local kind, alias, restage, the snapshot-end "
+    "identity recheck) goes through stateKey; the fallback when nothing is stored is the received id, never its "
+    "lowercase fold")
 SNAPSHOT["embeddedIdCasesRule"] = (
     "build a validly sealed and signed v3 waypoint put whose GeoJSON feature id is embeddedId and whose outer id "
     "is the wire id of the 16 bytes outerWireIdFromBytesHex (HMAC(metadataKey, 'tacmap-wire-obj-v3\\0' || bytes)); "
@@ -584,25 +625,37 @@ BACKGROUND = {
 }
 
 V2_ID = "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+V2_ID_B = "a1b2c3d4-0000-4000-8000-0000000000aa"
 V2 = {
     "outboundId": "3.0.1 (owner decision, gap-v2-room-2x-interop-1/2): iOS sends uuidString (uppercase), exactly as "
-                  "shipped 2.x iOS did. Android sends the raw id it remembered for that state key (sticky once any "
-                  "accepted inbound record used a raw id with an uppercase letter), else its lowercase local id",
+                  "shipped 2.x iOS did. Android sends the raw id pinned for that state key, else its lowercase local "
+                  "id. 3.0.2 (interop-v2-2xandroid-regression): the pin is the first casing this device used or "
+                  "accepted for the object, either case, so Android's own objects stay lowercase",
     "outboundIdRules": {
         "ios": "frame id, AAD and signature message = uuid.uuidString (uppercase). Every map (lastContent, "
                "versions, versionsBy, kindById, forcedLocalDiff, forcedLegacyDeletes, deliveries' localId, join "
                "suppression) stays keyed by the lowercase state key; only the wire id is uppercase",
-        "android": "frame id, AAD and signature message = rememberedRawId[stateKey] ?: localId (lowercase). The "
+        "android": "frame id, AAD and signature message = pinnedRawId[stateKey] ?: localId (lowercase). The "
                    "local object keeps the lowercase id (unchanged)",
         "embeddedId": "unchanged: lowercase on both (GeoJSONExporter.wire / UUID.toString)",
-        "remember": "Android only: every inbound put or del that passes stateKey, beats, AEAD and signature (and, "
-                    "for a put, the embedded check), applied or not, records its raw id for the state key when the "
-                    "raw id contains an uppercase letter. A later lowercase record never replaces it. Kept for "
-                    "deleted objects too, so an undo re-creates under the same casing",
+        "remember": "Android only, 3.0.2: the first casing this device uses or accepts for a state key is pinned and "
+                    "sticks, uppercase or lowercase. This device's own put or del for a key with no pin pins its "
+                    "lowercase local id. An inbound put or del that passes stateKey, beats, AEAD and signature (and, "
+                    "for a put, the embedded check), applied or not, pins its raw id when the key has no pin. A "
+                    "later record in another casing is applied as usual and never re-pins. Pins outlive deletes, "
+                    "so an undo re-creates under the same casing. Result: an object this device created or first "
+                    "accepted lowercase (Android peers, 3.0.0 iOS) stays lowercase and visible to 2.x Android even "
+                    "after a 3.0.1 iOS edit (2.x iOS already echo-deletes those on their first lowercase put, so "
+                    "nothing is lost there); one first met uppercase (2.x or 3.0.1 iOS) stays uppercase, so 2.x iOS "
+                    "doesn't echo-delete it. 3.0.1 pinned uppercase only, from inbound records only: those entries "
+                    "load unchanged and stick, so an object 3.0.1 already switched to uppercase stays uppercase",
         "persist": "Android only: sealed per-room store (DEK-bound opaque filename like the replay and chat stores), "
-                   "loaded at v2 join before the first diff, written at most once per snapshot and once per live "
-                   "batch, capped at 10,000 entries (then it stops learning), removed with the room's other local "
-                   "stores. A lost or unreadable store only means lowercase sends until the next snapshot re-teaches it",
+                   "loaded at v2 join before the first diff. 3.0.2 writes version 2 (every pin, either case); a "
+                   "version 1 file from 3.0.1 (uppercase only) loads as it is. Written at most once per snapshot, "
+                   "once per live batch and once per outbound diff pass that pinned something new. Capped at 10,000 "
+                   "pins (then nothing new is pinned and an unpinned key sends its lowercase local id), removed with "
+                   "the room's other local stores. A lost or unreadable store only means lowercase sends until the "
+                   "next snapshot or send pins again",
         "upgradeFrom300": "iOS 3.0.0 kept every v2 per-id map in memory (cleared on each v2 connect), so nothing "
                           "on the device is keyed lowercase across the update. Relay records 3.0.0 iOS wrote under "
                           "lowercase ids stay; 3.0.1 never deletes or rewrites a record because of its casing "
@@ -631,7 +684,11 @@ V2 = {
              "note": "iOS always sends uppercase, whoever created the object (2.x iOS did the same)"},
             {"id": "android_own_object", "platform": "android", "localId": V2_ID, "rememberedRawId": None,
              "expectFrameId": V2_ID, "expectStateKey": V2_ID, "expectEmbeddedId": V2_ID,
-             "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01) until an uppercase id for them is accepted, e.g. after a 3.0.1 iOS edit"},
+             "note": "shipped 2.x Android drops uppercase, so Android-created objects go out lowercase (S3-01). 3.0.2: the first send pins it, so they stay lowercase after a 3.0.1 iOS edit too (remember rows own_*)"},
+            {"id": "android_own_object_after_ios_edit", "platform": "android", "localId": V2_ID,
+             "rememberedRawId": V2_ID, "lastInboundRawId": V2_ID.upper(), "expectFrameId": V2_ID,
+             "expectStateKey": V2_ID, "expectEmbeddedId": V2_ID,
+             "note": "interop-v2-2xandroid-regression: the lowercase pin wins over the later uppercase iOS edit"},
             {"id": "android_edits_ios_object", "platform": "android", "localId": V2_ID,
              "rememberedRawId": V2_ID.upper(), "expectFrameId": V2_ID.upper(), "expectStateKey": V2_ID,
              "expectEmbeddedId": V2_ID,
@@ -645,7 +702,8 @@ V2 = {
             {"id": "sticky_over_later_lower", "events": [{"raw": V2_ID.upper(), "t": "put", "accepted": True},
                                                         {"raw": V2_ID, "t": "put", "accepted": True}],
              "expectRemembered": V2_ID.upper()},
-            {"id": "lower_only", "events": [{"raw": V2_ID, "t": "put", "accepted": True}], "expectRemembered": None},
+            {"id": "lower_only", "events": [{"raw": V2_ID, "t": "put", "accepted": True}], "expectRemembered": V2_ID,
+             "note": "3.0.2: an accepted lowercase record pins lowercase (3.0.1 remembered nothing)"},
             {"id": "not_accepted_not_learned", "events": [{"raw": V2_ID.upper(), "t": "put", "accepted": False}],
              "expectRemembered": None},
             {"id": "upper_del_learned", "events": [{"raw": V2_ID.upper(), "t": "del", "accepted": True}],
@@ -655,7 +713,43 @@ V2 = {
              "expectRemembered": "3F2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"},
             {"id": "non_canonical_never_learned", "events": [{"raw": "3F2A1B4C0D5E4F608A7B9C8D7E6F5A4B", "t": "put",
                                                             "accepted": False}], "expectRemembered": None},
+            {"id": "lower_first_then_upper_stays_lower", "events": [{"raw": V2_ID, "t": "put", "accepted": True},
+                                                                  {"raw": V2_ID.upper(), "t": "put", "accepted": True}],
+             "expectRemembered": V2_ID,
+             "note": "interop-v2-2xandroid-regression: an object first accepted lowercase (an Android peer's) stays "
+                     "lowercase after a 3.0.1 iOS edit, which is applied but not pinned"},
+            {"id": "own_put_then_upper_stays_lower", "events": [{"own": "put"},
+                                                               {"raw": V2_ID.upper(), "t": "put", "accepted": True}],
+             "expectRemembered": V2_ID,
+             "note": "interop-v2-2xandroid-regression: this device created it, its first put pinned lowercase"},
+            {"id": "own_del_then_upper_del_stays_lower", "events": [{"own": "del"},
+                                                                   {"raw": V2_ID.upper(), "t": "del", "accepted": True}],
+             "expectRemembered": V2_ID},
+            {"id": "upper_first_then_own_put_keeps_upper", "events": [{"raw": V2_ID.upper(), "t": "put", "accepted": True},
+                                                                     {"own": "put"}],
+             "expectRemembered": V2_ID.upper(),
+             "note": "gap-v2-room-2x-interop-2 unchanged: editing an iOS object keeps the iOS casing"},
+            {"id": "refused_lower_then_upper_learned", "events": [{"raw": V2_ID, "t": "put", "accepted": False},
+                                                                 {"raw": V2_ID.upper(), "t": "put", "accepted": True}],
+             "expectRemembered": V2_ID.upper(), "note": "only accepted records and own sends pin"},
         ],
+        "rememberStore": [
+            {"id": "v1_file_from_301_loads", "file": {"version": 1, "ids": [V2_ID.upper()]},
+             "expect": {"loads": True, "pinned": {V2_ID: V2_ID.upper()}}},
+            {"id": "v2_file_keeps_lowercase_pins", "file": {"version": 2, "ids": sorted([V2_ID.upper(), V2_ID_B])},
+             "expect": {"loads": True, "pinned": {V2_ID: V2_ID.upper(), V2_ID_B: V2_ID_B}}},
+            {"id": "v1_file_with_lowercase_refused", "file": {"version": 1, "ids": [V2_ID]},
+             "expect": {"loads": False, "pinned": {}}, "note": "3.0.1 only ever wrote uppercase"},
+            {"id": "two_casings_of_one_key_refused", "file": {"version": 2, "ids": sorted([V2_ID, V2_ID.upper()])},
+             "expect": {"loads": False, "pinned": {}}},
+            {"id": "non_canonical_refused", "file": {"version": 2, "ids": [V2_ID.replace("-", "")]},
+             "expect": {"loads": False, "pinned": {}}},
+        ],
+        "rememberStoreRule": ("Android only. A sealed file {version, ids} with exactly those two keys; ids is a list "
+                              "of canonical raw ids, one per state key. Version 1 (3.0.1) ids must each contain an "
+                              "uppercase letter; version 2 ids may be either case. Anything else loads as nothing "
+                              "(the sealed store's usual quarantine). Written as version 2 with ids sorted by "
+                              "string"),
         "tie": [
             {"last": {"v": 42, "by": "a1b2c3d4-0000-4000-8000-000000000001"},
              "incoming": {"v": 42, "by": "b1b2c3d4-0000-4000-8000-000000000001"}, "apply": True},
@@ -675,13 +769,22 @@ for _row in V2["vectors"]["outbound"]:
     if _row["platform"] == "ios":
         assert _row["expectFrameId"] == _row["expectFrameId"].upper(), _row
 for _row in V2["vectors"]["remember"]:
+    # 3.0.2: the first casing this device sends or accepts for the key sticks, either case
     _seen = None
     for _ev in _row["events"]:
-        if _ev["accepted"]:
+        if "own" in _ev:
+            _seen = _seen or V2_ID
+        elif _ev["accepted"]:
             assert canonical_uuid(_ev["raw"]), _row
-            if _ev["raw"] != _ev["raw"].lower() and _seen is None:
-                _seen = _ev["raw"]
+            _seen = _seen or _ev["raw"]
     assert _seen == _row["expectRemembered"], _row
+for _row in V2["vectors"]["rememberStore"]:
+    _f = _row["file"]
+    _ok = (_f["version"] in (1, 2) and all(canonical_uuid(i) for i in _f["ids"])
+           and len({i.lower() for i in _f["ids"]}) == len(_f["ids"])
+           and (_f["version"] == 2 or all(i != i.lower() for i in _f["ids"])))
+    assert _ok == _row["expect"]["loads"], _row
+    assert _row["expect"]["pinned"] == ({i.lower(): i for i in _f["ids"]} if _ok else {}), _row
 
 SIZE = {
     "objectCtMaxChars": RV["CT_MAX"],
@@ -1037,8 +1140,8 @@ SCEN = [
     {"id": "object_too_large_not_reserved", "requiredBy": "SP2", "findings": ["S1-09"], "unit": "OutboundSizeCheck",
      "cases": [{"innerUtf8Bytes": 524_970, "expect": {"ctChars": 4 * math.ceil((524_970 + 28) / 3), "send": True}},
                {"innerUtf8Bytes": 524_980, "expect": {"ctChars": 4 * math.ceil((524_980 + 28) / 3), "send": False, "stampReserved": False, "issue": "OBJECT_TOO_LARGE"}}]},
-    {"id": "v2_casing_and_tie", "requiredBy": "SP2", "findings": ["S3-01", "S3-14", "gap-v2-room-2x-interop-1", "gap-v2-room-2x-interop-2"], "unit": "LegacyV2Ids", "vectorsRef": "v2.vectors"},
-    {"id": "poison_embedded_id_skipped", "requiredBy": "SP2", "findings": ["sync-android-2"], "unit": "SnapshotValidator", "vectorsRef": "snapshot.embeddedIdCases"},
+    {"id": "v2_casing_and_tie", "requiredBy": "SP2", "findings": ["S3-01", "S3-14", "gap-v2-room-2x-interop-1", "gap-v2-room-2x-interop-2", "interop-v2-2xandroid-regression"], "unit": "LegacyV2Ids", "vectorsRef": "v2.vectors"},
+    {"id": "poison_embedded_id_skipped", "requiredBy": "SP2", "findings": ["sync-android-2", "interop-v3-android-fold-duplicates-on-300"], "unit": "SnapshotValidator", "vectorsRef": "snapshot.embeddedIdCases"},
 ]
 # chat prune vector: total = overhead + sum + separators, drop oldest until <= target
 _sizes = [8000] * 250

@@ -14643,6 +14643,13 @@
         "translation": "dc47803f7b835ef5b9ff37d71941cc37a0519e789d66ec2543f03a6691550746",
         "status": "reviewed"
       }
+    },
+    "sync_legacy_room_mixed_versions": {
+      "de": {
+        "source": "4c3303cba2c9f8010320d0fb3ec45e7b311941db215a3a3a451f74a75479707a",
+        "translation": "50522a666f0edc990c4974a94e4fc7ceb503ed921db8401f49c3bdeffe091670",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

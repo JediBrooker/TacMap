@@ -334,6 +334,7 @@
 "id.sync_background_paused" = "Background location sharing paused at %1$@ because the connection was lost. Open TacMap to resume.";
 "id.sync_configured_relay_unavailable" = "Unit Sync could not use its configured relay. Restart TacMap or update the app, then try again.";
 "id.sync_identity_rejected" = "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.";
+"id.sync_legacy_room_mixed_versions" = "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.";
 "id.sync_object_too_large" = "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.";
 "id.sync_records_skipped_unsupported" = "Some synced objects use a format this version of TacMap can't display, so they were skipped (count: %1$@). Update TacMap to see them.";
 "id.sync_records_skipped_unverified" = "Some synced objects failed verification and were ignored (count: %1$@). Your other data is unaffected. If this keeps happening, create a new join code.";
