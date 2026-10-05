@@ -653,8 +653,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
-  library. A library that was never written while map files sit in app storage is handled the same way, so a
-  missing or quarantined index can never authorise deleting those files. Downgrading to an implementation that knows only one retained map is
+  library. A library that was never written, with no old stores left to migrate, while map files sit in app
+  storage is handled the same way, so neither a missing nor a quarantined index can authorise deleting those
+  files. When old stores that read cleanly are migrated instead, the library written from them permits
+  cleanup, so the reconcile after it keeps the files those stores name and removes any other map file in app
+  storage, much like 2.x's own cold-start cleanup, which kept only the active and retained map. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
   recognize as retained, requiring re-import. This is a library-format/lifecycle
   boundary, not a marketing-version boundary.
