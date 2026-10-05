@@ -641,6 +641,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
   library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
   hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
+  In a salvage those links are made before the write, so if the app is killed part way through, the retry can list
+  the same map twice, and a kill between the write and the unlink leaves the old name behind as a second, unlisted
+  link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
+  leftovers). Nothing is lost in either case.
   Old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather than
   being dropped. A library that was never written while map files sit in app storage is handled the same way, so a
   missing or quarantined index can never authorise deleting those files. Downgrading to an implementation that knows only one retained map is

@@ -20,6 +20,11 @@ enum LegacyMigrationCause: String, Sendable {
 /// A failure in 2 or 3 unlinks this attempt's links and clears nothing. A crash
 /// before 3 just redoes it (drafts are keyed by file + page so they get
 /// overwritten), a crash after 3 leaves stale legacy bytes the next load clears.
+/// Not clean though: links are made as files get inspected, before 3. A salvage
+/// killed in there leaves map-<uuid> links that the redo adopts as extra
+/// "Recovered map" rows for the same bytes, and a kill between 3 and 4 leaves
+/// the 2.x name as a second hard link nothing lists (a flagged library never
+/// reconciles it away). Nothing is lost either way.
 /// A locked key migrates nothing and deletes nothing. Legacy state the key can
 /// open but we can't fully read or convert gets salvaged (L5): what converts is
 /// written, every other map file adopted, the old stores left frozen, and the

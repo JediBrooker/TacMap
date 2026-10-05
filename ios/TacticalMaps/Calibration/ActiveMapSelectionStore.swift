@@ -437,9 +437,12 @@ enum ActiveMapSelectionStore {
             // Before the retained field existed, PDFSessionStore was already a
             // sealed one-map library. Use that durable evidence during the
             // one-time migration rather than silently orphaning a saved PDF.
-            retained = PDFSessionStore.load() == nil
-                ? nil
-                : PersistedSelection(kind: .pdf, value: nil)
+            // Only whether it's there: load() commits what it decides (parks v1
+            // points, rewrites or clears the session) before the migration's
+            // own read gets to see it, and that lost points and files
+            retained = PDFSessionStore.hasStoredSession
+                ? PersistedSelection(kind: .pdf, value: nil)
+                : nil
         } else {
             retained = legacy
         }

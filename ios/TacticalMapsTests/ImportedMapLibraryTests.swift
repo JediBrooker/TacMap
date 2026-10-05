@@ -887,6 +887,54 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         XCTAssertEqual((again.fiduciaries ?? again.pendingFiduciaries).count, 4)
     }
 
+    /// what build 1.2.2 wrote: the bare selection, no schemaVersion, no retained
+    private func writeBareSelector() throws {
+        try SafeStore.write(Data(#"{"kind":"online","value":"osmTopo"}"#.utf8),
+                            to: ActiveMapSelectionStore.storageURLProvider(), label: "map_source/active_selection")
+    }
+
+    /// 1.2.2 straight to 3.0: decoding the bare selector called PDFSessionStore.load(),
+    /// which parked the unrebuildable v1 points and rewrote the session as a clean
+    /// v2 before migrationRead looked. The plain run then cleared the parked points
+    func testBareSelectorDoesNotLetTheSessionLoadLoseV1Points() throws {
+        let old = try legacyCopy("tacmap_grid_sf_plain.pdf", as: "Hut map.pdf")
+        try storeV1Session(file: old, calibration: try v1Calibration())
+        try writeBareSelector()
+        PDFSessionStore.legacyPageTransform = { _ in nil }
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        XCTAssertEqual(lib.recoveryPreservesOrphans, true)
+        XCTAssertEqual(lib.active, .online(.osmTopo))
+        XCTAssertEqual(lib.entries.map(\.displayName), ["Hut map"])
+        XCTAssertNotNil(PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1"), "parked points kept")
+        XCTAssertNotNil(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), "session frozen")
+    }
+
+    /// same path, PDF changed since: load() removed the session there and then, so
+    /// the migration saw no PDF at all, wrote an unflagged library and the restore's
+    /// reconcile deleted the 2.x file. Now the hash mismatch salvages it
+    func testBareSelectorWithAChangedPDFAdoptsTheFileInsteadOfReconcilingIt() throws {
+        let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Changed.pdf")
+        let georef = try XCTUnwrap(GeoPDFReader.read(url: old)?.georef)
+        XCTAssertTrue(PDFSessionStore.save(PDFMapSource(url: old, georef: georef, contentKey: PDFSessionStore.contentKey(for: old))))
+        try writeBareSelector()
+        let session = try XCTUnwrap(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"))
+        let contents = Data("changed map bytes".utf8)
+        try contents.write(to: old)
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
+        let vm = MapViewModel(libraryDependencies: liveDependencies(), initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        vm.pdfRenderGuard = PDFRenderGuard(url: root.appendingPathComponent("guard.json"))
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        XCTAssertEqual(vm.library?.recoveryPreservesOrphans, true)
+        let e = try XCTUnwrap(vm.library?.entries.first)
+        XCTAssertEqual(vm.library?.entries.count, 1)
+        XCTAssertEqual(e.displayName, "Changed")
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(e))), contents, "adopted, not reconciled")
+    }
+
     /// L6 / wp4-android-8 on iOS: a draft that won't save writes no library and
     /// clears nothing; the links this attempt made go again
     func testMigrationDraftSaveFailureWritesNothingAndClearsNothing() throws {
