@@ -873,6 +873,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/app/MapScreenLaunchGuard.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/app/PendingDocumentImport.kt",
     "platform": "android",
     "area": "import-export",

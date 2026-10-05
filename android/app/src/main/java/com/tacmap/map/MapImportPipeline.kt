@@ -256,9 +256,19 @@ internal class MapImportPipeline(
                 .flatMap { st -> st.resultPath?.let { listOf(File(it), File("$it.partial")) }.orEmpty() }
                 .toSet()
 
-        /** launch sweep: any marker still set means an inspection killed the process */
-        fun sweepInterrupted(journal: DocumentImportCopyStateStore): Boolean {
-            val stuck = runCatching { journal.all() }.getOrDefault(emptyList()).filter { it.inspectStartedAtEpochMs != null }
+        /**
+         * launch sweep: any marker still set means an inspection killed the process. unless its
+         * copy is still in flight in this one, then it's a live import (another map screen's,
+         * or ours before a re-adopt) mid parse and not a crash at all
+         */
+        fun sweepInterrupted(
+            journal: DocumentImportCopyStateStore,
+            inFlight: Set<File> = InFlightImportFiles.snapshot(),
+        ): Boolean {
+            val live = inFlight.map { it.absoluteFile }.toSet()
+            val stuck = runCatching { journal.all() }.getOrDefault(emptyList())
+                .filter { it.inspectStartedAtEpochMs != null }
+                .filterNot { st -> st.resultPath?.let { File(it).absoluteFile in live } == true }
             stuck.forEach { clearInterrupted(journal, it) }
             return stuck.isNotEmpty()
         }
