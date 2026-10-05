@@ -49,7 +49,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
 | Imported symbol packs | **Untrusted** | User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated. |
-| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs; it is size, depth and count bounded, never writes the file, and falls back to the plain file on anything unexpected. A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
+| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
 | Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
@@ -129,33 +129,48 @@ ciphertext.
 **What the relay stores, and for how long.** Per room the relay stores a hash of
 the admission token, the protocol version, the room's sequence and counter
 high-water values, record/byte counters, the time of last activity (written at
-most hourly, when the last connection goes, and daily while anyone is
-connected; never per presence or chat frame), the latest sealed record of each
+most hourly while devices send anything, each time the last connection goes,
+and daily while anyone is connected; no message traffic writes it more than
+once an hour, but a device that keeps reconnecting writes it on each
+disconnect), the latest sealed record of each
 synced object, tombstones (the sealed, signed delete proof with its signer's
 public key and session ID), and one pin per device actor (public key, first-seen
 time, the hour of its latest session announcement, and that signed
-announcement). It also keeps relay-only bookkeeping rows: the hour each delete
-landed, the time of the last idle expiry, the sequence number of the last
-expiry or compaction, the newest session-announcement hour among the device
-pins dropped at expiry (one value, no device identity), an index marker (0 in
-rooms created since SP1; in older rooms the hour the relay first indexed their
-deletes, which is about the SP1 deploy time, not the room's creation), and a
-marker while an expiry pass is unfinished. Nothing that outlives idle expiry
-records when the room was created (device pins, with their first-seen times,
-go at expiry). Presence, chat, and chat keys are never written to storage.
+announcement). Once idle expiry drops a pin, the relay keeps that device's
+epoch floor instead: its pseudonymous room-scoped actor ID and the number
+(epoch) of its latest accepted session, nothing else. It also keeps relay-only
+bookkeeping rows: the hour each delete landed, the time of the last idle
+expiry, the sequence number of the last expiry or compaction, the newest
+session-announcement hour among the device pins dropped at expiry (one value,
+no device identity), an index marker (0 in rooms created since SP1; in older
+rooms the hour the relay first indexed their deletes, which is about the SP1
+deploy time, not the room's creation), and a marker while an expiry pass is
+unfinished. No stored time that outlives idle
+expiry records when the room was created (device pins, with their first-seen
+times, go at expiry). An epoch floor holds no time either, but current apps
+start a device's session number at the Unix minute of its first session in the
+room and only count up from there, so a floor shows that the device joined no
+later than that minute (roughly when, for a device with few sessions since).
+Presence, chat, and chat keys are never written to storage.
 
 - About 7 days after the last recorded activity, with no connection open, the
-  relay deletes every live object and every actor pin. A room that never
-  stored anything is deleted entirely. Otherwise the relay keeps the token
+  relay deletes every live object and swaps every actor pin for its epoch
+  floor. A room that never stored an object or a delete and in which no
+  device ever announced a session (a legacy v2 room nobody wrote to, or a
+  drive-by connection) is deleted entirely. Otherwise, rooms used only for
+  position sharing or chat included, the relay keeps the token
   hash, protocol, sequence and high-water values, counters, last-activity time,
-  the bookkeeping above and tombstones, so a device that returns later is not
-  rolled back, is not locked out by the counter window, and cannot bring back
-  an object someone deleted. Those few values hold no mission content.
+  the bookkeeping above, the floors and tombstones, so a device that returns
+  later is not rolled back, is not locked out by the counter window, and
+  cannot bring back an object someone deleted, and nobody holding the join
+  code can replay another device's older session (§7). Those few values hold
+  no mission content. A device's next session is always accepted and turns
+  its floor back into a pin.
 - About 90 days after the last recorded activity (or after the last idle
   expiry, if no activity was ever recorded), with no connection open, the
   relay deletes everything it still holds for the room: token hash, counters,
-  timestamps, bookkeeping and every remaining tombstone. Nothing is left. Any
-  recorded activity in between restarts both clocks. A device that comes back after that finds a fresh, empty room: its
+  timestamps, bookkeeping, epoch floors and every remaining tombstone. Nothing
+  is left. Any recorded activity in between restarts both clocks. A device that comes back after that finds a fresh, empty room: its
   sequence fence is lower than the one it saw before, so the app shows the
   rollback warning, and a device whose version counters had run more than
   10,000 ahead gets counter-window rejections. Treat it as a new room and move
@@ -420,9 +435,26 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   room-wide. Anyone holding the join code can pin many throwaway device
   identities or keep a large set of tombstones alive by checking in more often
   than every 30 days, until honest writes are refused as over quota and new
-  devices cannot join. The relay cannot tell an insider from a teammate. The
+  devices cannot join. Each throwaway identity also leaves an epoch floor that
+  keeps counting against the quota after idle expiry, until the 90-day purge.
+  The relay cannot tell an insider from a teammate. The
   remedy is the same as for any compromised code: move the unit to a new join
   code.
+- **A room insider can replay another device's old session only once the
+  relay has forgotten the room.** Every member sees each device's signed
+  session announcement and records, so anyone holding the join code can
+  capture them. The relay refuses an announcement that is not newer than the
+  device's latest one, and since 3.0.1 it keeps that number (the epoch floor,
+  §4) through idle expiry until the 90-day purge, so neither an old session nor
+  the old object versions, positions or chat it carried can be brought back
+  while the room exists, also in a room only ever used for position sharing.
+  After the 90-day purge the relay has nothing left to check against, and an
+  insider can replay a captured session (its records, presence and chat) to
+  devices that never saw a newer one, such as a fresh install. Devices that
+  kept their replay state reject it. A relay that
+  is itself hostile can always do this (see *A coerced relay* above), and
+  older or self-hosted relays without the floor forget it at the first idle
+  expiry. After a purge, move to a new join code.
 - **Area-of-interest leakage via online basemaps/lookups.** See §6. While the
   online-basemaps or online-lookups gate is on, the tile/query coordinates go to
   the provider (Esri/OpenTopoMap/Open-Meteo, Apple place search, or the Android
@@ -490,12 +522,56 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   [ADR-002](https://github.com/JediBrooker/TacMap/blob/main/docs/security/ADR-002-key-lifetime-and-rotation.md).
 
   Android detaches mission stores and clears its general-key cache on Activity
-  pause. iOS keeps the map view mounted to preserve authorized recording:
+  pause. The one exception is TacMap's own share sheet: that translucent chooser
+  pauses the Activity with the map still visible behind it, so the same lock runs
+  at the following onStop instead (as soon as you actually leave: the share
+  target opens, Home, recents or screen off), and closing the sheet back into
+  TacMap locks nothing. While that sheet is up the mission stores stay attached,
+  the key stays cached and Unit Sync keeps processing. Before clearing the cache,
+  Android waits up to two seconds for Unit Sync sealed writes already queued on
+  its persistence worker, which normally includes the presence clean point; if
+  another sync write holds the store at that moment, the clean point fails
+  closed instead and the next reload applies the safe presence floor. Once cleared, the
+  general key is not unwrapped again in either mode until the foreground unlock
+  (device-mode resume, the App Lock PIN, a platform credential or a confirmed
+  protection change). A write still in flight behind the lock fails closed
+  instead of re-caching the key: a Unit Sync write that missed the two seconds
+  is dropped without a security stop, and a map import still copying, or a
+  map-library change still being written, when the app leaves the foreground
+  (or while the Activity is recreated for a configuration change it doesn't
+  handle) fails without deleting anything and has to be retried. A PDF bake that
+  finishes in the background doesn't try to write: its finished tiles wait,
+  unrecorded, in the app-private bake work folder (cleared at the next process
+  start) until the foreground unlock, then are recorded on their PDF's library
+  entry. With no map screen open at that point the bake is recorded straight
+  into the sealed library, under the same write-counter check. Cancelling the
+  bake while it waits deletes the file.
+  iOS keeps the map view mounted to preserve authorized recording:
   previously decrypted mission/library objects, track points and rendered tiles
-  may remain beneath the opaque lock overlay. AUTH mode clears the general key
-  cache; DEVICE mode may retain it under the accepted lifecycle policy. UI and
-  inbound Sync gates prevent ordinary locked-state access/processing, but do not
-  defend retained memory against code executing inside a compromised process.
+  may remain in memory beneath the opaque lock view. AUTH mode clears the
+  general key cache; DEVICE mode may retain it under the accepted lifecycle
+  policy. UI and inbound Sync gates prevent ordinary locked-state
+  access/processing (on iOS the UI gate is the cover window described next, for
+  the auth-bound key as well as App Lock), but do not defend retained memory
+  against code executing inside a compromised process.
+
+  On iOS the App Lock view is shown in its own window above alert level in every
+  scene of the app, and so is the "Mission data locked" screen shown while the
+  mission-data key is locked (with the auth-bound key, after every trip out of the
+  foreground), so either one also covers whatever TacMap had presented when it
+  locked: sheets (Unit Sync with the join code, waypoint and drawing lists, the
+  map library, export), the system share sheet, file pickers and alerts. Those
+  stay presented underneath (nothing is dismissed, so they are back after unlock)
+  but while locked they cannot be seen or touched, are hidden from VoiceOver, and
+  lose text-input focus; if anything underneath claims keyboard focus while
+  locked, the lock window takes it back. App Lock comes first; once its PIN is
+  entered, the mission data screen takes its place in the same window until the
+  key is unlocked, so a sheet left open is never uncovered in between. TacMap Chat
+  is still closed and its secrets cleared on lock. App Lock arms when the app
+  enters the background, not on a transient `.inactive`; the auth-bound key locks
+  on any `.inactive`. Prompts drawn by iOS itself (permission alerts, Face ID) are
+  outside the app and can still appear above it. Alerts TacMap raises while one of
+  these screens is up wait underneath it until unlock.
 
   The optional in-app PIN lock remains a **UI deterrent for a borrowed device,
   not encryption**, and is independent of all of the above.
@@ -504,8 +580,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   atomic rename. On flash storage the old blocks may survive until wear-levelling
   reclaims them, protected only by the platform's own full-disk encryption.
 
-  Per-room Chat and rollback-state files use DEK-bound opaque filenames so a
-  filesystem or backup index does not disclose the routing room ID. On upgrade,
+  Per-room Chat and rollback-state files, and on Android the sealed legacy-v2
+  wire-id casing file (object UUIDs only, no content), use DEK-bound opaque
+  filenames so a filesystem or backup index does not disclose the routing room ID. On upgrade,
   both apps scan and rename every canonical legacy room filename after the DEK is
   available, including inactive rooms; a locked key causes no filesystem changes
   and interrupted passes resume on the next unlocked launch.
@@ -516,7 +593,7 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   excluded from backup and not exposed through Files/Finder file sharing; on
   Android, app-private storage with backup disabled) but as their original bytes.
   They reveal your area of interest to anyone who extracts them at the filesystem
-  level. The files have opaque names (`map-<uuid>` on iOS, `import-<16 hex>` on
+  level. The files have opaque names (`map-<uuid>` on iOS, `import-<32 hex>` on
   Android). The imported-map library (each map's original file name, content hash,
   page, embedded or hand-made georeference and calibration points, its offline-tile
   bake record and its crash-guard token) and any calibration still in progress are
@@ -573,13 +650,23 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   follows symlinks, and runs under the same managed-files lock as bake publish, which
   moves the file and writes its record as one step. It runs only on an authoritative
   read of the library: a library that loaded, or a first launch where no library was
-  ever written and no legacy store is left to migrate (that names nothing). A library
+  ever written, no legacy store is left to migrate and no map file is in the managed
+  directories (that names nothing and has nothing to delete). A library
   that was written before and is gone now, or that was quarantined as unreadable (a
   `.corrupt-<time>` copy next to it), counts as unreadable, never as empty. If the library
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
   migration (a quarantined legacy store included), the sweep is skipped. The same rule
   holds for the managed-file reconcile and the calibration-draft prune: none of them ever
-  runs from a library state the app made up to stand in for one it couldn't read. A bake record the app would not have written names nothing, and nothing
+  runs from a library state the app made up to stand in for one it couldn't read. Nor
+  from an older copy of the library a screen kept in memory: on Android the reconcile's
+  keep set, its list of files still being written, the bake sweep and the draft prune all
+  come from the sealed library read under the managed-files lock, and every library write
+  is checked under that lock against the sealed library's write counter. A second copy of
+  the map screen, or a bake that finishes after the screen that started it has closed,
+  therefore can't write back an older library or get another screen's imports,
+  calibrations or baked tiles deleted; it re-reads the library and applies its change on
+  top, or the change is refused. The Unit Sync notification brings the running app to the
+  front instead of opening a second copy of it. A bake record the app would not have written names nothing, and nothing
   treats a name outside the `tacmap-bake-<id>.mbtiles` form as a bake. It does not
   depend on the PDF being present, so plaintext tiles left by a failed delete don't
   outlive the next launch. Files from the pre-WP2 tiler (`tacmap-<uuid>.mbtiles`) and
@@ -608,16 +695,45 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   launches. Explicit georeference changes and bake replacement remove only their known
   superseded bake after the sealed write. Unmatched map files, files beyond the recovery entry cap, bakes and drafts
   stay on disk; only an explicit Delete Map or Remove Offline Tiles deletes its known
-  owned files. Older valid indexes omit this flag and keep normal cleanup. The one-time migration from older builds is
-  fail-closed: a stored PDF content key must match a fresh hash before its calibration
+  owned files. Older valid indexes omit this flag and keep normal cleanup. The one-time migration from older builds
+  never deletes anything it can't vouch for: a stored PDF content key must match a fresh hash before its calibration
   is migrated, and a document that will not open never gets a fabricated page count.
-  If a legacy store is locked or damaged, or a legacy PDF is present but
-  can't be read or converted, nothing is written, cleared or deleted and Retry is
-  offered. Downgrading to an implementation that knows only one retained map is
+  If the mission-data key is locked, or a write the migration needs (calibration drafts first, then the
+  library) fails, nothing is written, cleared or deleted and Retry is offered. One exception on Android: the
+  store records a library as sealed-only before its bytes go down, so a library write that fails partway (a
+  full disk) leaves that record, the never-written library then counts as unreadable, and its Retry is the
+  rebuild above; the old stores stay as they are and still nothing is deleted. On iOS it is the other way
+  round: the library's bytes go down before its sealed-only record, so if saving that record fails the
+  library is already written. The migration then keeps the opaque links that library names, clears and
+  deletes nothing, and the restore uses that library as if the app had been killed right after the write.
+  If a legacy store is damaged
+  or was quarantined (only its `.corrupt-<time>` copy is left), or a legacy PDF is present but can't be read
+  or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
+  the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
+  leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
+  library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
+  hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
+  In a salvage those links are made before the write, so if the app is killed part way through, the retry can list
+  the same map twice, and a kill between the write and the unlink leaves the old name behind as a second, unlisted
+  link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
+  leftovers). Nothing is lost in either case.
+  On iOS, old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather
+  than being dropped; Android can't rebuild them either and brings that map back uncalibrated. A library that was
+  never written, with no old stores left to migrate, while map files sit in app storage is salvaged the same way
+  (every file adopted, `recoveryPreservesOrphans=true`, no cleanup), so neither a missing nor a quarantined index
+  can authorise deleting those files. When old stores that read cleanly are migrated instead, the library written from them permits
+  cleanup, so the reconcile after it keeps the files those stores name and removes any other map file in app
+  storage, much like 2.x's own cold-start cleanup, which kept only the active and retained map. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
   recognize as retained, requiring re-import. This is a library-format/lifecycle
   boundary, not a marketing-version boundary.
-- **Untrusted MBTiles metadata.** Both readers reject more than 64 metadata
+- **Untrusted MBTiles metadata.** `tiles` and `metadata` may each be a table or
+  a view (MBTiles 1.3, used by deduplicated packs); anything else is refused. A
+  view has no rowid for incremental reads, so it is read with key-addressed
+  queries under the same bounds. A view's row count isn't limited by the file
+  size, so all admission queries share a 30 s budget and each later query on a
+  view gets 2 s; an interrupted admission rejects the pack and an interrupted
+  tile read returns no tile. Both readers reject more than 64 metadata
   rows using bounded row/type descriptors before copying text. Keys are bounded
   to 32 characters; known name/format/min-max zoom/bounds fields to
   128/32/16/256. Copied UTF-8 prefixes are at most four bytes per allowed
@@ -650,6 +766,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   probe draws it once under the render crash guard; a sheet that can't be drawn is
   refused and nothing is saved. Drawing (calibration previews included) is covered by
   the same guard, so a sheet that crashes the renderer is not reopened automatically.
+  On iOS that includes opening a stored sheet when it is restored at launch in the
+  foreground and has not drawn cleanly yet, where the optional-content reader (§3) reads
+  the raw file before CoreGraphics does. Once a sheet has drawn, or on a background
+  relaunch, that restore open is not guarded.
   A declared georeference that can't be verified is refused with a reason and the sheet
   can be calibrated by hand instead; it is never quietly placed around the current
   camera.
@@ -686,14 +806,20 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   inside a crash handler is fragile. Stack traces rarely contain coordinates but
   can carry an imported map's file name; clear it if that matters.
 - **Expired rooms are remembered for up to 90 days.** A room that ever stored
-  anything keeps about a dozen small relay rows (token hash, sequence and
-  high-water values, counters, timestamps) plus its remaining tombstones after
-  idle expiry, so devices returning within that time resume cleanly (§4).
+  anything, or in which any device announced a session (so every v3 room
+  that was actually used, position sharing only included), keeps about a
+  dozen small relay rows (token hash, sequence and
+  high-water values, counters, timestamps) plus its remaining tombstones and
+  one epoch floor per device (room-scoped device ID and latest session number)
+  after idle expiry, so devices returning within that time resume cleanly and
+  old sessions stay refused (§4).
   They hold no mission content, but until they go they show that the room
-  existed and roughly when it was last used, and the token hash lets whoever
-  holds relay storage confirm a join-code guess just as the routing ID does
-  (see *A weak join code*). After 90 days with no activity the relay deletes
-  all of it; rooms that never stored anything go at 7 days. Room creation is
+  existed, roughly when it was last used, how many devices took part and,
+  through each floor, when each device joined at the latest, and the token
+  hash lets whoever holds relay storage confirm a join-code guess just as the
+  routing ID does (see *A weak join code*). After 90 days with no activity the relay deletes
+  all of it; rooms that never stored anything and never saw a session
+  announcement go at 7 days. Room creation is
   only rate limited per IP address, so relay storage holds rows for every room
   used in the last 90 days. A device returning after the purge gets the
   rollback warning and must move to a new join code (§4). If even 90 days is
@@ -755,14 +881,17 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   reload raises each stored counter's acceptance floor by 15, capped at the
   largest valid counter, so a crash cannot make an already exposed position
   acceptable again. Clean points write exact counters; a failed clean point
-  keeps the preceding safe floor (ADR-001 section 8).
+  keeps the preceding safe floor (ADR-001 section 8). On Android the pause gives
+  its clean point up to two seconds to seal before the mission key locks; one
+  that misses that bound fails against the lock and keeps the floor.
 - **A joined room survives a pause (iOS and Android).** Backgrounding pauses
   mission processing even when the mission-data key stays available. Key lock,
   App Lock or detached stores also close the ordinary session; an explicitly
   eligible v3 background-presence bridge is the separate exception above.
-  Android Activity pause detaches mission stores and clears the general key
-  cache. Without the eligible presence bridge, the socket closes without a
-  signed leave; with it, only presence continues. The joined room is kept,
+  Android Activity pause (behind TacMap's own share sheet, the onStop after it)
+  detaches mission stores, lets the queued clean point seal and then clears the
+  general key cache. Without the eligible presence bridge, the socket closes
+  without a signed leave; with it, only presence continues. The joined room is kept,
   v2 or v3, with or without location sharing: the derived room keys, the device signing seed and the replay-state
   object stay **in memory only**, and the app reconnects by itself once the
   key is unlocked and fresh stores are attached. On iOS a transient
@@ -771,11 +900,13 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   (device-bound mode) and no App Lock overlay is shown; in auth-bound mode the
   key locks on `.inactive` and the session ends as before. That in-memory
   material is cleared on leave, on a join-code change and at process death.
-  Android detaches the mission stores and clears the general-key cache;
-  iOS gates inbound processing and the mounted UI without erasing every already
-  decrypted model or tile. The authorized recording-key exception and DEVICE
-  cache policy above still apply. A background return needs a fresh connection
-  and verified snapshot before mission frames are adopted. The background
+  Android detaches the mission stores and clears the general-key cache, and
+  nothing re-caches it before the foreground unlock;
+  iOS gates inbound processing and covers the mounted UI, presented sheets
+  included, without erasing every already decrypted model or tile. The
+  authorized recording-key exception and DEVICE cache policy above still apply.
+  A background return needs a fresh connection and verified snapshot before
+  mission frames are adopted. The background
   presence bridge has no recorder-key access and does not decrypt/adopt mission
   frames; its bounded structural snapshot drain is scratch only.
 - **Peer device keys are authenticated; human identity remains out-of-band.** Each
@@ -820,8 +951,13 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   thumbnail). This is literal on Android (`FLAG_SECURE` blocks screenshots,
   screen recording, and the recents thumbnail). On iOS there is no public API to
   block an in-app screenshot, so the toggle only covers the **app-switcher
-  snapshot** (an opaque cover while the app is backgrounded) - a deliberate
-  screenshot of the live map is still possible.
+  snapshot**: whenever the app is not active (from `.inactive`, before iOS takes
+  the snapshot) an opaque cover is shown in its own window above everything
+  TacMap has on screen, including open sheets, the share sheet, file pickers and
+  alerts, so a join code, waypoint list or export preview stays out of the
+  thumbnail too. With the toggle off and App Lock on, the lock view only goes up
+  once the app is in the background. A deliberate screenshot of the live app is
+  still possible.
 - Online lookups off; enabling them sends provider queries described in §5.
 - Online basemaps off; enabling them exposes viewed tile coordinates as described in §5.
 - Mission data encrypted at rest with a device-bound key.

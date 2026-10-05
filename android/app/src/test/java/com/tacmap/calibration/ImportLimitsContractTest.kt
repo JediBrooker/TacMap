@@ -88,6 +88,27 @@ class ImportLimitsContractTest {
         assertEquals(i.l("cancelCopyGranularityBytes"), ImportLimits.CANCEL_COPY_GRANULARITY_BYTES)
     }
 
+    // test-integrity-4: the SQLite vectors run instrumented, the constants are pinned here too
+    @Test
+    fun mbtilesAdmissionConstantsMatchTheSharedTable() {
+        val m = root.o("mbtilesMetadataAdmission")!!
+        assertEquals(m.i("maxRows"), MBTilesStore.MAX_METADATA_ROWS)
+        assertEquals(m.i("maxKeyCharacters"), MBTilesStore.MAX_METADATA_KEY_CHARACTERS)
+        assertEquals(m.i("utf8PrefixBytesPerCharacter"), MBTilesStore.UTF8_BYTES_PER_CHARACTER)
+        assertEquals(m.i("consumedBakeExtensionMaxCharacters"), MBTilesStore.MAX_BAKE_EXTENSION_CHARACTERS)
+        assertEquals(m.i("tileZoomMin"), 0)
+        assertEquals(m.i("tileZoomMax"), MBTilesStore.MAX_ZOOM)
+        val known = m.o("knownValueMaxCharacters")!!
+        assertEquals(known.keys, MBTilesStore.METADATA_VALUE_LIMITS.keys)
+        known.forEach { (key, bound) -> assertEquals(key, bound.jsonPrimitive.int, MBTilesStore.METADATA_VALUE_LIMITS.getValue(key).first) }
+        // only key/name/format may truncate, everything else fails closed when too long
+        val truncating = m["truncateFields"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+        MBTilesStore.METADATA_VALUE_LIMITS.forEach { (key, limit) -> assertEquals(key, key in truncating, limit.second) }
+        assertEquals(m["relationTypes"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet(), MBTilesStore.RELATION_TYPES)
+        assertEquals(m.l("admissionBudgetMs"), MBTilesStore.ADMISSION_BUDGET_MS)
+        assertEquals(m.l("viewQueryBudgetMs"), MBTilesStore.VIEW_QUERY_BUDGET_MS)
+    }
+
     @Test
     fun errorsMapToTheSharedMessageKeys() {
         val errors = root.o("errors")!!

@@ -10,13 +10,21 @@ so there's plenty of pixels.
 Geometry is lifted straight from scripts/store_screenshots.py render() rather
 than eyeballed, so if that layout ever changes this will need a look.
 
+That slide was dropped from the tree in #55, so it's read out of git history
+(SOURCE_REV). Pass --rev '' to read a working tree copy instead.
+
     python3 scripts/extract_site_hero.py
 """
 
+import argparse
+import io
 import os
+import subprocess
 from PIL import Image
 
 SRC = "docs/store/ios/iphone-6.9/01-hero.png"
+# parent of fc4ed0e (#55), the last commit that still had the 2.2 hero slide
+SOURCE_REV = "0d88f3092a9a944a38e2df3d4b02215bb0c8119d"
 OUT_JPG = "site/public/assets/screens/hero-device.jpg"
 OUT_WEBP = "site/public/assets/screens/hero-device.webp"
 
@@ -29,8 +37,19 @@ OUT_R = int(INNER_W * 0.10)             # 84, the bezel corner radius
 MAX_W = 720                             # export width, see note in main()
 
 
+def load_source(rev=SOURCE_REV):
+    if not rev:
+        return Image.open(SRC).convert("RGB")
+    got = subprocess.run(["git", "show", f"{rev}:{SRC}"], capture_output=True)
+    if got.returncode != 0:
+        raise SystemExit(f"{SRC} isn't in git rev {rev}: {got.stderr.decode().strip()}")
+    return Image.open(io.BytesIO(got.stdout)).convert("RGB")
+
+
 def main():
-    src = Image.open(SRC).convert("RGB")
+    parser = argparse.ArgumentParser(description="Crop the device out of the hero store slide.")
+    parser.add_argument("--rev", default=SOURCE_REV, help="git rev to read the slide from, '' for the working tree")
+    src = load_source(parser.parse_args().rev)
     if src.size != (W, H):
         raise SystemExit(f"{SRC} is {src.size}, expected {(W, H)} - geometry below is stale")
 

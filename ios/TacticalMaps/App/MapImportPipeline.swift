@@ -191,15 +191,21 @@ enum MapImportPipeline {
     /// copy it names and the marker, don't retry. true = tell the user once.
     @discardableResult
     static func recoverInterruptedImport() -> Bool {
-        guard let m = markerURL, let data = try? Data(contentsOf: m) else { return false }
-        let token = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        if token.hasPrefix("map-"), !token.contains("/"), let dir = try? ImportedMapStorage.importedMapsDirectory() {
-            for ext in ["pdf", "pdf.partial"] {
-                try? FileManager.default.removeItem(at: dir.appendingPathComponent("\(token).\(ext)"))
-            }
-        }
+        guard let m = markerURL, (try? Data(contentsOf: m)) != nil else { return false }
+        for url in interruptedImportFiles() { try? FileManager.default.removeItem(at: url) }
         try? FileManager.default.removeItem(at: m)
         return true
+    }
+
+    /// what a pending marker names (the copy and its partial), read only. The
+    /// library adoption leaves these to recoverInterruptedImport
+    static func interruptedImportFiles() -> Set<URL> {
+        guard let m = markerURL, let data = try? Data(contentsOf: m) else { return [] }
+        let token = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.hasPrefix("map-"), !token.contains("/"), let dir = try? ImportedMapStorage.importedMapsDirectory() else {
+            return []
+        }
+        return Set(["pdf", "pdf.partial"].map { dir.appendingPathComponent("\(token).\($0)") })
     }
 
     // MARK: - PDF

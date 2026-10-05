@@ -281,8 +281,8 @@ android {
         applicationId = "com.tacmap"
         minSdk = 26
         targetSdk = 36
-        versionCode = injectedVersionCode ?: 73
-        versionName = "3.0.0"
+        versionCode = injectedVersionCode ?: 74
+        versionName = "3.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables { useSupportLibrary = true }

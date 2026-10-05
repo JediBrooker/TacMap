@@ -497,6 +497,7 @@ final class LibraryBakeLifecycleTests: XCTestCase {
         XCTAssertEqual(ImportedMapLibrary.bakeAuthority(.loaded(s), legacyPresent: false), .read([]))
         XCTAssertEqual(ImportedMapLibrary.bakeAuthority(.empty, legacyPresent: false), .read([]))
         XCTAssertEqual(ImportedMapLibrary.bakeAuthority(.empty, legacyPresent: true), .unreadable)
+        XCTAssertEqual(ImportedMapLibrary.bakeAuthority(.empty, legacyPresent: false, managedFiles: true), .unreadable)
         XCTAssertEqual(ImportedMapLibrary.bakeAuthority(.locked(CocoaError(.fileReadNoPermission)), legacyPresent: false),
                        .unreadable)
         XCTAssertEqual(ImportedMapLibrary.bakeAuthority(.corrupt(quarantinedTo: nil, error: CocoaError(.fileReadCorruptFile)),
@@ -519,14 +520,18 @@ final class LibraryBakeLifecycleTests: XCTestCase {
         // (this used to read empty and sweep, the very bug)
         XCTAssertEqual(viewModel().restoreActiveMapSelection(), .corrupt)
         XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path))
-        // nothing anywhere, never written: names nothing, the sweep runs
+        // never written but a bake is sitting there: 3.0.1 L7, that's a pending
+        // adoption (the launch hop writes a flagged library), not a first launch
         let dir = ImportedMapLibrary.storageURLProvider().deletingLastPathComponent()
         for name in try FileManager.default.contentsOfDirectory(atPath: dir.path)
         where name.hasPrefix(ImportedMapLibrary.storageURLProvider().lastPathComponent) {
             try FileManager.default.removeItem(at: dir.appendingPathComponent(name))
         }
+        XCTAssertEqual(viewModel().restoreActiveMapSelection(), .locked)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path))
+        // nothing anywhere: names nothing and has nothing to delete, a real first launch
+        try FileManager.default.removeItem(at: orphan)
         XCTAssertEqual(viewModel().restoreActiveMapSelection(), .nothing)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
     }
 
     /// the reconcile keep set and the sweep agree on an invalid record: neither

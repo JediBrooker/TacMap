@@ -70,7 +70,8 @@ internal object SnapshotRecordClassifier {
         wireId: String,
         layers: List<com.tacmap.drawings.DrawingLayer>,
         localKindOf: (String) -> String? = { null },
-    ): V3Check = validator.check(rec, wireId, layers, localKindOf)
+        localIdOf: (String) -> String? = { null },
+    ): V3Check = validator.check(rec, wireId, layers, localKindOf, localIdOf)
 }
 
 /** Snapshot fence checks that don't need keys. Seq regression is a relay hint:

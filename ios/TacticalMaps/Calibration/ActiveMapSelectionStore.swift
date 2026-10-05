@@ -123,15 +123,22 @@ enum ActiveMapSelectionStore {
 
     enum LegacySnapshot: Equatable {
         case none
-        case unreadable
+        /// the key failed somewhere in the read, try again after unlock
+        case locked
+        /// key fine but the selector won't authenticate or decode (the read just
+        /// quarantined it), or only its .corrupt-* copy is left, or it was sealed
+        /// here before and no library was ever written. 3.0.1 L3: salvage, not block
+        case uncertain(LegacyMigrationCause)
         case loaded(active: LegacySelection?, retained: LegacySelection?)
     }
 
     /// No writes, no publication: just what the old store says.
     static func legacySnapshot() -> LegacySnapshot {
         switch loadState() {
-        case .empty: return legacyStoreQuarantined ? .unreadable : .none
-        case .locked, .corrupt: return .unreadable
+        case .empty: return legacyStoreQuarantined ? (keyAvailable ? .uncertain(.quarantinedOnly) : .locked) : .none
+        case .locked: return .locked
+        // a failed unseal with the key there is damage, not a lock (L3 re-check)
+        case .corrupt: return keyAvailable ? .uncertain(.corrupt) : .locked
         case .loaded(let decoded):
             func map(_ s: PersistedSelection?) -> LegacySelection? {
                 guard let s else { return nil }
@@ -156,10 +163,13 @@ enum ActiveMapSelectionStore {
         FileManager.default.fileExists(atPath: storageURLProvider().path)
     }
 
+    private static var keyAvailable: Bool { (try? SafeStore.keyProvider()) != nil }
+
     /// S1: the old selector is gone but not because the library took over: read()
     /// quarantined it (.corrupt-* sibling), or it was sealed here before and no
-    /// library was ever written (clearLegacy only runs after that write). Blocks
-    /// the migration, never reads as "no legacy left". No key = can't tell = true
+    /// library was ever written (clearLegacy only runs after that write). Never
+    /// reads as "no legacy left", the migration salvages instead. No key = can't
+    /// tell = true
     static var legacyStoreQuarantined: Bool {
         let url = storageURLProvider()
         guard !FileManager.default.fileExists(atPath: url.path) else { return false }
@@ -427,9 +437,12 @@ enum ActiveMapSelectionStore {
             // Before the retained field existed, PDFSessionStore was already a
             // sealed one-map library. Use that durable evidence during the
             // one-time migration rather than silently orphaning a saved PDF.
-            retained = PDFSessionStore.load() == nil
-                ? nil
-                : PersistedSelection(kind: .pdf, value: nil)
+            // Only whether it's there: load() commits what it decides (parks v1
+            // points, rewrites or clears the session) before the migration's
+            // own read gets to see it, and that lost points and files
+            retained = PDFSessionStore.hasStoredSession
+                ? PersistedSelection(kind: .pdf, value: nil)
+                : nil
         } else {
             retained = legacy
         }

@@ -8,6 +8,7 @@
 #   python3 testdata/tools/gen_sync_client_behaviour.py --check  exit 1 if it would change
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -342,6 +343,97 @@ SNAPSHOT = {
     "liveRecordsUseSameClassification": True,
 }
 
+# ---- 3.0.1 (sync-android-2): the embedded object id must be a canonical UUID before it's hashed -----------
+CANONICAL_UUID = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
+
+def canonical_uuid(s):
+    """whole string, ASCII hex only, no trimming, no trailing newline (re.fullmatch, not $)"""
+    return len(s) == 36 and re.fullmatch(CANONICAL_UUID[1:-1], s, flags=re.ASCII) is not None
+
+
+def _java_digit(ch):
+    """Character.digit(ch, 16) for the characters these rows use (ASCII, fullwidth digits / letters)"""
+    o = ord(ch)
+    if "0" <= ch <= "9":
+        return o - 48
+    if "a" <= ch <= "f":
+        return o - 87
+    if "A" <= ch <= "F":
+        return o - 55
+    if 0xFF10 <= o <= 0xFF19:
+        return o - 0xFF10
+    assert ch.isascii(), "model only knows ASCII + fullwidth digits: %r" % ch
+    return -1
+
+
+def lenient_uuid_bytes(s):
+    """what 3.0.0 Android's SyncIdentity.uuidToBytes hashed: strip '-', need 32 chars, Character.digit per
+    nibble with no validation. None where it threw (the record then never matched its wire id)"""
+    stripped = s.replace("-", "")
+    if len(stripped) != 32:
+        return None
+    return bytes(((_java_digit(stripped[i]) << 4) + _java_digit(stripped[i + 1])) & 0xFF
+                 for i in range(0, 32, 2)).hex()
+
+
+def embedded_id_cases():
+    canon = "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+    canon_bytes = canon.replace("-", "")
+    rows = [
+        ("lowercase_canonical", canon, "what both apps send in v3 today (iOS GeoJSONExporter.wire, Android UUID.toString)"),
+        ("uppercase_canonical", canon.upper(), "RFC 9562: case-insensitive on input. Accepted on both; Android folds the "
+                                               "local id to lowercase so one object never gets two local ids"),
+        ("mixed_case_canonical", "3F2a1B4c-0D5e-4F60-8a7B-9c8D7e6F5a4B", "same as uppercase"),
+        ("hex32_no_dashes", canon_bytes, "sync-android-2: 3.0.0 Android hashed it to the canonical wire id, then "
+                                          "validRemote refused it and sync stopped for the room"),
+        ("nonhex32", "zyxwvutsrqponmlkjihgzyxwvutsrqpo", "32 non-hex chars: Character.digit gave -1 per nibble, "
+                                                          "a wire id an attacker can still compute"),
+        ("braces", "{" + canon + "}", "Microsoft registry form"),
+        ("leading_space", " " + canon, "no trimming"),
+        ("trailing_newline", canon + "\n", "a regex $ that matches before a final newline must not let this through"),
+        ("fullwidth_digit", "３" + canon[1:], "Character.digit and Long.parseLong accept Unicode digits; ASCII only"),
+        ("short_groups", "0-0-0-0-0", "java.util.UUID.fromString accepts this, the canonical form doesn't"),
+        ("nil_uuid_canonical", "00000000-0000-0000-0000-000000000000", "canonical and accepted (a UUID like any other)"),
+    ]
+    out = []
+    for cid, embedded, note in rows:
+        ok = canonical_uuid(embedded)
+        lenient = lenient_uuid_bytes(embedded)
+        if ok:
+            outer, outer_from = embedded.replace("-", "").lower(), "canonicalBytes"
+        elif lenient is not None:
+            outer, outer_from = lenient, "lenientBytes"
+        else:
+            outer, outer_from = canon_bytes, "nearestCanonicalBytes"
+        expect = ({"category": "valid", "localId": embedded.lower()} if ok else
+                  {"category": "skipUnsupported", "reason": "embedded_uuid_does_not_match_wire_id"})
+        expect.update({"paths": ["snapshot", "live"], "stopsSync": False, "persistenceFailure": False,
+                       "issueIfSkipped": None if ok else "SKIPPED_UNSUPPORTED"})
+        out.append({"id": cid, "embeddedId": embedded, "outerWireIdFromBytesHex": outer, "outerFrom": outer_from,
+                    "lenient300Bytes": lenient, "expect": expect, "note": note})
+    assert {r["id"] for r in out if r["expect"]["category"] == "valid"} == {
+        "lowercase_canonical", "uppercase_canonical", "mixed_case_canonical", "nil_uuid_canonical"}
+    # the poison rows: 3.0.0 Android's hasher matched them, so they reached validRemote
+    assert lenient_uuid_bytes(canon_bytes) == canon_bytes and lenient_uuid_bytes("３" + canon[1:]) == canon_bytes
+    return out
+
+
+SNAPSHOT["embeddedIdPattern"] = CANONICAL_UUID
+SNAPSHOT["embeddedIdRule"] = (
+    "3.0.1: before the wire id is computed, the single object's embedded id must be a canonical 8-4-4-4-12 UUID: "
+    "whole-string match of embeddedIdPattern, ASCII hex in either case, exactly 36 characters, no trimming. "
+    "Anything else is skipUnsupported embedded_uuid_does_not_match_wire_id on both the snapshot and the live "
+    "path, never a sync stop. The wire-id hasher refuses non-canonical input too (null, never lenient bytes). "
+    "An accepted id is the local model id in lowercase (Android folds it; iOS keeps a UUID value). Every "
+    "record the validator accepts must also pass the replay commit's own checks, so a validated record can never "
+    "end in persistenceFailure. v3 senders keep sending lowercase")
+SNAPSHOT["embeddedIdCases"] = embedded_id_cases()
+SNAPSHOT["embeddedIdCasesRule"] = (
+    "build a validly sealed and signed v3 waypoint put whose GeoJSON feature id is embeddedId and whose outer id "
+    "is the wire id of the 16 bytes outerWireIdFromBytesHex (HMAC(metadataKey, 'tacmap-wire-obj-v3\\0' || bytes)); "
+    "run it through the classifier and through the real manager on the snapshot path and as a live put")
+
 LIVE_RESYNC = {
     "trigger": "authenticated live put/del whose stamp beats local state but counter - roomHighWater > ADVANCE_WINDOW",
     "cooldownMs": 60_000,
@@ -491,8 +583,33 @@ BACKGROUND = {
     "pauseSurface": {"issue": "BACKGROUND_PAUSED", "android": "replace the FGS notification with a non-ongoing paused notification", "ios": "issue shown on next foreground"},
 }
 
+V2_ID = "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
 V2 = {
-    "outboundId": "lowercase canonical UUID string (iOS: uuidString.lowercased())",
+    "outboundId": "3.0.1 (owner decision, gap-v2-room-2x-interop-1/2): iOS sends uuidString (uppercase), exactly as "
+                  "shipped 2.x iOS did. Android sends the raw id it remembered for that state key (sticky once any "
+                  "accepted inbound record used a raw id with an uppercase letter), else its lowercase local id",
+    "outboundIdRules": {
+        "ios": "frame id, AAD and signature message = uuid.uuidString (uppercase). Every map (lastContent, "
+               "versions, versionsBy, kindById, forcedLocalDiff, forcedLegacyDeletes, deliveries' localId, join "
+               "suppression) stays keyed by the lowercase state key; only the wire id is uppercase",
+        "android": "frame id, AAD and signature message = rememberedRawId[stateKey] ?: localId (lowercase). The "
+                   "local object keeps the lowercase id (unchanged)",
+        "embeddedId": "unchanged: lowercase on both (GeoJSONExporter.wire / UUID.toString)",
+        "remember": "Android only: every inbound put or del that passes stateKey, beats, AEAD and signature (and, "
+                    "for a put, the embedded check), applied or not, records its raw id for the state key when the "
+                    "raw id contains an uppercase letter. A later lowercase record never replaces it. Kept for "
+                    "deleted objects too, so an undo re-creates under the same casing",
+        "persist": "Android only: sealed per-room store (DEK-bound opaque filename like the replay and chat stores), "
+                   "loaded at v2 join before the first diff, written at most once per snapshot and once per live "
+                   "batch, capped at 10,000 entries (then it stops learning), removed with the room's other local "
+                   "stores. A lost or unreadable store only means lowercase sends until the next snapshot re-teaches it",
+        "upgradeFrom300": "iOS 3.0.0 kept every v2 per-id map in memory (cleared on each v2 connect), so nothing "
+                          "on the device is keyed lowercase across the update. Relay records 3.0.0 iOS wrote under "
+                          "lowercase ids stay; 3.0.1 never deletes or rewrites a record because of its casing "
+                          "(a del under the other casing deletes the object on 2.x iOS). The next edit supersedes "
+                          "them under the uppercase id at a higher v",
+        "v3": "unaffected: v3 wire ids are HMACs of the UUID bytes, embedded ids follow snapshot.embeddedIdRule",
+    },
     "inboundIdPattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
     "verifyWith": "the raw id string exactly as received (AAD and signature)",
     "stateKey": "lowercase(raw id)",
@@ -504,6 +621,40 @@ V2 = {
             {"raw": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b", "accept": True, "key": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"},
             {"raw": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b", "accept": False},
             {"raw": "{3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b}", "accept": False},
+        ],
+        "outbound": [
+            {"id": "ios_own_object", "platform": "ios", "localId": V2_ID.upper(), "rememberedRawId": None,
+             "expectFrameId": V2_ID.upper(), "expectStateKey": V2_ID, "expectEmbeddedId": V2_ID},
+            {"id": "ios_android_created_object", "platform": "ios", "localId": V2_ID.upper(),
+             "lastInboundRawId": V2_ID, "rememberedRawId": None,
+             "expectFrameId": V2_ID.upper(), "expectStateKey": V2_ID, "expectEmbeddedId": V2_ID,
+             "note": "iOS always sends uppercase, whoever created the object (2.x iOS did the same)"},
+            {"id": "android_own_object", "platform": "android", "localId": V2_ID, "rememberedRawId": None,
+             "expectFrameId": V2_ID, "expectStateKey": V2_ID, "expectEmbeddedId": V2_ID,
+             "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01) until an uppercase id for them is accepted, e.g. after a 3.0.1 iOS edit"},
+            {"id": "android_edits_ios_object", "platform": "android", "localId": V2_ID,
+             "rememberedRawId": V2_ID.upper(), "expectFrameId": V2_ID.upper(), "expectStateKey": V2_ID,
+             "expectEmbeddedId": V2_ID,
+             "note": "gap-v2-room-2x-interop-2: the edit goes out under the id 2.x iOS uses, so it doesn't echo-delete"},
+            {"id": "android_delete_ios_object", "platform": "android", "kind": "del", "localId": V2_ID,
+             "rememberedRawId": V2_ID.upper(), "expectFrameId": V2_ID.upper(), "expectStateKey": V2_ID},
+        ],
+        "remember": [
+            {"id": "upper_put_learned", "events": [{"raw": V2_ID.upper(), "t": "put", "accepted": True}],
+             "expectRemembered": V2_ID.upper()},
+            {"id": "sticky_over_later_lower", "events": [{"raw": V2_ID.upper(), "t": "put", "accepted": True},
+                                                        {"raw": V2_ID, "t": "put", "accepted": True}],
+             "expectRemembered": V2_ID.upper()},
+            {"id": "lower_only", "events": [{"raw": V2_ID, "t": "put", "accepted": True}], "expectRemembered": None},
+            {"id": "not_accepted_not_learned", "events": [{"raw": V2_ID.upper(), "t": "put", "accepted": False}],
+             "expectRemembered": None},
+            {"id": "upper_del_learned", "events": [{"raw": V2_ID.upper(), "t": "del", "accepted": True}],
+             "expectRemembered": V2_ID.upper()},
+            {"id": "mixed_case_kept_verbatim", "events": [{"raw": "3F2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b", "t": "put",
+                                                         "accepted": True}],
+             "expectRemembered": "3F2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"},
+            {"id": "non_canonical_never_learned", "events": [{"raw": "3F2A1B4C0D5E4F608A7B9C8D7E6F5A4B", "t": "put",
+                                                            "accepted": False}], "expectRemembered": None},
         ],
         "tie": [
             {"last": {"v": 42, "by": "a1b2c3d4-0000-4000-8000-000000000001"},
@@ -518,6 +669,19 @@ V2 = {
     },
 }
 assert "A1" < "b1"  # ASCII order: uppercase sorts below lowercase
+for _row in V2["vectors"]["outbound"]:
+    # every frame id we send is canonical and folds back to the same state key
+    assert canonical_uuid(_row["expectFrameId"]) and _row["expectFrameId"].lower() == _row["expectStateKey"], _row
+    if _row["platform"] == "ios":
+        assert _row["expectFrameId"] == _row["expectFrameId"].upper(), _row
+for _row in V2["vectors"]["remember"]:
+    _seen = None
+    for _ev in _row["events"]:
+        if _ev["accepted"]:
+            assert canonical_uuid(_ev["raw"]), _row
+            if _ev["raw"] != _ev["raw"].lower() and _seen is None:
+                _seen = _ev["raw"]
+    assert _seen == _row["expectRemembered"], _row
 
 SIZE = {
     "objectCtMaxChars": RV["CT_MAX"],
@@ -873,7 +1037,8 @@ SCEN = [
     {"id": "object_too_large_not_reserved", "requiredBy": "SP2", "findings": ["S1-09"], "unit": "OutboundSizeCheck",
      "cases": [{"innerUtf8Bytes": 524_970, "expect": {"ctChars": 4 * math.ceil((524_970 + 28) / 3), "send": True}},
                {"innerUtf8Bytes": 524_980, "expect": {"ctChars": 4 * math.ceil((524_980 + 28) / 3), "send": False, "stampReserved": False, "issue": "OBJECT_TOO_LARGE"}}]},
-    {"id": "v2_casing_and_tie", "requiredBy": "SP2", "findings": ["S3-01", "S3-14"], "unit": "LegacyV2Ids", "vectorsRef": "v2.vectors"},
+    {"id": "v2_casing_and_tie", "requiredBy": "SP2", "findings": ["S3-01", "S3-14", "gap-v2-room-2x-interop-1", "gap-v2-room-2x-interop-2"], "unit": "LegacyV2Ids", "vectorsRef": "v2.vectors"},
+    {"id": "poison_embedded_id_skipped", "requiredBy": "SP2", "findings": ["sync-android-2"], "unit": "SnapshotValidator", "vectorsRef": "snapshot.embeddedIdCases"},
 ]
 # chat prune vector: total = overhead + sum + separators, drop oldest until <= target
 _sizes = [8000] * 250

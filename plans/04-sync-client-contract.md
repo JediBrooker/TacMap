@@ -121,7 +121,7 @@ Each snapshot item is classified independently. The lists are
 |---|---|---|
 | **Fatal structural** | begin when not CONNECTING or a second begin, non-integer seq, page before begin or after the final page, `more` not boolean, `items` not an array, an item that is not an object, an item whose `id` is missing or not canonical 32-byte base64url, duplicate wire ID, end before final page, end seq mismatch, aggregate over 54,525,952 bytes, more than 10,000 items | Whole snapshot rejected, nothing committed (2.4) |
 | **Skip, unverified** | bad `vs`, `by` differs from the stamp actor, non-canonical `pub`/`sd`, actor binding mismatch, `pub` differs from the pinned key, `kind` syntax invalid, `t`/`deleted` inconsistent, `ct` not canonical or too short or too long, AEAD open fails, inner JSON invalid, signature missing or invalid, tombstone inner object has any key other than `sig` | Record skipped, counted as unverified |
-| **Skip, unsupported** | AEAD and signature verify, but: unknown `kind` (for example `route`), empty or missing content, importer fails, `invalidSkipped != 0`, not exactly one object, kind/content mismatch, embedded UUID does not match the wire ID, iOS identity collision with an object of the other kind, expected model hash unavailable | Record skipped, counted as unsupported |
+| **Skip, unsupported** | AEAD and signature verify, but: unknown `kind` (for example `route`), empty or missing content, importer fails, `invalidSkipped != 0`, not exactly one object, kind/content mismatch, embedded UUID does not match the wire ID (including an embedded id that isn't a canonical UUID string, 2.7), iOS identity collision with an object of the other kind, expected model hash unavailable | Record skipped, counted as unsupported |
 | **Ignore** | authenticated but does not beat local replay state | unchanged behaviour, not counted |
 
 Notes that make the two platforms identical:
@@ -213,6 +213,18 @@ the first one). Retrying is safe because a rejected snapshot commits nothing.
    `skippedWireIds`, so a skip can never be mistaken for confirmation.
 
 Net effect: at most one publish attempt per user edit, zero reconnects.
+
+### 2.7 Amendment 2026-10-05 (3.0.1): the embedded id is canonical before it is hashed
+
+Finding: sync-android-2. Android hashed the importer's raw feature id with a lenient `uuidToBytes`: it stripped dashes, needed 32 characters and ran `Character.digit` per nibble with no validation. So `3f2a...` without dashes, 32 non-hex characters, or a fullwidth digit produced a wire id that matched a crafted outer id. The record validated, then `validRemote` (`UUID.fromString`) refused it and `persistenceFailure()` stopped sync for the whole room on every Android device, on the live path and on every snapshot. iOS was never affected: it parses a `UUID` value first and gets `embedded_uuid_does_not_match_wire_id`.
+
+Rules (both platforms, snapshot and live paths):
+
+- Before the wire id is computed, the single object's embedded id must match `snapshot.embeddedIdPattern` as a whole string: ASCII hex in 8-4-4-4-12 groups, either case, exactly 36 characters, no trimming, no trailing newline. Anything else is skip-unsupported `embedded_uuid_does_not_match_wire_id` (2.1, 2.2): no stop, no `persistenceFailure`, no reconnect; `SKIPPED_UNSUPPORTED` once per join.
+- Uppercase and mixed case are canonical on input (RFC 9562), because UUID strings are case-insensitive. iOS already accepts them as a `UUID` value. Android folds the accepted id to lowercase for the local model id, the same fold as the v2 state key, so one object never ends up with two local ids. One exception keeps that true: when a local object already holds the same UUID under another casing, the record resolves to that stored id instead of the lowercase fold (snapshot validation, the live path, the restage and the snapshot-end identity recheck all use the stored id). Android up to 1.2.2 kept a GeoJSON import's raw feature id, iOS 1.0.x exported uppercase, and 3.0.0 Android stored whatever embedded id it received, so such objects exist. Folding past them made a second copy for a peer's record and turned the device's own record into a room-wide tombstone (review of A7, 3.0.1). Outbound v3 embedded ids are the local id as stored: iOS always sends lowercase; Android sends lowercase for everything it created or received in 3.0.1, and the stored uppercase id for those legacy objects. Receivers must therefore accept either case, which the first rule already requires.
+- The wire-id hasher refuses non-canonical input (Android `WireIdHasher` / `uuidToBytes` return null, never lenient bytes).
+- Invariant: every record the validator accepts also passes the replay commit's own checks (`validRemote` / `remoteSnapshotValid`). A validated record therefore can never end in `persistenceFailure`. `validRemote` can stay as it is, since a canonical id, folded or resolved to a stored canonical id, is a subset of what it accepts; existing replay files keep loading.
+- Vectors: `snapshot.embeddedIdCases`, scenario `poison_embedded_id_skipped`. Each row says how to build the hostile record (the outer wire id is the HMAC of `outerWireIdFromBytesHex`, the bytes 3.0.0 Android's lenient hasher produced) and the expected classification on both paths.
 
 ## 3. Snapshot layer-metadata ordering
 
@@ -666,6 +678,8 @@ Findings: S3-01, S3-14.
 - Outbound v2 IDs are lowercase canonical UUID strings on both platforms (iOS:
   `uuidString.lowercased()` for the frame ID, AAD, signature message and every
   map key: `lastContent`, `versions`, `kindById`, `forcedLegacyDeletes`).
+  Superseded on 2026-10-05 by the 3.0.1 amendment below: iOS sends uppercase
+  again and Android reuses a learned uppercase raw id; map keys stay lowercase.
 - Inbound: accept a canonical 8-4-4-4-12 hex UUID in either case. Verify AEAD and
   signature with the raw ID exactly as received, then key all state by its
   lowercase form. The embedded feature ID must equal the record ID
@@ -677,6 +691,28 @@ Findings: S3-01, S3-14.
   sends.
 
 Vectors: `v2.vectors` (`casing`, `tie`).
+
+**Amendment 2026-10-05 (3.0.1), owner decision "keep iOS v2 ids uppercase"** (findings gap-v2-room-2x-interop-1, -2, -3). The first bullet above made 3.0 iOS send lowercase. Shipped 2.x iOS mishandles any lowercase v2 id: `reexport` matches the uppercase `uuidString`, so it stores an empty `lastContent`, echoes a put under the uppercase id and a signed del of the lowercase id, and every 3.0 client folds the two into one key and deletes the object. No single casing works with both shipped clients: 2.x Android drops uppercase and 2.x iOS echo-deletes lowercase. The owner picked the casing that keeps 2.x-iOS rooms working as they did under 2.x. From 3.0.1:
+
+- **iOS outbound**: frame id, AAD and signature message are `uuid.uuidString` (uppercase), exactly as 2.x iOS sent them, whoever created the object. The embedded GeoJSON id stays lowercase (`GeoJSONExporter.wire`, as in 2.x). Every per-id map stays keyed by the lowercase state key: `lastContent`, `versions`, `versionsBy`, `kindById`, `forcedLocalDiff`, `forcedLegacyDeletes`, the deliveries' `localId` and the join suppression. Only the wire id is uppercase, so ack and tombstone matching compare against the uppercase frame id.
+- **Inbound, both platforms**: unchanged. Either case is accepted, AEAD and signature are verified over the raw id, and state folds to one lowercase key. The embedded id must match case-insensitively.
+- **Android outbound**: for a state key whose accepted inbound record used a raw id with an uppercase letter, put and del go out under that raw id, verbatim. Otherwise they use the lowercase local id. Android-created objects stay lowercase, because shipped 2.x Android drops uppercase (S3-01), but only until an uppercase put or del for them is accepted (for example after a 3.0.1 iOS edit); from then on Android sends them uppercase too and 2.x Android stops seeing its edits. Learning:
+  - every inbound put or del that passes `stateKey`, `beats`, AEAD and signature (and, for a put, the embedded check) teaches the raw id, whether or not it is applied;
+  - the first uppercase-bearing raw id sticks, and a later lowercase record never replaces it;
+  - entries outlive a delete, so an undo re-creates the object under the same casing.
+- **Android persistence**: the learned ids live in a sealed per-room store, DEK-bound opaque filename like the replay and chat stores, object UUIDs only:
+  - loaded at v2 join before the first diff;
+  - written at most once per snapshot and once per live batch;
+  - capped at 10,000 entries (then it stops learning);
+  - removed with the room's other local stores.
+  A lost or unreadable store only means lowercase sends until the next snapshot re-teaches it.
+- **Upgrade from 3.0.0**: 3.0.0 iOS kept every v2 per-id map in memory and cleared it on each v2 connect, so nothing persisted on the device is keyed lowercase; there is nothing to migrate. Relay records that 3.0.0 iOS wrote under lowercase ids stay where they are. 3.0.1 never deletes or rewrites a record because of its casing: a del under the other casing would delete the object on 2.x iOS, which deletes by `UUID(uuidString:)`. The next edit supersedes them under the uppercase id at a higher `v`.
+- **Residual risk, accepted**:
+  - a 2.x iOS device that reconnects to a room still holding a stale lowercase put written by 3.0.0 iOS, 3.0 Android or any Android, re-applies it and echo-deletes that object;
+  - 2.x Android never sees objects or edits from 3.0.1 iOS. This is a regression against 3.0.0 iOS, which sent lowercase ids that 2.x Android accepted, and the price of the owner decision (2026-10-05) to protect 2.x iOS members from echo-deletes, which destroy objects room-wide, whereas this only makes the 2.x Android member diverge. A 2.x Android member's later edits and deletes of such objects carry a lower version than the uppercase record, so 3.x devices ignore them and fresh joiners fold to the iOS version.
+  Mixed 2.x/3.x teams in a `2:` room should move to a v3 (`3:`) code. UI or store copy saying so (finding -3) is not part of this amendment.
+- **v3 rooms**: unaffected. Wire ids are HMACs of the UUID bytes, and embedded ids follow 2.7.
+- Vectors: `v2.outboundId` / `v2.outboundIdRules`, plus `v2.vectors.outbound` (frame id per platform from local id + remembered raw id) and `v2.vectors.remember` (what Android learns from a sequence of inbound records). These are added to the existing `casing` and `tie`.
 
 ## 17. SP3 persistence batching
 
@@ -1041,4 +1077,6 @@ Summary:
 | S6-04 | 21.6, 24 |
 | SP1 review: live window | 4 |
 | SP1 review: retention capability | 24 |
+| 3.0.1 sync-android-2 | 2.1, 2.7 |
+| 3.0.1 gap-v2-room-2x-interop-1, -2, -3 | 16 (3.0.1 amendment) |
 | SP1 open issue: insider backlog steering | 11.2 |

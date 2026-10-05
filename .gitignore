@@ -49,7 +49,14 @@ node_modules/
 # SwiftPM cache (when using -clonedSourcePackagesDirPath)
 spm-cache/
 
-scripts/__pycache__/
+__pycache__/
+*.pyc
+
+# store upload keys (asc_publisher.py / play_publisher.py). keep them out of the repo
+*.p8
+AuthKey_*
+*-sa.json
+*service-account*.json
 
 # Local agent worktrees and exported build products
 /.claude/

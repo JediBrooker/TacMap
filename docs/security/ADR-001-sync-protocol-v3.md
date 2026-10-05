@@ -332,7 +332,9 @@ Each client persists per-room state, sealed at rest via SafeStore (label `"sync/
   again: the relay and every peer accept only a strictly higher epoch, and the
   client still persists before signing. The only new metadata is that the
   first epoch after a fresh or lost state reveals the minute of a hello the
-  relay already observed live.
+  relay already observed live. Later epochs only count up from it, and the
+  relay's epoch floor (§16) keeps the latest one after idle expiry until the
+  90-day purge, so that bound on when the device joined is kept that long.
 - For a remote actor, a valid hello with a higher epoch atomically persists the
   new epoch and
   `presenceSeq[actorId] = { sd, counter: "0000000000000000" }`. A valid hello
@@ -469,7 +471,9 @@ Every other per-record failure skips that one record:
   still opened and verified under that kind) but not usable by this build:
   unknown `kind`, empty content, importer failure or skipped features, not
   exactly one object, kind/content mismatch, embedded UUID not matching the
-  wire ID, identity collision, or no receiver model hash.
+  wire ID (an embedded id that isn't a canonical 8-4-4-4-12 hex UUID string
+  counts as not matching, and is never hashed leniently), identity collision,
+  or no receiver model hash.
 
 A skipped record commits nothing (no stamp, tombstone, actor pin, counter,
 content hash or pending marker) and touches no model. The snapshot still
@@ -495,14 +499,20 @@ Storage key: `actor:<actorId>` -> `{ pubkey, firstSeen, lastSeen, helloEpoch, he
 `hello` is the complete latest verified signed hello frame and `lastSeen` is the
 UTC hour of the latest accepted hello (used only by tombstone compaction, §16).
 Actor pins count toward both `MAX_RECORDS` and `MAX_STORED_BYTES`, as do live
-objects and retained tombstones. Idle expiry deletes every actor pin (§16).
+objects and retained tombstones. Idle expiry swaps every actor pin for an
+epoch floor, `epoch:<actorId>` -> that pin's `helloEpoch` and nothing else,
+which counts toward both quotas in the pin's place (§16).
 
 On receiving `hello`, the relay first strictly decodes `by/pub/sd/vs/sig`, recomputes actorId from roomId+pubkey, and verifies the hello signature. Only then:
-- If no stored actor and quota permits: atomically store the pubkey, first-seen
-  time, positive epoch and signed frame, updating record/byte accounting.
+- If no stored actor, the incoming epoch is strictly greater than the actor's
+  epoch floor (when it has one) and quota permits: in one transaction store
+  the pubkey, first-seen time, positive epoch and signed frame, delete the
+  floor and update record/byte accounting (the pin takes over the floor's
+  record).
 - If stored and `pubkey != stored.pubkey`: reject with close code 4010 "actor key mismatch".
-- If stored and incoming epoch is not strictly greater: reject with close code
-  4014 "stale hello epoch" without changing the actor record.
+- If the incoming epoch is not strictly greater than the stored one (the pin's,
+  or after idle expiry the floor's): reject with close code 4014 "stale hello
+  epoch" without changing the pin or the floor.
 - If proof is invalid: reject with close code 4011. No pin is written.
 
 The relay verifies only the public signed hello proof. It cannot verify encrypted put/delete/presence payload signatures; peers do that after AEAD decryption.
@@ -530,9 +540,10 @@ Storage key: `meta:protocol` -> `2 | 3`
 - Pre-release dormant v3 objects created before protocol-scoped DO names used
   the raw room ID. They are intentionally not migrated: the new relay sees a
   clean `v3:<roomId>` object, and the old dormant object goes through idle
-  expiry like any other room (§16): its live objects and pins are deleted,
-  its tombstones are compacted later, and the rest is wiped by the 90-day idle
-  purge (or at once if it never accepted a write). Test/staging users must
+  expiry like any other room (§16): its live objects are deleted and its pins
+  swapped for epoch floors, its tombstones are compacted later, and the rest
+  is wiped by the 90-day idle purge (or at once if it never accepted a write
+  and has no epoch floor to keep). Test/staging users must
   recreate those rooms. These objects predate activation and contain no
   released v3 room data.
 - v3 generation is active and generated codes use `3:`. Clients display an
@@ -552,6 +563,14 @@ A join-code holder CANNOT:
 - Activate an older hello session or substitute different context at the
   accepted epoch. Replaying the exact current hello is idempotent; its presence
   still requires a counter strictly above the client's durable high-water.
+  The relay refuses such a hello at ingress for as long as it holds the room:
+  its epoch floor keeps each actor's newest epoch through idle expiry until
+  the 90-day purge (§16), also in a room that only ever carried presence or
+  chat. After the purge the relay holds nothing to check against, so a
+  captured hello can be accepted again and its session's records, presence
+  and chat replayed to devices that never saw a newer session; devices that
+  kept their replay state still reject them. The guidance after a purge is a
+  new join code.
 
 The relay CANNOT:
 - Read plaintext (no room key).
@@ -569,8 +588,9 @@ The relay CAN (residual risks):
   includes brand-new/reinstalled clients with no high-water. Without an external
   transparency log or out-of-band trust anchor, the client cannot distinguish
   that session from the actor's newest session. The honest relay's durable epoch
-  check stops this at ingress, but it is not a cryptographic guarantee against a
-  malicious relay controlling its own stored state.
+  check (pin, then epoch floor after idle expiry) stops this at ingress, but it
+  is not a cryptographic guarantee against a malicious relay controlling its own
+  stored state.
 - Observe co-membership, traffic timing, and connection metadata.
 
 ### 15. Relay delivery contract
@@ -702,32 +722,47 @@ identity) are reported as a security issue.
 What the relay stores per room: `meta:auth` (token hash), `meta:protocol`,
 `meta:seq`, `meta:highWater`, record/byte counters (plus
 `meta:accountingSchema` in v3), `meta:lastActivity`, each object's latest
-sealed record, tombstones, actor pins (§11), and relay-only bookkeeping:
-`tomb:<wireObjId>` (the UTC hour the delete landed), `meta:tombIndexAt`,
-`meta:expiredAt` (time of the last idle expiry), `meta:horizonSeq` (`seq` of
-the last expiry or compaction), `meta:droppedPinsSeen` (one hour value, below)
-and, only while an expiry pass is unfinished, `meta:expiring`. Stored and
-snapshotted records keep exactly the §6 shape; bookkeeping is never sent to
-clients.
+sealed record, tombstones, actor pins (§11), epoch floors (`epoch:<actorId>`,
+the 16-hex `helloEpoch` of a pin idle expiry dropped, §11), and relay-only
+bookkeeping: `tomb:<wireObjId>` (the UTC hour the delete landed),
+`meta:tombIndexAt`, `meta:expiredAt` (time of the last idle expiry),
+`meta:horizonSeq` (`seq` of the last expiry or compaction),
+`meta:droppedPinsSeen` (one hour value, below) and, only while an expiry pass
+is unfinished, `meta:expiring`. Stored and snapshotted records keep exactly the
+§6 shape; bookkeeping and floors are never sent to clients.
 
 `meta:tombIndexAt` marks that the room's tombstones have `tomb:` rows. Rooms
-created by an SP1 relay store 0 there, so nothing that survives idle expiry
-records when the room was created (pin `firstSeen` times go with the pins). A room created before SP1 gets the hour its first SP1 maintenance pass
+created by an SP1 relay store 0 there, so no stored time that survives idle
+expiry records when the room was created (pin `firstSeen` times go with the
+pins). Epoch floors hold no time either, but current clients start a device's
+epoch at the Unix minute of its first hello in the room and only count up from
+there (§8), so a floor still shows that device joined no later than that
+minute, and the oldest device's floor bounds when the room was first used. A
+room created before SP1 gets the hour its first SP1 maintenance pass
 indexed it (about the deploy time, not its creation); that hour is the
 conservative last-seen floor for its legacy pins and authors, which have no
 recorded hello time, and it goes with the room at the idle purge.
 
 `meta:lastActivity` is written at most once per `ACTIVITY_PERSIST_MS` for
-joins, accepted writes and hellos, whenever the relay sees the last open socket go
-(its own close, the client's close, or a transport error), and by the
-maintenance alarm, which runs at least every `MAINTENANCE_INTERVAL_MS` while
-any socket is open. Presence, chat and rejected frames never write it.
+joins, hellos, accepted writes, relayed presence, routed chat and answered
+pings, whenever the relay sees the last open socket go (its own close, the
+client's close, or a transport error), and by the maintenance alarm, which
+runs at least every `MAINTENANCE_INTERVAL_MS` while any socket is open. While
+devices send anything it is therefore at most `ACTIVITY_PERSIST_MS` behind, also
+when a deploy or restart drops their sockets without a close callback (only a
+socket that sends nothing at all relies on the daily alarm). Rejected frames
+never write it, and no frame traffic writes it more than once per
+`ACTIVITY_PERSIST_MS`. The last-socket-gone write is not throttled that way:
+it is only skipped when the stored value is under a minute old and nothing
+newer is pending, so a device that keeps connecting and disconnecting writes
+it on each disconnect (bounded by the per-IP connection limit).
 
 **Idle expiry.** About `IDLE_TTL_MS` (7 days) after the last persisted
 activity, with no socket open, the relay deletes every live object record and
-every actor pin. It keeps `meta:auth`, `meta:protocol`, `meta:seq` (advanced),
-`meta:highWater`, the counters (rewritten exactly), `meta:lastActivity` and
-all tombstones. A returning client therefore sees a snapshot fence no lower
+swaps every actor pin for its epoch floor. It keeps `meta:auth`,
+`meta:protocol`, `meta:seq` (advanced), `meta:highWater`, the counters
+(rewritten exactly), `meta:lastActivity`, all tombstones and the floors. A
+returning client therefore sees a snapshot fence no lower
 than before, stays inside the relay's counter window (§9 covers fresh joiners),
 and its peers' deletes still win over its stale copies. Shipped clients keep
 local objects that are absent from a snapshot and republish what they hold the
@@ -735,31 +770,49 @@ next time they rebuild their local diff (after an app restart or unlock, or on
 the next edit); until one of them does, a brand-new joiner sees only the
 tombstones.
 
-A room that never accepted a write (`seq` 0, no tombstone, zero high-water)
-has nothing a returning device could be rolled back on, so expiry deletes it
-entirely, as before SP1. v3 room IDs are bound to the token (§1), so the fresh
-trust-on-first-use pin on its next use cannot be squatted; v2 behaves as it
-always did.
+The epoch floor is what §14 needs and nothing more: one row per device with
+its room-scoped actor ID and the epoch of its latest accepted hello. A hello
+for that actor still has to be strictly newer (§11), so a hello captured
+before expiry, and the records of its session, cannot be replayed after it,
+while the device's own next session, which always reserves a higher epoch (§8),
+is accepted and turns the floor back into a pin in the same transaction. Each
+actor therefore has a pin or a floor, not both, the floor counts toward
+`MAX_RECORDS` and `MAX_STORED_BYTES` in the pin's place, and no hello pays an
+extra write for it; floors are only written by an expiry pass, for pins whose
+epoch is above the stored floor.
 
-Every other room keeps its meta rows (about a dozen, no mission content) and
-its remaining tombstones until the idle purge. While they exist the retained
-token hash, like the routing ID itself, lets whoever holds relay storage
-confirm a join-code guess at one PBKDF2 derivation per guess.
+A room that never accepted a write (`seq` 0, no tombstone, zero high-water)
+and has no epoch floor to keep (no pin with a `helloEpoch` and no floor from
+an earlier pass: a v2 room, or one where nobody ever said hello) has nothing
+a returning device could be rolled back or replayed on, so expiry deletes it
+entirely, as before SP1. v3 room IDs are bound to the token (§1), so the
+fresh trust-on-first-use pin on its next use cannot be squatted; v2 behaves
+as it always did. A v3 room whose devices only said hello and shared presence
+or chat is not wiped: it goes through the expiry above, its pins become
+floors and its `seq` advances to 1 like any pass that drops something, so
+§14 holds there until the purge as well, and a device that saw that `seq`
+gets the usual rollback notice if it comes back after the purge.
+
+Every other room keeps its meta rows (about a dozen, no mission content), its
+epoch floors and its remaining tombstones until the idle purge. While they
+exist the retained token hash, like the routing ID itself, lets whoever holds
+relay storage confirm a join-code guess at one PBKDF2 derivation per guess.
 
 Crash safety: each pass writes the advanced `seq`, `meta:horizonSeq`,
 `meta:droppedPinsSeen` and the `meta:expiring` marker in one transaction
-before deleting anything, so `seq` is already past whatever a pass removes even
-if it dies half way. A failed pass makes the alarm come back after
-`MAINTENANCE_RETRY_MS` (each retry that still removes something advances `seq`
-again), and a join while the marker is set recounts the counters exactly
-before admitting the socket.
+first, then every new or raised epoch floor, and only then deletes anything,
+so `seq` is already past whatever a pass removes even if it dies half way, and
+no pin is gone before its floor is stored. A failed pass makes the alarm come
+back after `MAINTENANCE_RETRY_MS` (each retry that still removes something
+advances `seq` again), and a join while the marker is set recounts the
+counters, pins and floors included, exactly before admitting the socket.
 
 **Idle purge.** About `ROOM_PURGE_TTL_MS` (90 days) after the last persisted
 activity (after the last idle expiry if no activity was ever recorded), with
 no socket open, the relay deletes everything it holds for the room with one
-`deleteAll`: meta rows, bookkeeping, every remaining tombstone, and then the
-alarm. Nothing is left, so room storage is bounded by rooms used in the last
-90 days, whatever `ROOM_LIMITER` lets through. Any activity in between that
+`deleteAll`: meta rows, bookkeeping, every remaining tombstone and epoch
+floor, and then the alarm. Nothing is left, so room storage is bounded by
+rooms used in the last 90 days, whatever `ROOM_LIMITER` lets through. Any activity in between that
 moves `meta:lastActivity` (as listed above) restarts both the 7-day and the
 90-day clock. Every alarm pass that leaves an idle room still holding
 anything re-arms the next idle deadline (expiry or purge), so no room is
@@ -771,7 +824,8 @@ A device returning after the purge gets a fresh room: `seq` 0 and zero
 `highWater`, no tombstones. Its `snapshot-begin.seq` is below its
 `lastSnapshotSeq`, so shipped clients raise the §10 rollback diagnostic,
 which a client cannot tell apart from a malicious rollback; its own deletes
-and its peers' are gone from the relay; and if its counters had passed
+and its peers' are gone from the relay, and so are the epoch floors (§14);
+and if its counters had passed
 `ADVANCE_WINDOW` its writes are nacked `counter-window` (§9). The guidance is
 to move to a new join code. SP2 clients show that once per join as
 `ROOM_RESET_SUSPECTED`, a security notice that suggests a new join code and is
@@ -817,7 +871,8 @@ How the author's last hello is known:
   a running maximum written before the first delete of each pass, so a pass
   that dies half way still recorded it). The relay uses the earlier of that and
   the room's last activity. Precision is traded for
-  keeping less: no per-device time survives expiry, so a departed author's
+  keeping less: no per-device last-seen time survives expiry (an epoch floor
+  holds no time of its own), so a departed author's
   tombstone can stay until 30 days after the latest hello of any device whose
   pin was dropped, even while other devices keep using the room.
 - v2: there are no pins, so every author counts as last seen at the room's last
@@ -851,12 +906,16 @@ relies on this section (not resending own tombstones older than the TTL,
 treating `seq` as non-rolling across an expiry, relying on retained
 tombstones, or reading a fresh room as an idle purge rather than a rollback)
 must be gated on a negotiated relay capability, introduced with the SP2/SP4
-work, and fall back to pre-SP1 assumptions without it.
+work, and fall back to pre-SP1 assumptions without it. Relays older than
+release `tacmap-sync-3.0.1-epoch-floor` (including self-hosted ones) drop pins
+at idle expiry without leaving an epoch floor, so there §14's epoch check
+only lasts until the first idle expiry. No client behaviour depends on the
+floor; it only changes what the relay refuses.
 
 ## Consequences
 
 - v2 and v3 rooms are completely separate. No cross-protocol communication.
-- Rooms (v2 and v3) idle for 7 days lose their live objects and actor pins but keep sequence, high-water and tombstone state (§16); rooms that never stored anything are deleted outright. Tombstones are compacted after 30 days once their author is gone (v2: once the room has been unused for 30 days). After 90 idle days the whole room is deleted, and a device returning after that needs a new join code.
+- Rooms (v2 and v3) idle for 7 days lose their live objects and actor pins but keep sequence, high-water and tombstone state, and v3 rooms keep one epoch floor per device in place of its pin (§16); rooms that never stored anything and have no epoch floor to keep are deleted outright. Tombstones are compacted after 30 days once their author is gone (v2: once the room has been unused for 30 days). After 90 idle days the whole room is deleted, and a device returning after that needs a new join code.
 - Client storage grows: sealed replay state file per room (~1-10 KB typically).
 - Join codes are longer (2 chars for `3:` prefix).
 - The relay stores the latest signed hello and epoch with each durable actor

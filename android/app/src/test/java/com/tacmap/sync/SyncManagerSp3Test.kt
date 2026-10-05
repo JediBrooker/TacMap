@@ -527,6 +527,39 @@ class SyncManagerSp3Test {
     }
 
     @Test
+    fun uppercaseEmbeddedIdStaysFoldedWhenTheSnapshotIsRestaged() {
+        // plans/04 2.7: uppercase is canonical, the local id is its lowercase fold,
+        // and the restage reparse of the sender's bytes has to fold it again
+        val h = start(separateWorkers = true)
+        val peer = FakeV3Peer(h.keys())
+        val layer = DrawingLayer(id = "L", name = "Recon", createdAt = 1)
+        assertTrue(h.drawingStore.addLayerVerbatim(layer))
+        val localId = UUID.randomUUID().toString()
+        val drawing = DrawingFeature(
+            id = localId.uppercase(), name = "d", geometry = DrawingGeometry.LINE,
+            points = listOf(DrawingPoint(-35.0, 149.0), DrawingPoint(-35.1, 149.1)), layerId = "L",
+        )
+        val content = GeoJsonExporter.export(emptyList(), listOf(drawing), listOf(layer), 1f)
+        h.join()
+        h.deriveDispatcher.runCurrent(); h.runCurrent()
+        h.beginSnapshot()
+        val wire = peer.wireId(localId)
+        h.snapshotPage(listOf(peer.record(wire, 3, "drawing", content)))
+        h.validationDispatcher.runCurrent()
+        assertTrue(h.drawingStore.renameLayer("L", "Alpha"))
+        h.endSnapshot()
+        repeat(6) {
+            h.validationDispatcher.runCurrent()
+            h.persistenceDispatcher.runCurrent()
+            h.runCurrent()
+        }
+        assertEquals(1, h.socket.sentOfType("hello").size)
+        assertNotEqualsSecurity(h)
+        assertNull(h.manager.skippedCategoryForTests(wire))
+        assertEquals(listOf(localId), h.drawingStore.committedDocument.value.features.map { it.id })
+    }
+
+    @Test
     fun anEditWhileTheSnapshotCommitSealsIsNotOverwritten() {
         val h = start(separateWorkers = true)
         val peer = FakeV3Peer(h.keys())

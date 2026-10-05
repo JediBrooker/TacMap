@@ -183,7 +183,8 @@ internal object ManagedImportedMapFileLifecycle {
         return canonical
     }
 
-    private fun isManagedCandidateName(name: String): Boolean =
+    /** a name the reconcile treats as ours to delete: map files, sidecars, .partial residue */
+    fun isManagedCandidateName(name: String): Boolean =
         isAuthoritativeMapName(name) || isCrashResidueName(name)
 
     private fun isAuthoritativeMapName(name: String): Boolean {

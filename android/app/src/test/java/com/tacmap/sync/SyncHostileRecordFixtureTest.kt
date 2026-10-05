@@ -14,6 +14,8 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -40,7 +42,7 @@ class SyncHostileRecordFixtureTest {
 
     private fun harness() = SyncHarness().also { harnesses += it }
 
-    private val snapshotLists by lazy {
+    private val snapshotFixture by lazy {
         var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
         var text: String? = null
         repeat(8) {
@@ -48,10 +50,110 @@ class SyncHostileRecordFixtureTest {
             if (text == null && f.exists()) text = f.readText()
             dir = dir?.parentFile
         }
-        val snapshot = Json.parseToJsonElement(checkNotNull(text)).jsonObject.getValue("snapshot").jsonObject
+        Json.parseToJsonElement(checkNotNull(text)).jsonObject.getValue("snapshot").jsonObject
+    }
+
+    private val snapshotLists by lazy {
         listOf("fatalStructural", "skipUnverified", "skipUnsupported").associateWith { key ->
-            snapshot.getValue(key).jsonArray.map { it.jsonPrimitive.content }
+            snapshotFixture.getValue(key).jsonArray.map { it.jsonPrimitive.content }
         }
+    }
+
+    /** One row of snapshot.embeddedIdCases (plans/04 2.7). */
+    private class EmbeddedIdCase(
+        val id: String,
+        val embeddedId: String,
+        val outerBytesHex: String,
+        val category: SnapshotRecordCategory?,
+        val localId: String?,
+        val reason: String?,
+        val paths: List<String>,
+    ) {
+        val valid: Boolean get() = category == null
+    }
+
+    private val embeddedIdCases by lazy {
+        snapshotFixture.getValue("embeddedIdCases").jsonArray.map { el ->
+            val row = el.jsonObject
+            val expect = row.getValue("expect").jsonObject
+            fun str(o: kotlinx.serialization.json.JsonObject, key: String) =
+                (o[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+            assertEquals("stopsSync", "false", expect.getValue("stopsSync").jsonPrimitive.content)
+            assertEquals("persistenceFailure", "false", expect.getValue("persistenceFailure").jsonPrimitive.content)
+            EmbeddedIdCase(
+                id = str(row, "id")!!,
+                embeddedId = str(row, "embeddedId")!!,
+                outerBytesHex = str(row, "outerWireIdFromBytesHex")!!,
+                category = when (val c = str(expect, "category")) {
+                    "valid" -> null
+                    "skipUnsupported" -> SnapshotRecordCategory.SKIP_UNSUPPORTED
+                    "skipUnverified" -> SnapshotRecordCategory.SKIP_UNVERIFIED
+                    else -> error("unknown category $c")
+                },
+                localId = str(expect, "localId"),
+                reason = str(expect, "reason"),
+                paths = expect.getValue("paths").jsonArray.map { it.jsonPrimitive.content },
+            )
+        }.also { rows ->
+            assertTrue(rows.any { it.valid } && rows.any { !it.valid })
+        }
+    }
+
+    private fun hexBytes(hex: String) = ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
+    /** A sealed, signed waypoint put whose feature id is the row's embeddedId and whose outer id
+     * is the HMAC of the row's bytes, i.e. what 3.0.0's lenient hasher would have matched. */
+    private fun embeddedIdRecord(
+        peer: FakeV3Peer,
+        keys: SyncCrypto.V3RoomKeys,
+        row: EmbeddedIdCase,
+        counter: Long,
+        t: String? = null,
+    ): JSONObject {
+        val wire = SyncIdentity.wireObjectId(keys.metadataKey, hexBytes(row.outerBytesHex))
+        val content = FakeV3Peer.waypointContent(waypoint("row ${row.id}", id = row.embeddedId))
+        return peer.record(wire, counter, "waypoint", content, t = t)
+    }
+
+    /** Runs every row and then fails once listing all the rows that broke, not just the first. */
+    private fun eachRow(rows: List<EmbeddedIdCase>, body: (EmbeddedIdCase) -> Unit) {
+        assertTrue(rows.isNotEmpty())
+        val failures = rows.mapNotNull { row ->
+            try {
+                body(row)
+                null
+            } catch (e: Throwable) {
+                "${row.id}: $e"
+            }
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    private fun assertSyncStillRunning(h: SyncHarness, row: String) {
+        assertEquals(row, SyncManager.Status.CONNECTED, h.manager.status.value)
+        assertEquals(row, 1, h.transport.sockets.size)
+        assertFalse(row, h.socket.terminal)
+        assertNull(row, h.socket.localClose)
+        assertNotEquals(row, SyncIssueKind.SECURITY, h.manager.currentIssueKind)
+        assertTrue(row, h.uncaught.isEmpty())
+    }
+
+    private fun assertEmbeddedIdOutcome(h: SyncHarness, row: EmbeddedIdCase, wire: String, good: Waypoint) {
+        val ids = h.waypointStore.committedWaypoints.value.map { it.id }.toSet()
+        val replay = h.manager.replayStateForTests!!
+        if (row.valid) {
+            // folded to the lowercase local id, one object, nothing echoed back
+            assertEquals(row.id, setOf(good.id, row.localId), ids)
+            assertNull(row.id, h.manager.skippedCategoryForTests(wire))
+            assertNotNull(row.id, replay.getStamp(wire))
+            assertTrue(row.id, h.manager.surfacedIssueCodesForTests.none { it.startsWith("SKIPPED_") })
+        } else {
+            assertEquals(row.id, setOf(good.id), ids)
+            assertEquals(row.id, row.category, h.manager.skippedCategoryForTests(wire))
+            assertNull(row.id, replay.getStamp(wire))
+            assertTrue(row.id, "SKIPPED_UNSUPPORTED" in h.manager.surfacedIssueCodesForTests)
+        }
+        assertTrue(row.id, h.socket.sentOfType("put").none { it.getString("id") == wire })
     }
 
     private fun waypoint(name: String, id: String = UUID.randomUUID().toString()) =
@@ -237,6 +339,73 @@ class SyncHostileRecordFixtureTest {
         assertEquals(SyncManager.Status.CONNECTED, h.manager.status.value)
         assertTrue(h.waypointStore.committedWaypoints.value.isEmpty())
         assertTrue(h.uncaught.isEmpty())
+    }
+
+    // ---- poison_embedded_id_skipped (sync-android-2, plans/04 2.7) ----
+
+    @Test
+    fun everyEmbeddedIdCaseClassifiesExactlyAndTheHasherIsStrict() {
+        val keys = harness().keys()
+        val peer = FakeV3Peer(keys)
+        val validator = SnapshotValidator(keys.roomKey, keys.roomIdRaw, keys.metadataKey, { null }, 1f)
+        val hasher = WireIdHasher(keys.metadataKey)
+        eachRow(embeddedIdCases) { row ->
+            val rec = embeddedIdRecord(peer, keys, row, 20)
+            val check = SnapshotRecordClassifier.classify(validator, rec, rec.getString("id"), emptyList())
+            if (row.valid) {
+                val put = (check as? V3Check.Valid)?.record as? ValidatedV3.Put
+                assertNotNull("${row.id}: $check", put)
+                assertEquals(row.id, row.localId, put!!.localId)
+                assertEquals(row.id, listOf(row.localId), put.parsed.waypoints.map { it.id })
+                // whatever the validator accepts the replay commit has to accept too
+                assertEquals(row.id, put.localId, UUID.fromString(put.localId).toString())
+                assertEquals(row.id, row.outerBytesHex, SyncIdentity.bytesToHex(SyncIdentity.uuidToBytes(row.embeddedId)!!))
+                assertEquals(row.id, rec.getString("id"), hasher.wireId(row.embeddedId))
+            } else {
+                assertTrue("${row.id}: $check", check is V3Check.Skip)
+                assertEquals(row.id, row.reason, (check as V3Check.Skip).reason.wireName)
+                assertEquals(row.id, row.category, check.reason.category)
+                assertNull(row.id, SyncIdentity.uuidToBytes(row.embeddedId))
+                assertNull(row.id, hasher.wireId(row.embeddedId))
+            }
+        }
+        hasher.close()
+        validator.close()
+    }
+
+    @Test
+    fun everyEmbeddedIdCaseInASnapshotKeepsSyncRunning() {
+        // one harness per row, most rows share the same outer wire id
+        eachRow(embeddedIdCases.filter { "snapshot" in it.paths }) { row ->
+            val h = harness()
+            val peer = FakeV3Peer(h.keys())
+            h.join()
+            val rec = embeddedIdRecord(peer, h.keys(), row, 20)
+            val good = waypoint("good")
+            h.completeHandshake(listOf(rec, peer.waypointRecord(good, 21)))
+            h.advance(1_000)
+            assertSyncStillRunning(h, row.id)
+            assertEmbeddedIdOutcome(h, row, rec.getString("id"), good)
+        }
+    }
+
+    @Test
+    fun everyEmbeddedIdCaseLiveKeepsSyncRunning() {
+        eachRow(embeddedIdCases.filter { "live" in it.paths }) { row ->
+            val h = harness()
+            val peer = FakeV3Peer(h.keys())
+            h.join()
+            h.completeHandshake()
+            h.deliver(peer.hello())
+            val rec = embeddedIdRecord(peer, h.keys(), row, 20, t = "put")
+            h.deliver(rec)
+            // the room keeps going, a good record after it still lands
+            val good = waypoint("good")
+            h.deliver(peer.waypointRecord(good, 21, t = "put"))
+            h.advance(1_000)
+            assertSyncStillRunning(h, row.id)
+            assertEmbeddedIdOutcome(h, row, rec.getString("id"), good)
+        }
     }
 
     // ---- structural: the two fatal rows SyncMaliciousFrameHandlerTest doesn't script ----

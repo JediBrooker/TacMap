@@ -11,6 +11,7 @@ import com.tacmap.map.render.pdf.PdfBakeJobs
 import com.tacmap.map.render.pdf.PdfBakePlan
 import com.tacmap.map.render.pdf.PdfFootprint
 import com.tacmap.map.render.pdf.PdfTileSource
+import com.tacmap.util.DataKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
@@ -48,8 +50,8 @@ sealed class PdfBakeAttach {
 
 /**
  * Where a published bake gets recorded: the PDF's library entry, one sealed write on the
- * main thread (M3). MapViewModel plugs itself in; with nothing plugged in a bake fails
- * closed as writeFailed and its file goes again.
+ * main thread (M3). MapViewModel plugs itself in, with no screen alive the library gets it
+ * directly (LibraryBakeRecorder). One that can't write says writeFailed and the file goes again.
  */
 interface PdfBakeRecorder {
     fun attach(entryId: String?, contentKey: String?, renderGuardToken: String, bake: PersistedPdfBake): PdfBakeAttach
@@ -322,6 +324,11 @@ internal object PdfBaker {
                     throw PdfBakeException(PdfBakeErrors.classifyWrite(t), t)
                 }
             }
+            // the pause relocked the mission key (Home, power button, a call): park the finished
+            // file right here till the app's own unlock. attaching behind the lock can only fail
+            // and bin minutes of baking (WP2 E, the bake keeps going in the background). a cancel
+            // meanwhile cleans the .partial up like any other
+            DataKey.awaitUnlocked()
             // the publish runs to its end whatever happens (C4, F1): a cancel can only win before
             // the session is touched, after that it gets undone or it stands
             val bake = withContext(NonCancellable + Dispatchers.IO) {
@@ -403,8 +410,19 @@ internal object PdfBaker {
                 ActiveMapSelectionStore.withManagedFilesLock { deleteMBTilesArtifacts(out) }
                 throw CancellationException("bake cancelled before publish")
             }
-            val attached = withContext(Dispatchers.Main) {
-                recorder?.attach(pdf.entryId, contentKey, token, bake) ?: PdfBakeAttach.WriteFailed(null)
+            var attached: PdfBakeAttach? = null
+            while (attached == null) {
+                // checked on main right before the write, so a pause (main too) can't land in
+                // between. null = another pause got in after the unlock we waited for. the file's
+                // in flight, nothing reaps it, so wait for the next one
+                attached = withContext(Dispatchers.Main) {
+                    if (DataKey.isRelocked) null
+                    else recorder?.attach(pdf.entryId, contentKey, token, bake) ?: PdfBakeAttach.WriteFailed(null)
+                }
+                if (attached == null && !awaitUnlockOrCancel(outer)) {
+                    ActiveMapSelectionStore.withManagedFilesLock { deleteMBTilesArtifacts(out) }
+                    throw CancellationException("bake cancelled while the key was locked")
+                }
             }
             when (attached) {
                 PdfBakeAttach.Attached -> Unit
@@ -433,6 +451,17 @@ internal object PdfBaker {
         } finally {
             busy.forEach(InFlightImportFiles::release)
         }
+    }
+
+    /**
+     * The unlock wait from inside the NonCancellable publish, so it looks at the bake's own job
+     * every second as well. false = cancelled first
+     */
+    private suspend fun awaitUnlockOrCancel(outer: kotlinx.coroutines.Job): Boolean {
+        while (outer.isActive) {
+            if (withTimeoutOrNull(1_000) { DataKey.awaitUnlocked() } != null) return true
+        }
+        return false
     }
 
     /**

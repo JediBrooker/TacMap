@@ -659,7 +659,221 @@
       "zero skipUnverified records",
       "no seq regression"
     ],
-    "liveRecordsUseSameClassification": true
+    "liveRecordsUseSameClassification": true,
+    "embeddedIdPattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    "embeddedIdRule": "3.0.1: before the wire id is computed, the single object's embedded id must be a canonical 8-4-4-4-12 UUID: whole-string match of embeddedIdPattern, ASCII hex in either case, exactly 36 characters, no trimming. Anything else is skipUnsupported embedded_uuid_does_not_match_wire_id on both the snapshot and the live path, never a sync stop. The wire-id hasher refuses non-canonical input too (null, never lenient bytes). An accepted id is the local model id in lowercase (Android folds it; iOS keeps a UUID value). Every record the validator accepts must also pass the replay commit's own checks, so a validated record can never end in persistenceFailure. v3 senders keep sending lowercase",
+    "embeddedIdCases": [
+      {
+        "id": "lowercase_canonical",
+        "embeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "canonicalBytes",
+        "lenient300Bytes": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "expect": {
+          "category": "valid",
+          "localId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": null
+        },
+        "note": "what both apps send in v3 today (iOS GeoJSONExporter.wire, Android UUID.toString)"
+      },
+      {
+        "id": "uppercase_canonical",
+        "embeddedId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "canonicalBytes",
+        "lenient300Bytes": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "expect": {
+          "category": "valid",
+          "localId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": null
+        },
+        "note": "RFC 9562: case-insensitive on input. Accepted on both; Android folds the local id to lowercase so one object never gets two local ids"
+      },
+      {
+        "id": "mixed_case_canonical",
+        "embeddedId": "3F2a1B4c-0D5e-4F60-8a7B-9c8D7e6F5a4B",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "canonicalBytes",
+        "lenient300Bytes": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "expect": {
+          "category": "valid",
+          "localId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": null
+        },
+        "note": "same as uppercase"
+      },
+      {
+        "id": "hex32_no_dashes",
+        "embeddedId": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "lenientBytes",
+        "lenient300Bytes": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "sync-android-2: 3.0.0 Android hashed it to the canonical wire id, then validRemote refused it and sync stopped for the room"
+      },
+      {
+        "id": "nonhex32",
+        "embeddedId": "zyxwvutsrqponmlkjihgzyxwvutsrqpo",
+        "outerWireIdFromBytesHex": "efefefefefefefefefefefefefefefef",
+        "outerFrom": "lenientBytes",
+        "lenient300Bytes": "efefefefefefefefefefefefefefefef",
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "32 non-hex chars: Character.digit gave -1 per nibble, a wire id an attacker can still compute"
+      },
+      {
+        "id": "braces",
+        "embeddedId": "{3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b}",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "nearestCanonicalBytes",
+        "lenient300Bytes": null,
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "Microsoft registry form"
+      },
+      {
+        "id": "leading_space",
+        "embeddedId": " 3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "nearestCanonicalBytes",
+        "lenient300Bytes": null,
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "no trimming"
+      },
+      {
+        "id": "trailing_newline",
+        "embeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b\n",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "nearestCanonicalBytes",
+        "lenient300Bytes": null,
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "a regex $ that matches before a final newline must not let this through"
+      },
+      {
+        "id": "fullwidth_digit",
+        "embeddedId": "３f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "lenientBytes",
+        "lenient300Bytes": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "Character.digit and Long.parseLong accept Unicode digits; ASCII only"
+      },
+      {
+        "id": "short_groups",
+        "embeddedId": "0-0-0-0-0",
+        "outerWireIdFromBytesHex": "3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b",
+        "outerFrom": "nearestCanonicalBytes",
+        "lenient300Bytes": null,
+        "expect": {
+          "category": "skipUnsupported",
+          "reason": "embedded_uuid_does_not_match_wire_id",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": "SKIPPED_UNSUPPORTED"
+        },
+        "note": "java.util.UUID.fromString accepts this, the canonical form doesn't"
+      },
+      {
+        "id": "nil_uuid_canonical",
+        "embeddedId": "00000000-0000-0000-0000-000000000000",
+        "outerWireIdFromBytesHex": "00000000000000000000000000000000",
+        "outerFrom": "canonicalBytes",
+        "lenient300Bytes": "00000000000000000000000000000000",
+        "expect": {
+          "category": "valid",
+          "localId": "00000000-0000-0000-0000-000000000000",
+          "paths": [
+            "snapshot",
+            "live"
+          ],
+          "stopsSync": false,
+          "persistenceFailure": false,
+          "issueIfSkipped": null
+        },
+        "note": "canonical and accepted (a UUID like any other)"
+      }
+    ],
+    "embeddedIdCasesRule": "build a validly sealed and signed v3 waypoint put whose GeoJSON feature id is embeddedId and whose outer id is the wire id of the 16 bytes outerWireIdFromBytesHex (HMAC(metadataKey, 'tacmap-wire-obj-v3\\0' || bytes)); run it through the classifier and through the real manager on the snapshot path and as a live put"
   },
   "liveWindowResync": {
     "trigger": "authenticated live put/del whose stamp beats local state but counter - roomHighWater > ADVANCE_WINDOW",
@@ -948,7 +1162,16 @@
     }
   },
   "v2": {
-    "outboundId": "lowercase canonical UUID string (iOS: uuidString.lowercased())",
+    "outboundId": "3.0.1 (owner decision, gap-v2-room-2x-interop-1/2): iOS sends uuidString (uppercase), exactly as shipped 2.x iOS did. Android sends the raw id it remembered for that state key (sticky once any accepted inbound record used a raw id with an uppercase letter), else its lowercase local id",
+    "outboundIdRules": {
+      "ios": "frame id, AAD and signature message = uuid.uuidString (uppercase). Every map (lastContent, versions, versionsBy, kindById, forcedLocalDiff, forcedLegacyDeletes, deliveries' localId, join suppression) stays keyed by the lowercase state key; only the wire id is uppercase",
+      "android": "frame id, AAD and signature message = rememberedRawId[stateKey] ?: localId (lowercase). The local object keeps the lowercase id (unchanged)",
+      "embeddedId": "unchanged: lowercase on both (GeoJSONExporter.wire / UUID.toString)",
+      "remember": "Android only: every inbound put or del that passes stateKey, beats, AEAD and signature (and, for a put, the embedded check), applied or not, records its raw id for the state key when the raw id contains an uppercase letter. A later lowercase record never replaces it. Kept for deleted objects too, so an undo re-creates under the same casing",
+      "persist": "Android only: sealed per-room store (DEK-bound opaque filename like the replay and chat stores), loaded at v2 join before the first diff, written at most once per snapshot and once per live batch, capped at 10,000 entries (then it stops learning), removed with the room's other local stores. A lost or unreadable store only means lowercase sends until the next snapshot re-teaches it",
+      "upgradeFrom300": "iOS 3.0.0 kept every v2 per-id map in memory (cleared on each v2 connect), so nothing on the device is keyed lowercase across the update. Relay records 3.0.0 iOS wrote under lowercase ids stay; 3.0.1 never deletes or rewrites a record because of its casing (a del under the other casing deletes the object on 2.x iOS). The next edit supersedes them under the uppercase id at a higher v",
+      "v3": "unaffected: v3 wire ids are HMACs of the UUID bytes, embedded ids follow snapshot.embeddedIdRule"
+    },
     "inboundIdPattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
     "verifyWith": "the raw id string exactly as received (AAD and signature)",
     "stateKey": "lowercase(raw id)",
@@ -973,6 +1196,141 @@
         {
           "raw": "{3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b}",
           "accept": false
+        }
+      ],
+      "outbound": [
+        {
+          "id": "ios_own_object",
+          "platform": "ios",
+          "localId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "rememberedRawId": null,
+          "expectFrameId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "expectStateKey": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "expectEmbeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+        },
+        {
+          "id": "ios_android_created_object",
+          "platform": "ios",
+          "localId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "lastInboundRawId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "rememberedRawId": null,
+          "expectFrameId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "expectStateKey": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "expectEmbeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "note": "iOS always sends uppercase, whoever created the object (2.x iOS did the same)"
+        },
+        {
+          "id": "android_own_object",
+          "platform": "android",
+          "localId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "rememberedRawId": null,
+          "expectFrameId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "expectStateKey": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "expectEmbeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "note": "shipped 2.x Android drops uppercase, so Android-created objects stay lowercase (S3-01) until an uppercase id for them is accepted, e.g. after a 3.0.1 iOS edit"
+        },
+        {
+          "id": "android_edits_ios_object",
+          "platform": "android",
+          "localId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "rememberedRawId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "expectFrameId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "expectStateKey": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "expectEmbeddedId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "note": "gap-v2-room-2x-interop-2: the edit goes out under the id 2.x iOS uses, so it doesn't echo-delete"
+        },
+        {
+          "id": "android_delete_ios_object",
+          "platform": "android",
+          "kind": "del",
+          "localId": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+          "rememberedRawId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "expectFrameId": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+          "expectStateKey": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+        }
+      ],
+      "remember": [
+        {
+          "id": "upper_put_learned",
+          "events": [
+            {
+              "raw": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+              "t": "put",
+              "accepted": true
+            }
+          ],
+          "expectRemembered": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B"
+        },
+        {
+          "id": "sticky_over_later_lower",
+          "events": [
+            {
+              "raw": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+              "t": "put",
+              "accepted": true
+            },
+            {
+              "raw": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+              "t": "put",
+              "accepted": true
+            }
+          ],
+          "expectRemembered": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B"
+        },
+        {
+          "id": "lower_only",
+          "events": [
+            {
+              "raw": "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+              "t": "put",
+              "accepted": true
+            }
+          ],
+          "expectRemembered": null
+        },
+        {
+          "id": "not_accepted_not_learned",
+          "events": [
+            {
+              "raw": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+              "t": "put",
+              "accepted": false
+            }
+          ],
+          "expectRemembered": null
+        },
+        {
+          "id": "upper_del_learned",
+          "events": [
+            {
+              "raw": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B",
+              "t": "del",
+              "accepted": true
+            }
+          ],
+          "expectRemembered": "3F2A1B4C-0D5E-4F60-8A7B-9C8D7E6F5A4B"
+        },
+        {
+          "id": "mixed_case_kept_verbatim",
+          "events": [
+            {
+              "raw": "3F2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b",
+              "t": "put",
+              "accepted": true
+            }
+          ],
+          "expectRemembered": "3F2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+        },
+        {
+          "id": "non_canonical_never_learned",
+          "events": [
+            {
+              "raw": "3F2A1B4C0D5E4F608A7B9C8D7E6F5A4B",
+              "t": "put",
+              "accepted": false
+            }
+          ],
+          "expectRemembered": null
         }
       ],
       "tie": [
@@ -3739,10 +4097,21 @@
       "requiredBy": "SP2",
       "findings": [
         "S3-01",
-        "S3-14"
+        "S3-14",
+        "gap-v2-room-2x-interop-1",
+        "gap-v2-room-2x-interop-2"
       ],
       "unit": "LegacyV2Ids",
       "vectorsRef": "v2.vectors"
+    },
+    {
+      "id": "poison_embedded_id_skipped",
+      "requiredBy": "SP2",
+      "findings": [
+        "sync-android-2"
+      ],
+      "unit": "SnapshotValidator",
+      "vectorsRef": "snapshot.embeddedIdCases"
     }
   ]
 }

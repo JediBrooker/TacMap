@@ -50,13 +50,17 @@ internal data class MigrationResult(
     val drafts: List<CalibrationDraft>,
     /** the PDF that was active but never georeferenced, the user gets told once */
     val uncalibratedActiveName: String?,
+    /** inputs that wouldn't convert (a file outside our map dirs): salvaged around, never dropped */
+    val unconverted: List<File> = emptyList(),
 )
 
 /**
  * Contract s8.2 migration, one time and fail closed: whatever the old selector +
  * PDF session + retained map pointed at becomes library entries. Pure so the
  * frozen legacy cases run on the JVM; [LegacyMapReader] does the store reading.
- * Android file names are already opaque, nothing gets renamed.
+ * Android file names are already opaque, nothing gets renamed. Whatever doesn't
+ * convert is left out and listed in [MigrationResult.unconverted], the caller
+ * salvages then (s13.1 L5) instead of writing a library that dropped it.
  */
 internal object ImportedMapLibraryMigration {
     fun build(
@@ -64,12 +68,17 @@ internal object ImportedMapLibraryMigration {
         filesDir: File,
         nowMs: Long,
         newId: () -> String = { UUID.randomUUID().toString() },
-    ): MigrationResult? {
+    ): MigrationResult {
         val entries = ArrayList<ImportedMapEntry>()
         val drafts = ArrayList<CalibrationDraft>()
+        val unconverted = ArrayList<File>()
         var pdfEntry: ImportedMapEntry? = null
         inputs.pdf?.let { legacy ->
-            val name = ImportedMapLibraryStore.relativeName(filesDir, legacy.file) ?: return null
+            val name = ImportedMapLibraryStore.relativeName(filesDir, legacy.file)
+            if (name == null) {
+                unconverted += legacy.file
+                return@let
+            }
             val g = legacy.geometry
             val pageBox = g.visibleBox.corners()
             val id = newId()
@@ -120,7 +129,10 @@ internal object ImportedMapLibraryMigration {
             }
         }
         val offlineEntries = inputs.offline.distinctBy { it.file.absolutePath }.mapNotNull { o ->
-            val name = ImportedMapLibraryStore.relativeName(filesDir, o.file) ?: return@mapNotNull null
+            val name = ImportedMapLibraryStore.relativeName(filesDir, o.file) ?: run {
+                unconverted += o.file
+                return@mapNotNull null
+            }
             o.file.absolutePath to ImportedMapEntry(
                 id = newId(),
                 kind = ImportedMapKind.MBTILES.code,
@@ -158,7 +170,7 @@ internal object ImportedMapLibraryMigration {
             preferredOnlineStyle = inputs.preferredOnlineStyle,
             entries = entries,
         )
-        return MigrationResult(state, drafts, uncalibrated)
+        return MigrationResult(state, drafts, uncalibrated, unconverted)
     }
 
     /** v1 fiduciaries: geographic with the WGS84 override, the typed MGRS kept as the input text */

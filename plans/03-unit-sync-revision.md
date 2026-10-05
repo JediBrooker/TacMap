@@ -29,13 +29,21 @@ audit scratch copies; they are re-created as real tests here.
 1. No durable write per frame (S1-02, S5-05, S3-16, S4-11, S6-06, verifier notes):
    track activity in memory and persist `meta:lastActivity` at most once per
    ACTIVITY_PERSIST_MS (and on last-socket close / before alarm evaluation); never on
-   rejected frames; a failed activity write never closes a socket.
+   rejected frames; a failed activity write never closes a socket. 3.0.1
+   (relay-ref-3): relayed presence, routed chat and answered pings count too, still
+   at most one write per ACTIVITY_PERSIST_MS, so the idle clock is at most an hour
+   stale when a deploy drops sockets without close callbacks.
 2. Idle expiry keeps monotonic room state (S1-01, S3-02, S6-01): expiry deletes the
    ciphertext of live objects and actor pins but keeps meta:auth, meta:protocol,
    meta:seq, meta:highWater and tombstones (opaque ids + stamps), so returning
    clients neither roll back nor get counter-window-locked nor resurrect deletes.
    Bounded: after ROOM_PURGE_TTL_MS (90 days) of continuous idleness the room is
-   wiped outright (coordinator decision, owner confirms before deploy).
+   wiped outright (coordinator decision, owner confirms before deploy). 3.0.1
+   (relay-ref-1, owner decision): each dropped pin leaves an epoch floor
+   (epoch:<actorId> -> helloEpoch, counted like the pin) until that purge, so a
+   captured older hello stays refused across expiry (ADR-001 sections 14 and 16),
+   in presence-only rooms too: only a room with no write and no floor to keep is
+   still wiped whole at expiry.
 3. Tombstone/record compaction (S1-08, S3-13, S4-05): tombstones older than
    TOMBSTONE_TTL (e.g. 30 days, recorded server-side without changing the stored
    record shape that snapshots send) are compacted; quotas count what is actually

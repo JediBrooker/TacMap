@@ -270,6 +270,13 @@ enum PDFRenderGuardReducer {
         if let ip = s.inProgress, ip.kind == .base || ip.kind == .vector { s.inProgress = nil }
     }
 
+    /// iOS only: our own base/vector marker comes off, nothing verified. for work
+    /// that has to be guarded but isnt the render itself (the restore's openPage)
+    static func disarm(_ s: inout PDFRenderGuardState, kind: PDFGuardKind, token: String) {
+        guard kind == .base || kind == .vector, let ip = s.inProgress, ip.kind == kind, ip.token == token else { return }
+        s.inProgress = nil
+    }
+
     /// decision = first matching row of the table without the bake row, the
     /// bake is reported on its own. both markers are always cleared
     static func launch(_ s: inout PDFRenderGuardState, restoredToken: String?) -> PDFLaunchOutcome {
@@ -355,6 +362,13 @@ final class PDFRenderGuard {
         lock.lock(); defer { lock.unlock() }
         let before = state
         PDFRenderGuardReducer.disarmBackground(&state)
+        if state != before { persist() }
+    }
+
+    func disarm(kind: PDFGuardKind, token: String) {
+        lock.lock(); defer { lock.unlock() }
+        let before = state
+        PDFRenderGuardReducer.disarm(&state, kind: kind, token: token)
         if state != before { persist() }
     }
 

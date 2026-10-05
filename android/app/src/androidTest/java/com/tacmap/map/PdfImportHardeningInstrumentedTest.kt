@@ -55,6 +55,9 @@ import kotlinx.coroutines.runBlocking
 class PdfImportHardeningInstrumentedTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
+    // a finished bake waits for the key a paused MainActivity earlier in the run relocked
+    @get:org.junit.Rule val missionKey = com.tacmap.util.MissionKeyUnlockRule()
+
     /** WP5: the import reads the PDF once through PdfInspector (the old preflight is gone) */
     private fun inspected(file: File): PdfInspection {
         val r = PdfInspector.inspect(context, file)

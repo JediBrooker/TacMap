@@ -22,6 +22,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -227,12 +228,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
                 description = L10n.text("Shown while TacMap can share location with Unit Sync when the screen is off.")
             }
         )
-        val openApp = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val openApp = openAppIntent(this)
         val stopSharing = PendingIntent.getService(
             this,
             STOP_REQUEST_CODE,
@@ -274,6 +270,20 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
         }
 
         /**
+         * Tapping either notice. Has to be the home screen's own MAIN/LAUNCHER intent so it
+         * brings the task that's already running to the front, like the launcher icon does. A
+         * bare Intent(MainActivity) doesn't match the task's root intent and the platform
+         * stacks a second MainActivity on top, with its own MapViewModel and library copy
+         */
+        private fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            Intent.makeMainActivity(ComponentName(context, MainActivity::class.java))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        /**
          * Background sharing stopped without the user asking (connection lost
          * while screen-off). The ongoing notice goes away with the service, so
          * leave a normal dismissable one in its place (plans/04 section 21.5).
@@ -290,12 +300,7 @@ class BackgroundUnitSyncLocationService : Service(), UnitSyncRuntime.ServiceCont
                         description = L10n.text("Shown while TacMap can share location with Unit Sync when the screen is off.")
                     }
                 )
-                val openApp = PendingIntent.getActivity(
-                    context,
-                    0,
-                    Intent(context, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
+                val openApp = openAppIntent(context)
                 val text = Messages.syncBackgroundPaused(pausedAt)
                 val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                     .setContentTitle(Messages.syncBackgroundPausedTitle())

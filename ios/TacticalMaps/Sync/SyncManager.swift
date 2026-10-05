@@ -3212,12 +3212,13 @@ final class SyncManager: ObservableObject {
 
     private func syncLocalState() {
         guard presenceCadence.foregroundReady, status == .connected, !joinState.mutationsPaused else { return }
-        // v2 ids go out lowercase like Android and the relay expect (S3-01).
+        // v2 state is keyed by the lowercase key, only sendPut/sendDel turn it
+        // into the uppercase wire id 2.x iOS expects.
         // Exports come off the cache, an unchanged object is not re-exported.
         var current: [String: (kind: String, content: String)] = [:]
         for uuid in modelIndex.allIds {
             guard let export = modelIndex.export(uuid), let kind = modelIndex.kind(of: uuid) else { continue }
-            current[LegacyV2Ids.outboundId(uuid)] = (kind.rawValue, export.content)
+            current[LegacyV2Ids.stateKey(uuid)] = (kind.rawValue, export.content)
         }
 
         for (id, entry) in current {
@@ -3246,10 +3247,12 @@ final class SyncManager: ObservableObject {
         }
     }
 
+    /// id is the state key, the frame goes out under the uppercase wire id
     private func sendPut(id: String, v: Int64, kind: String, content: String) {
-        guard let key = roomKey, let seed = deviceSeed else { return }
+        guard let key = roomKey, let seed = deviceSeed,
+              let wireId = LegacyV2Ids.outboundId(stateKey: id) else { return }
         let probe: [String: Any] = [
-            "t": "put", "id": id, "v": v, "by": clientId, "kind": kind, "rid": String(repeating: "0", count: 32)
+            "t": "put", "id": wireId, "v": v, "by": clientId, "kind": kind, "rid": String(repeating: "0", count: 32)
         ]
         guard fitsOnTheWire(innerWithoutSignature: ["c": content, "pub": myPublicKey], outer: probe) else {
             suppressUntilLocalEdit(id)
@@ -3260,45 +3263,46 @@ final class SyncManager: ObservableObject {
         // rides INSIDE the sealed blob so the relay stays E2E-blind to device
         // identity; a receiver proves room-key possession by opening it and
         // device authorship by verifying the sig against the pinned key.
-        let sig = SyncSigning.sign(seed, SyncSigning.objectMessage(id, v, kind, clientId, content)) ?? ""
+        let sig = SyncSigning.sign(seed, SyncSigning.objectMessage(wireId, v, kind, clientId, content)) ?? ""
         let inner: [String: Any] = ["c": content, "pub": myPublicKey, "sig": sig]
         guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
-              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aad(id: id, v: v, kind: kind)) else { return }
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aad(id: wireId, v: v, kind: kind)) else { return }
         let ciphertext = sealed.base64EncodedString()
         let requestId = newDeliveryRequestId()
         let object: [String: Any] = [
-            "t": "put", "id": id, "v": v, "by": clientId, "kind": kind,
+            "t": "put", "id": wireId, "v": v, "by": clientId, "kind": kind,
             "ct": ciphertext, "rid": requestId
         ]
         guard let frame = encodedFrame(object) else { return }
         queueDelivery(PendingOutboundDelivery(
             localId: id, requestId: requestId, connectionGeneration: activeConnectionGeneration,
-            actorId: clientId, sessionDomain: nil, wireObjectId: id,
+            actorId: clientId, sessionDomain: nil, wireObjectId: wireId,
             objectVersion: String(v), kind: kind, ciphertextHash: ciphertextHash(ciphertext),
             desiredContentHash: contentHash(content), desiredContent: content, frame: frame
         ))
     }
 
     private func sendDel(id: String, v: Int64) {
-        guard let key = roomKey, let seed = deviceSeed else { return }
+        guard let key = roomKey, let seed = deviceSeed,
+              let wireId = LegacyV2Ids.outboundId(stateKey: id) else { return }
         // Deletes used to be an unauthenticated {id,v} - a coerced relay could
         // forge one and silently remove a contact. Now seal a signed proof: only
         // a room-key holder can produce it (relay can't), and it's attributable
         // to a device. AAD "del" so it can't be replayed as a put.
-        let sig = SyncSigning.sign(seed, SyncSigning.objectMessage(id, v, "del", clientId, "")) ?? ""
+        let sig = SyncSigning.sign(seed, SyncSigning.objectMessage(wireId, v, "del", clientId, "")) ?? ""
         let inner: [String: Any] = ["pub": myPublicKey, "sig": sig]
         guard let innerData = try? JSONSerialization.data(withJSONObject: inner),
-              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aad(id: id, v: v, kind: "del")) else { return }
+              let sealed = SyncCrypto.seal(key, innerData, aad: SyncCrypto.aad(id: wireId, v: v, kind: "del")) else { return }
         let ciphertext = sealed.base64EncodedString()
         let requestId = newDeliveryRequestId()
         let object: [String: Any] = [
-            "t": "del", "id": id, "v": v, "by": clientId,
+            "t": "del", "id": wireId, "v": v, "by": clientId,
             "ct": ciphertext, "rid": requestId
         ]
         guard let frame = encodedFrame(object) else { return }
         queueDelivery(PendingOutboundDelivery(
             localId: id, requestId: requestId, connectionGeneration: activeConnectionGeneration,
-            actorId: clientId, sessionDomain: nil, wireObjectId: id,
+            actorId: clientId, sessionDomain: nil, wireObjectId: wireId,
             objectVersion: String(v), kind: "del", ciphertextHash: ciphertextHash(ciphertext),
             desiredContentHash: nil, desiredContent: nil, frame: frame
         ))
@@ -3632,15 +3636,22 @@ final class SyncManager: ObservableObject {
     /// to publish it (skipped record, too large, quota/invalid/stale nack).
     private func isSuppressedUntilLocalEdit(_ localId: String) -> Bool {
         guard let generation = joinState.suppressedUntilEdit[localId] else { return false }
-        if modelRevisionJournal?.generation(localId) == generation { return true }
+        if journalGeneration(localId) == generation { return true }
         joinState.suppressedUntilEdit.removeValue(forKey: localId)
         return false
     }
 
     private func suppressUntilLocalEdit(_ localId: String) {
         guard !localId.hasPrefix("wire:") else { return }
-        joinState.suppressedUntilEdit[localId] = modelRevisionJournal?.generation(localId) ?? 0
+        joinState.suppressedUntilEdit[localId] = journalGeneration(localId) ?? 0
         forcedLocalDiff.remove(localId)
+    }
+
+    /// The journal is bumped by uuidString (uppercase) but v2 suppression is
+    /// keyed by the lowercase state key, so look it up by the UUID or a v2
+    /// suppression never lifts on an edit.
+    private func journalGeneration(_ localId: String) -> Int64? {
+        modelRevisionJournal?.generation(UUID(uuidString: localId)?.uuidString ?? localId)
     }
 
     private func recordSkip(_ wireId: String, _ category: SnapshotSkipCategory) {
@@ -4677,7 +4688,7 @@ final class SyncManager: ObservableObject {
         guard let parsed = try? GeoJSONImporter.parse(contentData, existingLayers: drawingStore.layers,
                                                       fallbackLayerID: fallback) else { return }
         let embedded = parsed.waypoints.first?.id ?? parsed.drawings.first?.id
-        guard embedded.map(LegacyV2Ids.outboundId) == id else { return }
+        guard embedded.map({ LegacyV2Ids.stateKey($0) }) == id else { return }
         if forcedLegacyDeletes[id] != nil {
             clock = max(clock, v)
             versions[id] = v
@@ -4738,9 +4749,10 @@ final class SyncManager: ObservableObject {
                               signed: SyncSigning.objectMessage(rawId, v, "del", by, "")) else { return }
         if let recovery = forcedLegacyDeletes[id] {
             let exactSnapshotConfirmation = snapshotGeneration.map {
+                // our own del went out under the uppercase wire id
                 recovery.matchesVerifiedTombstone(
                     localId: id,
-                    wireObjectId: id,
+                    wireObjectId: rawId,
                     actorId: by,
                     objectVersion: String(v),
                     kind: rec["kind"] as? String ?? "del",

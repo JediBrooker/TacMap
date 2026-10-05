@@ -605,7 +605,8 @@ final class SyncManagerSessionTests: XCTestCase {
 }
 
 /// S3-01 (iOS sent uppercase v2 ids, Android lowercase, iOS then echoed a
-/// delete) and S3-14 (equal-v tie went the other way from the relay).
+/// delete), S3-14 (equal-v tie went the other way from the relay) and the
+/// 3.0.1 owner call to keep iOS v2 frame ids uppercase (gap-v2-room-2x-interop-1).
 @MainActor
 final class SyncLegacyV2SessionTests: XCTestCase {
     private var harness: SyncManagerHarness!
@@ -642,12 +643,31 @@ final class SyncLegacyV2SessionTests: XCTestCase {
         return ["t": "put", "id": id, "v": v, "by": by, "kind": "waypoint", "ct": sealed.base64EncodedString()]
     }
 
-    func testOutboundIdsAreLowercaseAndAndroidRecordsAreNotEchoedAsDeletes() throws {
+    /// Opens one of our own v2 frames the way a peer does, over its raw id.
+    private func openOwn(_ frame: [String: Any]) -> [String: Any]? {
+        guard let id = frame["id"] as? String, let v = (frame["v"] as? NSNumber)?.int64Value,
+              let by = frame["by"] as? String, let ct = frame["ct"] as? String,
+              let blob = Data(base64Encoded: ct) else { return nil }
+        let kind = frame["t"] as? String == "del" ? "del" : frame["kind"] as? String ?? ""
+        guard let plain = SyncCrypto.open(Self.v2Keys!.roomKey, blob, aad: SyncCrypto.aad(id: id, v: v, kind: kind)),
+              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any],
+              let pub = inner["pub"] as? String, let sig = inner["sig"] as? String else { return nil }
+        let content = inner["c"] as? String ?? ""
+        guard SyncSigning.verify(pub, SyncSigning.objectMessage(id, v, kind, by, content), sig) else { return nil }
+        return inner
+    }
+
+    func testOutboundIdsAreUppercaseAndInboundRecordsAreNotEchoed() throws {
         connectV2()
         let local = try harness.addLocalWaypoint("iOS v2")
         harness.pump(300)
         let put = try XCTUnwrap(harness.socket.sent(type: "put").last)
-        XCTAssertEqual(put["id"] as? String, local.id.uuidString.lowercased())
+        // uuidString like 2.x iOS, AAD and sig over the same id, embedded id lowercase
+        XCTAssertEqual(put["id"] as? String, local.id.uuidString)
+        let inner = try XCTUnwrap(openOwn(put))
+        let parsed = try JSONSerialization.jsonObject(with: Data((inner["c"] as? String ?? "").utf8)) as? [String: Any]
+        let feature = (parsed?["features"] as? [[String: Any]])?.first
+        XCTAssertEqual(feature?["id"] as? String, local.id.uuidString.lowercased())
 
         let android = Waypoint(name: "Android v2", latitude: -33.9, longitude: 151.3, layerID: DrawingLayer.legacyFallbackID)
         let lower = android.id.uuidString.lowercased()
@@ -668,6 +688,83 @@ final class SyncLegacyV2SessionTests: XCTestCase {
             return id == lower || id == shipped.id.uuidString.lowercased()
         }
         XCTAssertTrue(echoes.isEmpty, "remote records are not republished under another casing")
+
+        // an edit of the Android-made object still goes out uppercase, and the
+        // delete too, whoever created it
+        var edited = android
+        edited.name = "Edited on iOS"
+        try harness.waypointStore.commitEdit(edited)
+        harness.pump(300)
+        let editPut = try XCTUnwrap(harness.socket.sent(type: "put").last)
+        XCTAssertEqual(editPut["id"] as? String, android.id.uuidString)
+        XCTAssertGreaterThan((editPut["v"] as? NSNumber)?.int64Value ?? 0, 51)
+        XCTAssertNotNil(openOwn(editPut))
+        try harness.waypointStore.deleteDurably(edited)
+        harness.pump(300)
+        let del = try XCTUnwrap(harness.socket.sent(type: "del").last)
+        XCTAssertEqual(del["id"] as? String, android.id.uuidString)
+        XCTAssertNotNil(openOwn(del))
+        XCTAssertEqual(harness.socket.sent(type: "del").count, 1)
+    }
+
+    private func ackV2(_ frame: [String: Any]) {
+        let ct = frame["ct"] as! String
+        harness.socket.deliver([
+            "t": "op-ack", "av": 1, "rid": frame["rid"]!, "by": frame["by"]!, "id": frame["id"]!,
+            "v": frame["v"]!, "kind": frame["kind"] ?? "del",
+            "cth": SyncIdentity.urlB64Encode(SyncIdentity.sha256(Data(ct.utf8)))
+        ])
+        harness.pump()
+    }
+
+    /// Our del was still unacked when the socket dropped. The relay kept it
+    /// under the uppercase id and the reconnect snapshot has to confirm it as
+    /// is, not send it again.
+    func testUnackedDeleteIsConfirmedByItsUppercaseTombstoneOnReconnect() throws {
+        connectV2()
+        let local = try harness.addLocalWaypoint("Gone soon")
+        harness.pump(300)
+        ackV2(try XCTUnwrap(harness.socket.sent(type: "put").last))
+        try harness.waypointStore.deleteDurably(local)
+        harness.pump(300)
+        let del = try XCTUnwrap(harness.socket.sent(type: "del").last)
+        XCTAssertEqual(del["id"] as? String, local.id.uuidString)
+
+        harness.socket.remoteClose(code: 1006)
+        harness.pump()
+        harness.advanceUntilNewSocket()
+        let tombstone: [String: Any] = [
+            "id": del["id"]!, "v": del["v"]!, "by": del["by"]!, "kind": "del", "ct": del["ct"]!, "deleted": true
+        ]
+        harness.socket.deliver(["t": "snapshot-begin", "seq": 2])
+        harness.socket.deliver(["t": "snapshot", "items": [tombstone], "more": false])
+        harness.socket.deliver(["t": "snapshot-end", "seq": 2])
+        harness.pump(300)
+        XCTAssertEqual(harness.manager.status, .connected)
+        XCTAssertTrue(harness.sentMutations().isEmpty, "the relay already has our delete")
+    }
+
+    /// The journal is keyed uppercase, v2 suppression lowercase. A too-big v2
+    /// object used to stay unpublished for the rest of the join even after
+    /// the user shrank it.
+    func testTooLargeV2ObjectIsPublishedOnceTheUserShrinksIt() throws {
+        connectV2()
+        var coordinates: [Coordinate2D] = []
+        for i in 0..<16_000 {
+            coordinates.append(Coordinate2D(latitude: -33.0 - Double(i) * 0.000012345678,
+                                            longitude: 151.0 + Double(i) * 0.000023456789))
+        }
+        var shape = DrawingShape(kind: .freedraw, coordinates: coordinates, layerID: DrawingLayer.legacyFallbackID)
+        _ = try harness.drawingStore.addDurably(shape)
+        harness.pump(300)
+        XCTAssertTrue(harness.socket.sent(type: "put").isEmpty)
+        XCTAssertEqual(harness.manager.surfacedIssueLog.filter { $0 == .objectTooLarge }.count, 1)
+
+        shape.coordinates = Array(coordinates.prefix(20))
+        _ = try harness.drawingStore.commitEdit(shape)
+        harness.pump(300)
+        let put = try XCTUnwrap(harness.socket.sent(type: "put").last)
+        XCTAssertEqual(put["id"] as? String, shape.id.uuidString)
     }
 
     func testEqualVersionTieGoesToTheHigherWriterLikeTheRelay() throws {
@@ -692,5 +789,419 @@ final class SyncLegacyV2SessionTests: XCTestCase {
                                      seed: Data(repeating: 0x0d, count: 32)))
         harness.pump(300)
         XCTAssertEqual(harness.waypointStore.waypoints.first { $0.id == local.id }?.name, "Winner")
+    }
+}
+
+/// Relay v2 storage as the Durable Object keeps it: one record per raw id,
+/// case sensitive, higher v wins, equal v goes to the higher by, and the
+/// snapshot comes out in storage.list order.
+private final class LegacyV2RelayModel {
+    private(set) var records: [String: [String: Any]] = [:]
+
+    /// The stored record, nil when the relay drops it as stale.
+    func store(_ frame: [String: Any]) -> [String: Any]? {
+        guard let id = frame["id"] as? String, let v = (frame["v"] as? NSNumber)?.int64Value,
+              let by = frame["by"] as? String, let ct = frame["ct"] as? String else { return nil }
+        if let existing = records[id], let ev = (existing["v"] as? NSNumber)?.int64Value,
+           let eby = existing["by"] as? String {
+            let newer = v > ev || (v == ev && Array(eby.utf8).lexicographicallyPrecedes(Array(by.utf8)))
+            guard newer else { return nil }
+        }
+        let deleted = frame["t"] as? String == "del"
+        let record: [String: Any] = [
+            "id": id, "v": v, "by": by, "kind": deleted ? "del" : frame["kind"] as? String ?? "",
+            "ct": ct, "deleted": deleted
+        ]
+        records[id] = record
+        return record
+    }
+
+    func snapshot() -> [[String: Any]] {
+        records.keys
+            .sorted { Array(("obj:" + $0).utf8).lexicographicallyPrecedes(Array(("obj:" + $1).utf8)) }
+            .compactMap { records[$0] }
+    }
+
+    static func live(_ record: [String: Any]) -> [String: Any] {
+        var frame = record
+        frame["t"] = record["deleted"] as? Bool == true ? "del" : "put"
+        frame.removeValue(forKey: "deleted")
+        return frame
+    }
+
+    var liveIds: Set<String> { Set(records.filter { $0.value["deleted"] as? Bool != true }.keys) }
+    var deletedIds: Set<String> { Set(records.filter { $0.value["deleted"] as? Bool == true }.keys) }
+}
+
+/// Shipped 2.x iOS v2 sync, ids and versions only (fc6261c SyncManager.swift
+/// applyRecord :3157, applyDelete :3229, syncLocalState :2070, reexport :3312).
+/// Crypto is the real thing, over the raw id like 2.x did. Acks are assumed,
+/// they leave lastContent at what was sent.
+private final class Shipped2xIOSModel {
+    let roomKey: SymmetricKey
+    let seed: Data
+    let by: String
+    var objects: [UUID: String] = [:]
+    private var versions: [String: Int64] = [:]
+    private var lastContent: [String: String] = [:]
+    private var clock: Int64 = 0
+    private var peerKeys: [String: String] = [:]
+    private(set) var rejected: [String] = []
+    private(set) var sent: [[String: Any]] = []
+
+    init(roomKey: SymmetricKey, seed: Data, by: String) {
+        self.roomKey = roomKey
+        self.seed = seed
+        self.by = by
+    }
+
+    /// 2.x matched $0.id.uuidString == id, so a lowercase id re-exports as ""
+    private func reexport(_ id: String) -> String {
+        guard let uuid = UUID(uuidString: id), uuid.uuidString == id else { return "" }
+        return objects[uuid] ?? ""
+    }
+
+    private func open(_ record: [String: Any], kind: String) -> (v: Int64, inner: [String: Any])? {
+        guard let id = record["id"] as? String, let v = (record["v"] as? NSNumber)?.int64Value,
+              let ct = record["ct"] as? String, let blob = Data(base64Encoded: ct),
+              let plain = SyncCrypto.open(roomKey, blob, aad: SyncCrypto.aad(id: id, v: v, kind: kind)),
+              let inner = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { return nil }
+        return (v, inner)
+    }
+
+    private func verified(_ record: [String: Any], kind: String, v: Int64, inner: [String: Any]) -> Bool {
+        guard let id = record["id"] as? String, let writer = record["by"] as? String,
+              let pub = inner["pub"] as? String, let sig = inner["sig"] as? String else { return false }
+        if let pinned = peerKeys[writer], pinned != pub { return false }
+        peerKeys[writer] = pub
+        let content = inner["c"] as? String ?? ""
+        return SyncSigning.verify(pub, SyncSigning.objectMessage(id, v, kind, writer, content), sig)
+    }
+
+    func apply(_ record: [String: Any]) {
+        guard let id = record["id"] as? String, let v = (record["v"] as? NSNumber)?.int64Value else { return }
+        if let known = versions[id], known >= v { return }
+        let isDelete = record["deleted"] as? Bool == true || record["t"] as? String == "del"
+        let kind = isDelete ? "del" : record["kind"] as? String ?? ""
+        guard let opened = open(record, kind: kind), verified(record, kind: kind, v: v, inner: opened.inner) else {
+            rejected.append(id)
+            return
+        }
+        // the committers go by the parsed UUID, case does not matter there
+        guard let uuid = UUID(uuidString: id) else { return }
+        clock = max(clock, v)
+        versions[id] = v
+        if isDelete {
+            objects.removeValue(forKey: uuid)
+            lastContent[id] = nil
+        } else {
+            objects[uuid] = opened.inner["c"] as? String ?? ""
+            lastContent[id] = reexport(id)
+        }
+    }
+
+    /// The 250 ms debounced diff, current keyed by uuidString.
+    func syncLocalState() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        var current: [String: String] = [:]
+        for (uuid, content) in objects { current[uuid.uuidString] = content }
+        for id in current.keys.sorted() where lastContent[id] != current[id] {
+            clock += 1
+            versions[id] = clock
+            out.append(frame("put", id: id, v: clock, content: current[id]!))
+            lastContent[id] = current[id]
+        }
+        for id in lastContent.keys.sorted() where current[id] == nil {
+            clock += 1
+            out.append(frame("del", id: id, v: clock, content: ""))
+            lastContent[id] = nil
+        }
+        sent += out
+        return out
+    }
+
+    /// 2.x cleared its v2 baselines on every connect, then took the snapshot.
+    func reconnect(snapshot: [[String: Any]]) -> [[String: Any]] {
+        versions.removeAll()
+        lastContent.removeAll()
+        snapshot.forEach(apply)
+        return syncLocalState()
+    }
+
+    private func frame(_ t: String, id: String, v: Int64, content: String) -> [String: Any] {
+        var out = signedFrame(id: id, v: v, content: t == "put" ? content : nil)
+        out["rid"] = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        return out
+    }
+
+    /// One signed, sealed v2 frame under exactly this id, a del when content is nil.
+    func signedFrame(id: String, v: Int64, content: String?) -> [String: Any] {
+        let kind = content == nil ? "del" : "waypoint"
+        let sig = SyncSigning.sign(seed, SyncSigning.objectMessage(id, v, kind, by, content ?? ""))!
+        var inner: [String: Any] = ["pub": SyncSigning.publicKey(seed)!, "sig": sig]
+        if let content { inner["c"] = content }
+        let data = try! JSONSerialization.data(withJSONObject: inner)
+        let sealed = SyncCrypto.seal(roomKey, data, aad: SyncCrypto.aad(id: id, v: v, kind: kind))!
+        return ["t": content == nil ? "del" : "put", "id": id, "v": v, "by": by, "kind": kind,
+                "ct": sealed.base64EncodedString()]
+    }
+}
+
+/// gap-v2-room-2x-interop-1: the real manager and a shipped 2.x iOS model
+/// share a '2:' room through the relay model. 3.0.0 sent lowercase ids,
+/// 2.x re-exported them as "", echoed put UPPER plus del lower, and the
+/// object went for everyone.
+@MainActor
+final class SyncLegacyV2ShippedIOSInteropTests: XCTestCase {
+    private var harness: SyncManagerHarness!
+    private static let code = "sp2-v2-interop-room-01"
+    private static var v2Keys: SyncCrypto.RoomKeys?
+    private var relay: LegacyV2RelayModel!
+    private var old: Shipped2xIOSModel!
+    private var oldOnline = true
+    private var routed = 0
+    private var snapshotSeq: Int64 = 0
+    private var ourMutations: [[String: Any]] = []
+
+    override func setUp() async throws {
+        if Self.v2Keys == nil { Self.v2Keys = SyncCrypto.deriveRoom(Self.code) }
+        harness = try SyncManagerHarness(joinCode: "2:" + Self.code)
+        relay = LegacyV2RelayModel()
+        old = Shipped2xIOSModel(roomKey: Self.v2Keys!.roomKey, seed: Data(repeating: 0x0c, count: 32),
+                                by: "OLD-2X-IOS-CLIENT")
+    }
+
+    override func tearDown() async throws {
+        harness?.tearDown()
+        harness = nil
+    }
+
+    private func content(_ waypoint: Waypoint) -> String {
+        try! GeoJSONExporter.export(waypoints: [waypoint], drawings: [], layers: [])
+    }
+
+    private func name(in content: String?) -> String? {
+        guard let content else { return nil }
+        return (try? GeoJSONImporter.parse(Data(content.utf8), existingLayers: [],
+                                           fallbackLayerID: DrawingLayer.legacyFallbackID))?.waypoints.first?.name
+    }
+
+    private func deliverSnapshot(_ items: [[String: Any]]) {
+        snapshotSeq += 1
+        harness.socket.deliver(["t": "snapshot-begin", "seq": snapshotSeq])
+        harness.socket.deliver(["t": "snapshot", "items": items, "more": false])
+        harness.socket.deliver(["t": "snapshot-end", "seq": snapshotSeq])
+        harness.pump()
+        XCTAssertEqual(harness.manager.status, .connected)
+    }
+
+    private func joinManager() {
+        harness.join()
+        routed = 0
+        deliverSnapshot(relay.snapshot())
+    }
+
+    /// A fresh socket and a fresh snapshot, what a relaunch or rejoin sees.
+    private func reconnectManager() {
+        harness.socket.remoteClose(code: 1006)
+        harness.pump()
+        harness.advanceUntilNewSocket()
+        routed = 0
+        deliverSnapshot(relay.snapshot())
+    }
+
+    private func reconnectOld() {
+        oldOnline = true
+        forwardFromOld(old.reconnect(snapshot: relay.snapshot()))
+    }
+
+    private func forwardFromOld(_ frames: [[String: Any]]) {
+        for frame in frames {
+            guard let record = relay.store(frame) else { continue }
+            harness.socket.deliver(LegacyV2RelayModel.live(record))
+        }
+    }
+
+    /// Moves frames both ways until neither side has anything left to send.
+    private func settle() {
+        for _ in 0..<12 {
+            harness.pump(300)
+            var moved = false
+            let frames = harness.socket.sentObjects()
+            for frame in frames.dropFirst(routed) {
+                let t = frame["t"] as? String
+                guard t == "put" || t == "del" else { continue }
+                moved = true
+                ourMutations.append(frame)
+                if let record = relay.store(frame) {
+                    harness.socket.deliver([
+                        "t": "op-ack", "av": 1, "rid": frame["rid"]!, "by": frame["by"]!, "id": frame["id"]!,
+                        "v": frame["v"]!, "kind": record["kind"]!,
+                        "cth": SyncIdentity.urlB64Encode(SyncIdentity.sha256(Data((frame["ct"] as! String).utf8)))
+                    ])
+                    if oldOnline { old.apply(LegacyV2RelayModel.live(record)) }
+                } else {
+                    harness.socket.deliver(["t": "op-nack", "av": 1, "rid": frame["rid"]!, "by": frame["by"]!,
+                                            "code": "stale", "retry": false])
+                }
+            }
+            routed = frames.count
+            if oldOnline {
+                let echoes = old.syncLocalState()
+                if !echoes.isEmpty { moved = true }
+                forwardFromOld(echoes)
+            }
+            harness.pump(300)
+            if !moved { return }
+        }
+        XCTFail("the room never went quiet")
+    }
+
+    private func ourIds(_ t: String) -> [String] {
+        ourMutations.filter { $0["t"] as? String == t }.compactMap { $0["id"] as? String }
+    }
+
+    func testCreateByThisIOSSurvivesAShipped2xIOSPeer() throws {
+        joinManager()
+        let local = try harness.addLocalWaypoint("Made on 3.0.1")
+        settle()
+
+        XCTAssertEqual(ourIds("put"), [local.id.uuidString])
+        XCTAssertNotNil(old.objects[local.id], "2.x got it")
+        XCTAssertTrue(old.sent.isEmpty, "2.x must not echo anything back")
+        XCTAssertTrue(harness.waypointStore.waypoints.contains { $0.id == local.id }, "and we kept it")
+        XCTAssertEqual(relay.liveIds, [local.id.uuidString])
+        XCTAssertTrue(relay.deletedIds.isEmpty)
+
+        // the 2.x device reconnects, then this one does: still there everywhere
+        reconnectOld()
+        settle()
+        reconnectManager()
+        settle()
+        XCTAssertNotNil(old.objects[local.id])
+        XCTAssertTrue(harness.waypointStore.waypoints.contains { $0.id == local.id })
+        XCTAssertTrue(old.sent.isEmpty)
+        XCTAssertTrue(ourIds("del").isEmpty)
+        XCTAssertTrue(relay.deletedIds.isEmpty)
+        XCTAssertTrue(old.rejected.isEmpty)
+    }
+
+    func testEditOfAShipped2xObjectSurvivesTheShippedPeer() throws {
+        joinManager()
+        let made = Waypoint(name: "Made on 2.x", latitude: -33.9, longitude: 151.3, layerID: DrawingLayer.legacyFallbackID)
+        old.objects[made.id] = content(made)
+        settle()
+        XCTAssertEqual(harness.waypointStore.waypoints.first { $0.id == made.id }?.name, "Made on 2.x")
+        let baseline = old.sent.count
+
+        var edited = try XCTUnwrap(harness.waypointStore.waypoints.first { $0.id == made.id })
+        edited.name = "Edited on 3.0.1"
+        try harness.waypointStore.commitEdit(edited)
+        settle()
+
+        XCTAssertEqual(ourIds("put"), [made.id.uuidString])
+        XCTAssertEqual(name(in: old.objects[made.id]), "Edited on 3.0.1")
+        XCTAssertEqual(old.sent.count, baseline, "2.x must not echo the edit")
+        XCTAssertEqual(harness.waypointStore.waypoints.first { $0.id == made.id }?.name, "Edited on 3.0.1")
+        XCTAssertEqual(relay.liveIds, [made.id.uuidString])
+
+        // 2.x reconnects and edits back, still one object under one id
+        reconnectOld()
+        settle()
+        var back = edited
+        back.name = "Edited on 2.x"
+        old.objects[made.id] = content(back)
+        settle()
+        XCTAssertEqual(harness.waypointStore.waypoints.first { $0.id == made.id }?.name, "Edited on 2.x")
+        reconnectManager()
+        settle()
+        XCTAssertEqual(harness.waypointStore.waypoints.first { $0.id == made.id }?.name, "Edited on 2.x")
+        XCTAssertEqual(name(in: old.objects[made.id]), "Edited on 2.x")
+        XCTAssertTrue(ourIds("del").isEmpty)
+        XCTAssertTrue(relay.deletedIds.isEmpty)
+        XCTAssertTrue(old.rejected.isEmpty)
+    }
+
+    func testDeleteReachesTheShipped2xPeerWithoutAnEcho() throws {
+        joinManager()
+        let theirs = Waypoint(name: "2.x", latitude: -33.9, longitude: 151.3, layerID: DrawingLayer.legacyFallbackID)
+        old.objects[theirs.id] = content(theirs)
+        let mine = try harness.addLocalWaypoint("3.0.1")
+        settle()
+        XCTAssertNotNil(old.objects[mine.id])
+        XCTAssertTrue(harness.waypointStore.waypoints.contains { $0.id == theirs.id })
+        let baseline = old.sent.count
+
+        for id in [theirs.id, mine.id] {
+            let waypoint = try XCTUnwrap(harness.waypointStore.waypoints.first { $0.id == id })
+            try harness.waypointStore.deleteDurably(waypoint)
+        }
+        settle()
+
+        XCTAssertEqual(Set(ourIds("del")), [theirs.id.uuidString, mine.id.uuidString])
+        XCTAssertNil(old.objects[theirs.id])
+        XCTAssertNil(old.objects[mine.id])
+        XCTAssertEqual(old.sent.count, baseline, "2.x must not answer the deletes")
+        XCTAssertEqual(relay.deletedIds, [theirs.id.uuidString, mine.id.uuidString])
+        XCTAssertTrue(relay.liveIds.isEmpty)
+
+        // nothing comes back on either reconnect
+        reconnectOld()
+        settle()
+        reconnectManager()
+        settle()
+        XCTAssertTrue(old.objects.isEmpty)
+        XCTAssertFalse(harness.waypointStore.waypoints.contains { $0.id == theirs.id || $0.id == mine.id })
+        XCTAssertEqual(old.sent.count, baseline)
+        XCTAssertTrue(old.rejected.isEmpty)
+    }
+
+    /// 3.0.0 wrote every v2 record lowercase. Its per-id maps were memory
+    /// only, so 3.0.1 starts from the relay: nothing may be re-sent or
+    /// deleted because of the casing, and the next edit goes out uppercase
+    /// above every old v.
+    func testUpgradeFrom300LowercaseRelayStateResendsAndDeletesNothing() throws {
+        let mine = Waypoint(name: "Mine on 3.0.0", latitude: -33.8, longitude: 151.1, layerID: DrawingLayer.legacyFallbackID)
+        let mate = Waypoint(name: "Mate on 3.0.0", latitude: -33.81, longitude: 151.11, layerID: DrawingLayer.legacyFallbackID)
+        let shipped = Waypoint(name: "2.x", latitude: -33.82, longitude: 151.12, layerID: DrawingLayer.legacyFallbackID)
+        let gone = Waypoint(name: "Deleted on 3.0.0", latitude: -33.83, longitude: 151.13, layerID: DrawingLayer.legacyFallbackID)
+        for waypoint in [mine, mate, shipped] { _ = try harness.waypointStore.addDurably(waypoint) }
+        oldOnline = false
+
+        harness.join()
+        routed = 0
+        // our own 3.0.0 records are signed with this install's identity
+        let sealedSeed = try XCTUnwrap(harness.defaults.data(forKey: "sync.deviceSeed"))
+        let seed = try XCTUnwrap(SealedEnvelope.openFile(key: SyncManagerHarness.testKey, blob: sealedSeed,
+                                                         label: "sync/deviceSeed"))
+        let clientId = try XCTUnwrap(harness.defaults.string(forKey: "sync.clientId"))
+        let me = Shipped2xIOSModel(roomKey: Self.v2Keys!.roomKey, seed: seed, by: clientId)
+        let teammate = Shipped2xIOSModel(roomKey: Self.v2Keys!.roomKey, seed: Data(repeating: 0x0e, count: 32),
+                                         by: "MATE-3-0-0-CLIENT")
+        // 3.0.0-shaped records: lowercase ids, AAD and sig over them
+        _ = relay.store(me.signedFrame(id: mine.id.uuidString.lowercased(), v: 3, content: content(mine)))
+        _ = relay.store(teammate.signedFrame(id: mate.id.uuidString.lowercased(), v: 4, content: content(mate)))
+        _ = relay.store(me.signedFrame(id: gone.id.uuidString.lowercased(), v: 5, content: nil))
+        _ = relay.store(old.signedFrame(id: shipped.id.uuidString, v: 2, content: content(shipped)))
+        deliverSnapshot(relay.snapshot())
+        settle()
+
+        XCTAssertTrue(ourMutations.isEmpty, "a 3.0.0 room must not be re-sent or deleted: \(ourMutations)")
+        for waypoint in [mine, mate, shipped] {
+            XCTAssertTrue(harness.waypointStore.waypoints.contains { $0.id == waypoint.id })
+        }
+        XCTAssertFalse(harness.waypointStore.waypoints.contains { $0.id == gone.id })
+
+        var edited = mine
+        edited.name = "Mine on 3.0.1"
+        try harness.waypointStore.commitEdit(edited)
+        settle()
+        XCTAssertEqual(ourIds("put"), [mine.id.uuidString])
+        XCTAssertGreaterThan((ourMutations.last?["v"] as? NSNumber)?.int64Value ?? 0, 5)
+        XCTAssertTrue(ourIds("del").isEmpty)
+        // the old lowercase record is left alone, the uppercase one supersedes it
+        XCTAssertEqual((relay.records[mine.id.uuidString.lowercased()]?["v"] as? NSNumber)?.int64Value, 3)
+        XCTAssertEqual(relay.liveIds, [mine.id.uuidString.lowercased(), mine.id.uuidString,
+                                       mate.id.uuidString.lowercased(), shipped.id.uuidString])
     }
 }

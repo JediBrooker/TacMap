@@ -1,6 +1,6 @@
 # TacMap — Privacy Policy
 
-*Last updated: 2 October 2026*
+*Last updated: 5 October 2026*
 
 *Applies to the iOS and Android editions of TacMap*
 
@@ -40,14 +40,15 @@ crash report locally; it is transmitted only if you explicitly export it.
 | **TacMap Chat history and replay state** | Text and reports that you send or receive, their room/selected-unit scope, local routing status, and anti-replay state are kept in a bounded encrypted, app-private file for that sync room. TacMap Chat v1 has no delivered/read receipts. |
 | **Calibration and imported-map selection metadata** | Stored in encrypted, app-private files. This can reveal the identity and geographic coverage of an imported map. |
 | **Imported PDF/GeoPDF and MBTiles maps** | Copied into app-private storage as their original file bytes. They receive the operating system’s file protection but are not encrypted by TacMap’s mission-data key. iOS Files/Finder file sharing is disabled. Android uses the system document picker and requests no broad storage permission. |
+| **Generated offline tiles** | **Generate Offline Tiles** writes a raster copy of a georeferenced PDF map’s area as an MBTiles file (`offline_tiles/tacmap-bake-<id>.mbtiles`) in app-private storage. Like the imported map, it is plaintext: it receives the operating system’s file protection and is excluded from iOS backups (Android app backups are disabled), but it is not encrypted by TacMap’s mission-data key. Its metadata does not name the map. **Remove Offline Tiles**, or removing the map, deletes it. After a rare map-library recovery, a tile file the rebuilt list no longer names can stay in app storage until the App's data is deleted. |
 | **App preferences** | OPSEC gates, layer visibility, camera state, and other interface choices are kept in app-private preferences. |
 | **Purchase entitlement** | A locally verified permanent-unlock marker is kept in the iOS Keychain or Android app-private preferences so a known owner can continue offline. |
 
 TacMap mission files use AES-256-GCM at rest. The data key is protected by the
-iOS Keychain or Android Keystore. Imported map bytes and local crash reports
-are the documented exceptions. Device compromise, an unlocked device, exports,
-and optional network services remain separate risks; see the published threat
-model for those limits.
+iOS Keychain or Android Keystore. Imported map bytes, offline tiles generated
+from them, and local crash reports are the documented exceptions. Device
+compromise, an unlocked device, exports, and optional network services remain
+separate risks; see the published threat model for those limits.
 
 An already started recording may retain a private copy of the mission key to
 append encrypted fixes after the general mission interface locks. The copy is
@@ -125,8 +126,13 @@ The relay and its hosting/network providers can still observe or process:
 - encrypted mission objects and tombstones held for synchronisation.
 
 Encrypted mission objects and actor records can remain at the relay until the
-room has been idle for seven days. Encrypted deletion records (tombstones) are
-kept after that. In current rooms a tombstone is removed once it is 30 days old
+room has been idle for seven days. From then on the relay keeps, for each
+device that started a session in the room, only a pseudonymous, room-specific
+device ID and the number of that device's latest session, so that an old
+session cannot be replayed into the room; for current app versions that number
+starts at the minute the device first joined the room, so it shows roughly
+when that was. Encrypted deletion records (tombstones) are also kept beyond
+seven idle days. In current rooms a tombstone is removed once it is 30 days old
 and the device that made it is not connected and has not started a session in
 the last 30 days; if the room was idle
 for seven days in the meantime, the relay no longer knows each device's last
@@ -140,12 +146,13 @@ connection hour before the idle period, the hour each kept deletion record
 was made, and for rooms created before this retention scheme the hour the
 relay started tracking their deletion records) with no mission content, so
 returning devices resume cleanly. Once a room has been idle for 90 days in a
-row the relay deletes everything it holds for it, including these values and
-any deletion records still kept; any use of the room before then restarts that
-period. A room in which nothing was ever stored is deleted entirely after
-seven idle days. A device that comes back to a room after it was deleted finds
-it empty and shows a rollback warning; start a new room with a new join code
-instead. Live location presence is forwarded to
+row the relay deletes everything it holds for it, including these values, the
+device IDs and session numbers, and any deletion records still kept; any use
+of the room before then restarts that period. A room in which nothing was ever
+stored and no device ever started a session is deleted entirely after seven
+idle days. A device that comes back to a
+room after it was deleted finds it empty and shows a rollback warning; start a
+new room with a new join code instead. Live location presence is forwarded to
 connected peers and held only as current in-memory session state. TacMap Chat
 key adverts and ciphertext are forwarded only to currently connected,
 Chat-capable sessions and are not written to the relay's room storage. There is

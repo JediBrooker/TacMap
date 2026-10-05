@@ -76,6 +76,8 @@ class Wp4LifecycleDeviceAcceptanceTest {
                 add(2); add(3)
                 waitFor("Finish").click()
                 waitUntil("manual commit") { vm.libraryState.value?.entries?.single()?.pdf?.manual?.points?.size == 4 }
+                // the library's published before Finish ends the session, let the click handler run out
+                instr.waitForIdleSync()
                 assertFalse(vm.calibration.isActive)
                 assertTrue(CalibrationDraftStore(app.filesDir).all().isEmpty())
                 val manual = vm.libraryState.value!!.entries.single().pdf!!.manual!!

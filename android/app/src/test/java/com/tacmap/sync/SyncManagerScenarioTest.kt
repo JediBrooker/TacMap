@@ -6,6 +6,7 @@ import com.tacmap.drawings.DrawingGeometry
 import com.tacmap.drawings.DrawingLayer
 import com.tacmap.drawings.DrawingPoint
 import com.tacmap.export.GeoJsonExporter
+import com.tacmap.export.GeoJsonImporter
 import com.tacmap.waypoints.Waypoint
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -673,14 +674,14 @@ class SyncManagerScenarioTest {
     }
     private val v2Seeds = HashMap<String, ByteArray>()
 
-    private fun v2Connected(items: List<JSONObject> = emptyList()) {
-        h.join(SyncHarness.CODE_V2)
-        h.socket.open()
-        h.runCurrent()
-        h.deliver(JSONObject().put("t", "snapshot-begin").put("seq", 1))
-        h.deliver(JSONObject().put("t", "snapshot").put("items", org.json.JSONArray(items)).put("more", false)
+    private fun v2Connected(items: List<JSONObject> = emptyList(), harness: SyncHarness = h) {
+        harness.join(SyncHarness.CODE_V2)
+        harness.socket.open()
+        harness.runCurrent()
+        harness.deliver(JSONObject().put("t", "snapshot-begin").put("seq", 1))
+        harness.deliver(JSONObject().put("t", "snapshot").put("items", org.json.JSONArray(items)).put("more", false)
             .put("members", org.json.JSONArray()))
-        h.deliver(JSONObject().put("t", "snapshot-end").put("seq", 1))
+        harness.deliver(JSONObject().put("t", "snapshot-end").put("seq", 1))
     }
 
     @Test
@@ -717,5 +718,362 @@ class SyncManagerScenarioTest {
         val theirs = wp.copy(name = "theirs")
         h.deliver(v2Record(wp.id, v, "ffffffff-ffff-4fff-bfff-ffffffffffff", FakeV3Peer.waypointContent(theirs), keys).put("t", "put"))
         assertEquals("theirs", h.waypointStore.committedWaypoints.value.single().name)
+    }
+
+    // ---- gap-v2-room-2x-interop-2: a 2.x iOS object keeps its uppercase v2 id ----
+
+    private fun v2Del(rawId: String, v: Long, by: String, keys: SyncCrypto.RoomKeys): JSONObject {
+        val seed = v2Seeds.getOrPut(by) { SyncSigning.generateSeed() }
+        val sig = SyncSigning.sign(seed, SyncSigning.objectMessage(rawId, v, "del", by, ""))
+        val inner = JSONObject().put("pub", SyncSigning.publicKey(seed)).put("sig", sig)
+        val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(keys.roomKey, inner.toString().toByteArray(), SyncCrypto.aad(rawId, v, "del")))
+        return JSONObject().put("t", "del").put("id", rawId).put("v", v).put("by", by).put("ct", ct)
+    }
+
+    /**
+     * Shipped 2.x iOS v2 sync (fc6261c SyncManager.swift), only the bits that
+     * decide echoes. versions and lastContent are keyed by the raw wire id, the
+     * model by UUID value, and reexport only matches the uppercase uuidString.
+     * So a lowercase put leaves an empty baseline and the next diff echoes a put
+     * of the uppercase id plus a del of the lowercase one. Acks land at once.
+     */
+    private class Shipped2xIos(private val keys: SyncCrypto.RoomKeys) {
+        val clientId = "0F1E2D3C-4B5A-4978-8695-A4B3C2D1E0F9"
+        private val seed = SyncSigning.generateSeed()
+        private val pub = SyncSigning.publicKey(seed)
+        private var clock = 0L
+        private val versions = HashMap<String, Long>()
+        private val lastContent = HashMap<String, String>()
+        /** What the 2.x iOS user has, UUID value to GeoJSON. */
+        val model = LinkedHashMap<UUID, String>()
+
+        private fun reexport(id: String): String =
+            model.entries.firstOrNull { it.key.toString().uppercase() == id }?.value ?: ""
+
+        /** syncLocalState: a put per changed uuidString, a del per baseline that's gone. */
+        fun diff(): List<JSONObject> {
+            val current = model.entries.associate { it.key.toString().uppercase() to it.value }
+            val out = ArrayList<JSONObject>()
+            for ((id, content) in current) {
+                if (lastContent[id] == content) continue
+                clock += 1
+                versions[id] = clock
+                out += seal(id, clock, "waypoint", content)
+                lastContent[id] = content
+            }
+            for (id in lastContent.keys.filter { it !in current }) {
+                clock += 1
+                out += seal(id, clock, "del", "")
+                lastContent.remove(id)
+            }
+            return out
+        }
+
+        /** applyRecord / applyDelete, AEAD and signature over the raw id. */
+        fun receive(frame: JSONObject) {
+            val id = frame.getString("id")
+            val v = frame.getLong("v")
+            val del = frame.optString("t") == "del" || frame.optBoolean("deleted")
+            val kind = if (del) "del" else frame.getString("kind")
+            if ((versions[id] ?: -1L) >= v) return
+            val plain = SyncCrypto.open(keys.roomKey, SyncCrypto.decodeBase64(frame.getString("ct")), SyncCrypto.aad(id, v, kind))
+                ?: return
+            val inner = JSONObject(String(plain, Charsets.UTF_8))
+            val content = if (del) "" else inner.getString("c")
+            val signed = SyncSigning.objectMessage(id, v, kind, frame.getString("by"), content)
+            if (!SyncSigning.verify(inner.getString("pub"), signed, inner.getString("sig"))) return
+            // UUID(uuidString:) takes either case
+            val uuid = UUID.fromString(id)
+            clock = maxOf(clock, v)
+            versions[id] = v
+            if (del) {
+                model.remove(uuid)
+                lastContent.remove(id)
+            } else {
+                model[uuid] = content
+                lastContent[id] = reexport(id)
+            }
+        }
+
+        private fun seal(id: String, v: Long, kind: String, content: String): JSONObject {
+            val sig = SyncSigning.sign(seed, SyncSigning.objectMessage(id, v, kind, clientId, content))
+            val inner = JSONObject().put("pub", pub).put("sig", sig)
+            if (kind != "del") inner.put("c", content)
+            val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(keys.roomKey, inner.toString().toByteArray(), SyncCrypto.aad(id, v, kind)))
+            return JSONObject().put("t", if (kind == "del") "del" else "put").put("id", id).put("v", v)
+                .put("by", clientId).apply { if (kind != "del") put("kind", kind) }.put("ct", ct)
+        }
+    }
+
+    /** The v2 relay: newest (v, by) per raw id, case sensitive like obj:<id>. */
+    private class V2Relay {
+        val records = LinkedHashMap<String, JSONObject>()
+        fun store(frame: JSONObject) {
+            val prior = records[frame.getString("id")]
+            if (prior != null && !LegacyV2Ids.beats(frame.getLong("v"), frame.getString("by"), prior.getLong("v"), prior.getString("by"))) return
+            records[frame.getString("id")] = frame
+        }
+    }
+
+    private fun snapshotItem(frame: JSONObject): JSONObject = JSONObject(frame.toString()).apply {
+        val del = optString("t") == "del"
+        remove("t"); remove("rid")
+        if (del) put("deleted", true)
+    }
+
+    private fun v2Ack(frame: JSONObject): JSONObject {
+        val cth = SyncIdentity.urlB64(SyncIdentity.sha256(frame.getString("ct").toByteArray(Charsets.UTF_8)))
+        return JSONObject().put("t", "op-ack").put("av", 1).put("rid", frame.getString("rid"))
+            .put("by", frame.getString("by")).put("id", frame.getString("id")).put("v", frame.getLong("v"))
+            .put("kind", frame.optString("kind").ifEmpty { "del" }).put("cth", cth)
+    }
+
+    private var androidFramesRelayed = 0
+
+    private fun iosWaypoint(content: String?): Waypoint? = content?.let {
+        GeoJsonImporter.parse(it, existingLayers = emptyList(), fallbackLayerId = DrawingDocument.DEFAULT_LAYER_ID, density = 1f)
+            .waypoints.singleOrNull()
+    }
+
+    private fun placed(wp: Waypoint?): List<Any?> =
+        listOf(wp?.id?.lowercase(), wp?.name, wp?.latitude, wp?.longitude)
+
+    /** Relay both ways until both sides go quiet. Returns whatever 2.x iOS sent back. */
+    private fun exchange(ios: Shipped2xIos, relay: V2Relay): List<JSONObject> {
+        val echoes = ArrayList<JSONObject>()
+        repeat(8) {
+            h.advance(500)
+            val fresh = h.socket.sentFrames().drop(androidFramesRelayed).filter { it.optString("t") in setOf("put", "del") }
+            androidFramesRelayed = h.socket.sent.size
+            for (frame in fresh) {
+                relay.store(frame)
+                h.deliver(v2Ack(frame))
+                ios.receive(frame)
+            }
+            val back = ios.diff()
+            echoes += back
+            for (frame in back) {
+                relay.store(frame)
+                h.deliver(frame)
+            }
+            if (fresh.isEmpty() && back.isEmpty()) return echoes
+        }
+        error("the room never went quiet: $echoes")
+    }
+
+    /** Bob on 2.x iOS places W, Carol on Android joins and gets it in the snapshot. */
+    private fun joinAfterA2xIosUserPlacedAWaypoint(ios: Shipped2xIos, relay: V2Relay, wp: Waypoint) {
+        ios.model[UUID.fromString(wp.id)] = FakeV3Peer.waypointContent(wp)
+        val created = ios.diff().single()
+        assertEquals(wp.id.uppercase(), created.getString("id"))
+        relay.store(created)
+        v2Connected(relay.records.values.map(::snapshotItem))
+        assertEquals(listOf(wp.id), h.waypointStore.committedWaypoints.value.map { it.id })
+        assertEquals(wp.id.uppercase(), h.manager.rememberedV2IdForTests(wp.id))
+        assertTrue(exchange(ios, relay).isEmpty())
+    }
+
+    @Test
+    fun shipped2xIosModelReproducesTheEchoDeleteOfALowercaseEdit() {
+        // keeps the model honest: this is the finding as 3.0.0 android triggered it
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ios = Shipped2xIos(keys)
+        val wp = waypoint("bob")
+        ios.model[UUID.fromString(wp.id)] = FakeV3Peer.waypointContent(wp)
+        assertEquals(listOf(wp.id.uppercase()), ios.diff().map { it.getString("id") })
+        ios.receive(v2Record(wp.id, 2, "c0ffee00-0000-4000-8000-000000000001", FakeV3Peer.waypointContent(wp.copy(name = "carol")), keys).put("t", "put"))
+        assertEquals(
+            listOf("put" to wp.id.uppercase(), "del" to wp.id),
+            ios.diff().map { it.getString("t") to it.getString("id") },
+        )
+    }
+
+    @Test
+    fun v2EditAndMoveOfA2xIosObjectGoOutUnderItsUppercaseIdWithNoEcho() {
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ios = Shipped2xIos(keys)
+        val relay = V2Relay()
+        val wp = waypoint("bob")
+        val upper = wp.id.uppercase()
+        joinAfterA2xIosUserPlacedAWaypoint(ios, relay, wp)
+
+        // carol renames it, then drags it somewhere else
+        val renamed = wp.copy(name = "carol")
+        val moved = renamed.copy(latitude = -35.5, longitude = 149.5)
+        for (edit in listOf(renamed, moved)) {
+            assertTrue(h.waypointStore.update(edit))
+            val putsBefore = h.socket.sentOfType("put").size
+            val echoes = exchange(ios, relay)
+            assertEquals(listOf(upper), h.socket.sentOfType("put").drop(putsBefore).map { it.getString("id") })
+            assertTrue("2.x iOS echoed $echoes", echoes.isEmpty())
+            assertEquals(placed(edit), placed(h.waypointStore.committedWaypoints.value.single()))
+            assertEquals(placed(edit), placed(iosWaypoint(ios.model[UUID.fromString(wp.id)])))
+        }
+
+        // nothing got deleted anywhere and the relay only ever saw the uppercase id
+        assertEquals(listOf(upper), relay.records.keys.toList())
+        assertTrue(h.socket.sentOfType("del").isEmpty())
+        // a 2.x iOS device joining now gets the moved waypoint and stays quiet
+        val late = Shipped2xIos(keys)
+        relay.records.values.forEach(late::receive)
+        assertEquals(placed(moved), placed(iosWaypoint(late.model[UUID.fromString(wp.id)])))
+        assertTrue(late.diff().isEmpty())
+
+        // android's own objects stay lowercase, shipped 2.x android drops uppercase
+        val own = h.addWaypoint("carol's own")
+        h.advance(500)
+        assertEquals(own.id, h.socket.sentOfType("put").last().getString("id"))
+        assertNull(h.manager.rememberedV2IdForTests(own.id))
+    }
+
+    @Test
+    fun v2DeleteAndUndoOfA2xIosObjectKeepItsUppercaseId() {
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ios = Shipped2xIos(keys)
+        val relay = V2Relay()
+        val wp = waypoint("bob")
+        val upper = wp.id.uppercase()
+        joinAfterA2xIosUserPlacedAWaypoint(ios, relay, wp)
+
+        assertTrue(h.waypointStore.remove(h.waypointStore.committedWaypoints.value.single()))
+        val afterDelete = exchange(ios, relay)
+        assertEquals(listOf(upper), h.socket.sentOfType("del").map { it.getString("id") })
+        assertTrue("2.x iOS echoed $afterDelete", afterDelete.isEmpty())
+        assertTrue(ios.model.isEmpty())
+        assertTrue(h.waypointStore.committedWaypoints.value.isEmpty())
+
+        // the entry outlives the delete, so the undo comes back under the same id
+        assertEquals(upper, h.manager.rememberedV2IdForTests(wp.id))
+        assertTrue(h.waypointStore.undo())
+        val afterUndo = exchange(ios, relay)
+        assertEquals(upper, h.socket.sentOfType("put").last().getString("id"))
+        assertTrue("2.x iOS echoed $afterUndo", afterUndo.isEmpty())
+        assertEquals(setOf(UUID.fromString(wp.id)), ios.model.keys)
+        assertEquals(listOf(wp.id), h.waypointStore.committedWaypoints.value.map { it.id })
+        assertEquals(listOf(upper), relay.records.keys.toList())
+        assertEquals("put", relay.records.getValue(upper).getString("t"))
+    }
+
+    @Test
+    fun v2RememberedUppercaseIdSurvivesARestart() {
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ios = Shipped2xIos(keys)
+        val wp = waypoint("bob")
+        val upper = wp.id.uppercase()
+        ios.model[UUID.fromString(wp.id)] = FakeV3Peer.waypointContent(wp)
+        val created = ios.diff().single()
+        val dir = java.nio.file.Files.createTempDirectory("v2-restart").toFile()
+
+        val first = SyncHarness(dir = dir)
+        try {
+            v2Connected(listOf(snapshotItem(created)), first)
+            assertEquals(upper, first.manager.rememberedV2IdForTests(wp.id))
+        } finally {
+            first.close(deleteFiles = false)
+        }
+
+        // the relay purged the room, so only this device still knows the casing
+        val second = SyncHarness(dir = dir)
+        try {
+            assertEquals(listOf(wp.id), second.waypointStore.committedWaypoints.value.map { it.id })
+            v2Connected(harness = second)
+            assertEquals(upper, second.manager.rememberedV2IdForTests(wp.id))
+            second.advance(500)
+            val reupload = second.socket.sentOfType("put").single()
+            assertEquals(upper, reupload.getString("id"))
+            // a 2.x iOS device picking that up applies it without an echo
+            val fresh = Shipped2xIos(keys)
+            fresh.receive(reupload)
+            assertEquals(setOf(UUID.fromString(wp.id)), fresh.model.keys)
+            assertTrue(fresh.diff().isEmpty())
+        } finally {
+            second.close()
+        }
+    }
+
+    @Test
+    fun v2RememberedIdWhoseWriteFailedIsWrittenByTheNextBatch() {
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ios = Shipped2xIos(keys)
+        val wp = waypoint("bob")
+        val upper = wp.id.uppercase()
+        ios.model[UUID.fromString(wp.id)] = FakeV3Peer.waypointContent(wp)
+        val created = ios.diff().single()
+        val dir = java.nio.file.Files.createTempDirectory("v2-write-failed").toFile()
+        // the sealed write for the learned id fails (stands in for a full disk, or the key
+        // relocking between the check and the write)
+        val idsDir = java.io.File(java.io.File(dir, "files"), LegacyV2IdStore.DIRECTORY_NAME).apply { mkdirs() }
+        assertTrue(idsDir.setWritable(false))
+
+        val first = SyncHarness(dir = dir)
+        try {
+            v2Connected(listOf(snapshotItem(created)), first)
+            assertEquals(upper, first.manager.rememberedV2IdForTests(wp.id))
+            assertTrue("nothing should have landed", idsDir.listFiles().orEmpty().none { it.name.endsWith(".json") })
+            assertTrue(idsDir.setWritable(true))
+            // a later batch that teaches nothing new still has to write it
+            first.deliver(JSONObject().put("t", "loc"))
+            first.advance(500)
+        } finally {
+            idsDir.setWritable(true)
+            first.close(deleteFiles = false)
+        }
+
+        // the relay purged the room, so only this device still knows the casing
+        val second = SyncHarness(dir = dir)
+        try {
+            v2Connected(harness = second)
+            assertEquals("the retry never wrote it", upper, second.manager.rememberedV2IdForTests(wp.id))
+            second.advance(500)
+            assertEquals(upper, second.socket.sentOfType("put").single().getString("id"))
+        } finally {
+            second.close()
+        }
+    }
+
+    private fun v2Vectors(): JSONObject {
+        var dir: java.io.File? = java.io.File(System.getProperty("user.dir") ?: ".").absoluteFile
+        repeat(8) {
+            val f = java.io.File(dir, "testdata/sync_client_behaviour.json")
+            if (f.exists()) return JSONObject(f.readText()).getJSONObject("v2").getJSONObject("vectors")
+            dir = dir?.parentFile
+        }
+        error("testdata/sync_client_behaviour.json not found")
+    }
+
+    @Test
+    fun v2RememberVectorsLearnThroughTheRealManager() {
+        val rows = v2Vectors().getJSONArray("remember")
+        assertEquals(7, rows.length())
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val by = "c0ffee00-0000-4000-8000-000000000001"
+        for (i in 0 until rows.length()) {
+            val row = rows.getJSONObject(i)
+            val harness = SyncHarness()
+            try {
+                v2Connected(harness = harness)
+                val events = row.getJSONArray("events")
+                var stateKey: String? = null
+                for (j in 0 until events.length()) {
+                    val event = events.getJSONObject(j)
+                    val raw = event.getString("raw")
+                    val key = raw.lowercase().let { if (it.length == 32) "${it.substring(0, 8)}-${it.substring(8, 12)}-${it.substring(12, 16)}-${it.substring(16, 20)}-${it.substring(20)}" else it }
+                    stateKey = key
+                    val v = 10L + j
+                    val frame = if (event.getString("t") == "del") {
+                        v2Del(raw, v, by, keys)
+                    } else {
+                        v2Record(raw, v, by, FakeV3Peer.waypointContent(waypoint("vector", key)), keys).put("t", "put")
+                    }
+                    // newer than anything, so it passes beats, then fails AEAD
+                    if (!event.getBoolean("accepted") && LegacyV2Ids.stateKey(raw) != null) frame.put("v", v + 1_000)
+                    harness.deliver(frame)
+                }
+                val expected = row.opt("expectRemembered").takeUnless { it == JSONObject.NULL } as String?
+                assertEquals(row.getString("id"), expected, harness.manager.rememberedV2IdForTests(stateKey!!))
+            } finally {
+                harness.close()
+            }
+        }
     }
 }

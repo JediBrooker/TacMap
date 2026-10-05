@@ -27,16 +27,25 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tacmap.util.DataKey
+import com.tacmap.util.MissionKeyUnlockRule
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -54,6 +63,32 @@ class PdfBakeInstrumentedTest {
     // the library side of the publish, the app's is MapViewModel
     private val recorder = RecordingBakeRecorder()
     private lateinit var pdf: File
+
+    // a paused MainActivity earlier in the run leaves the key relocked, and a bake now waits for it
+    @get:Rule val missionKey = MissionKeyUnlockRule()
+
+    /** what MapViewModel's attach comes down to: a sealed write, refused behind the relocked key */
+    private class SealedWriteRecorder : PdfBakeRecorder {
+        @Volatile var attached: PersistedPdfBake? = null
+        @Volatile var attempts = 0
+
+        override fun attach(entryId: String?, contentKey: String?, renderGuardToken: String, bake: PersistedPdfBake): PdfBakeAttach {
+            attempts++
+            return try {
+                DataKey.key().fill(0)
+                attached = bake
+                PdfBakeAttach.Attached
+            } catch (e: DataKey.LockedException) {
+                PdfBakeAttach.WriteFailed(e)
+            }
+        }
+
+        override fun detach(entryId: String?, bake: PersistedPdfBake): Boolean {
+            if (attached != bake) return false
+            attached = null
+            return true
+        }
+    }
 
     @Before
     fun setUp() {
@@ -153,6 +188,130 @@ class PdfBakeInstrumentedTest {
             assertTrue("the PDF itself stays", pdf.isFile)
         } finally {
             disposePdfTileSource(tiles)
+        }
+    }
+
+    /**
+     * Starts a small bake with the key already relocked (Home, power button or a call mid bake)
+     * and waits till every tile is written, then a bit more for the publish it would have tried
+     */
+    private suspend fun bakeBehindTheLock(src: PdfMapSource, tiles: com.tacmap.map.render.pdf.PdfTileSource, recorder: PdfBakeRecorder): Deferred<PersistedPdfBake> {
+        val key = PdfBakePlan.bakeKey(src.placement!!.canonicalJson(), 256)
+        DataKey.lock()
+        val done = java.util.concurrent.atomic.AtomicInteger(0)
+        val total = java.util.concurrent.atomic.AtomicInteger(-1)
+        val run = CoroutineScope(Dispatchers.Default).async {
+            PdfBaker.bake(context, tiles, src, 10, key, recorder, onProgress = { d, t -> done.set(d); total.set(t) })
+        }
+        fun finished() = total.get() > 0 && done.get() >= total.get()
+        val end = System.nanoTime() + 120_000_000_000L
+        while (!finished() && !run.isCompleted && System.nanoTime() < end) delay(50)
+        assertTrue("bake never got through its tiles ($done/$total)", finished())
+        delay(1_500)
+        return run
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun assertStillWaiting(run: Deferred<PersistedPdfBake>) {
+        if (run.isCompleted) {
+            val outcome = run.getCompletionExceptionOrNull() ?: run.getCompleted()
+            throw AssertionError("finished behind the lock instead of waiting: $outcome")
+        }
+    }
+
+    private fun publishedBakes(): Set<String> =
+        File(context.filesDir, PdfBaker.PUBLISH_DIR).list().orEmpty().filter { it.startsWith("tacmap-bake-") }.toSet()
+
+    /**
+     * The bake finishes while the app is in the background. Attaching then can only fail
+     * behind the relocked key, which used to delete the finished file and report writeFailed
+     * (WP2 E says the bake carries on in the background). It waits for the foreground unlock
+     * and publishes then
+     */
+    @Test
+    fun aBakeThatFinishesBehindThePauseLockPublishesAfterTheUnlock() = runBlocking<Unit> {
+        val src = source(pdf)
+        val tiles = createPdfTileSource(app, src, 256, "bake-relocked", null, { true }, forBake = true)
+        val recorder = SealedWriteRecorder()
+        var out: File? = null
+        try {
+            val run = bakeBehindTheLock(src, tiles, recorder)
+            assertStillWaiting(run)
+            assertEquals("nothing tried to write behind the lock", 0, recorder.attempts)
+            assertTrue("the finished file waits in the work dir", PdfBaker.workDir(context).list().orEmpty().any { it.endsWith(".partial") })
+            // back to the front
+            withContext(Dispatchers.Main) { DataKey.unlock() }
+            val bake = withTimeout(30_000) { run.await() }
+            out = File(File(context.filesDir, PdfBaker.PUBLISH_DIR), bake.fileName)
+            assertEquals(bake, recorder.attached)
+            assertEquals(1, recorder.attempts)
+            assertTrue("published, not deleted", out.isFile)
+            assertTrue(PdfBaker.workDir(context).list().isNullOrEmpty())
+        } finally {
+            DataKey.unlock()
+            disposePdfTileSource(tiles)
+            out?.let(::deleteMBTilesArtifacts)
+        }
+    }
+
+    /** a cancel while it waits for the unlock still cleans up like any cancel and records nothing */
+    @Test
+    fun aCancelWhileWaitingForTheUnlockLeavesNothingBehind() = runBlocking<Unit> {
+        val src = source(pdf)
+        val tiles = createPdfTileSource(app, src, 256, "bake-relocked-cancel", null, { true }, forBake = true)
+        val recorder = SealedWriteRecorder()
+        val before = publishedBakes()
+        try {
+            val run = bakeBehindTheLock(src, tiles, recorder)
+            run.cancel()
+            runCatching { run.await() }
+            assertTrue("cancelled, not finished", run.isCancelled)
+            assertEquals(0, recorder.attempts)
+            assertTrue("work dir: ${PdfBaker.workDir(context).list()?.toList()}", PdfBaker.workDir(context).list().isNullOrEmpty())
+            assertEquals(before, publishedBakes())
+        } finally {
+            DataKey.unlock()
+            disposePdfTileSource(tiles)
+        }
+    }
+
+    /**
+     * Another pause gets in between the unlock and the attach (the file is already in
+     * offline_tiles by then). Main is held here so the attach can only run after the relock,
+     * and the publish has to keep the file and wait for the next unlock instead of failing
+     */
+    @Test
+    fun aRelockBetweenTheUnlockAndTheAttachWaitsForTheNextUnlock() = runBlocking<Unit> {
+        val src = source(pdf)
+        val tiles = createPdfTileSource(app, src, 256, "bake-relocked-race", null, { true }, forBake = true)
+        val recorder = SealedWriteRecorder()
+        val before = publishedBakes()
+        var out: File? = null
+        try {
+            val run = bakeBehindTheLock(src, tiles, recorder)
+            val moved = withContext(Dispatchers.Main) {
+                DataKey.unlock()
+                // main stays busy till the publish has moved the file in, so its attach queues behind this
+                val end = System.nanoTime() + 30_000_000_000L
+                while (publishedBakes() == before && System.nanoTime() < end) Thread.sleep(5)
+                DataKey.lock()
+                publishedBakes() - before
+            }
+            assertEquals("publish never moved the file in", 1, moved.size)
+            delay(2_500)
+            assertStillWaiting(run)
+            assertNull(recorder.attached)
+            assertEquals("the in flight file stays put", moved, publishedBakes() - before)
+            withContext(Dispatchers.Main) { DataKey.unlock() }
+            val bake = withTimeout(30_000) { run.await() }
+            out = File(File(context.filesDir, PdfBaker.PUBLISH_DIR), bake.fileName)
+            assertEquals(moved.single(), bake.fileName)
+            assertEquals(bake, recorder.attached)
+            assertTrue(out.isFile)
+        } finally {
+            DataKey.unlock()
+            disposePdfTileSource(tiles)
+            out?.let(::deleteMBTilesArtifacts)
         }
     }
 

@@ -93,8 +93,9 @@ final class DrawingStore: ObservableObject {
     weak var undoManager: UndoManager?
 
     /// Bumped per shape each time a Unit Sync peer's write changes it (see
-    /// SyncRemoteModelApplier). Undoing a local edit checks it so the undo never
-    /// clobbers a newer peer version, their edit wins. Same as Android.
+    /// SyncRemoteModelApplier and commitRemoteBatch). Undoing a local edit
+    /// checks it so the undo never clobbers a newer peer version, their edit
+    /// wins. Same as Android.
     private var peerWriteMarks: [UUID: Int] = [:]
 
     func notePeerWrite(_ id: UUID) { peerWriteMarks[id, default: 0] += 1 }
@@ -234,7 +235,15 @@ final class DrawingStore: ObservableObject {
             layers = candidateLayers
             activeLayerID = candidateActive
         }
-        if shapesChanged { shapes = candidateShapes }
+        if shapesChanged {
+            // same as WaypointStore.commitRemoteBatch, mark what the peer actually changed so
+            // undoing an older local edit leaves their version alone. layers only ever get
+            // added here, never changed, so nothing of yours to protect there
+            let before = Dictionary(shapes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let after = Dictionary(candidateShapes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            for id in Set(before.keys).union(after.keys) where before[id] != after[id] { notePeerWrite(id) }
+            shapes = candidateShapes
+        }
         if pendingLoadError?.id.map(Self.saveErrorIDs.contains) == true { loadError = nil }
         return true
     }

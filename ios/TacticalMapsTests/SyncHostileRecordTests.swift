@@ -320,6 +320,98 @@ final class SyncHostileRecordTests: XCTestCase {
         }
     }
 
+    // MARK: embedded id casing / canonical form (sync-android-2)
+
+    private func uuid(fromHex hex: String) -> UUID {
+        let bytes = SyncIdentity.hexToBytes(hex)
+        XCTAssertEqual(bytes.count, 16, hex)
+        return bytes.withUnsafeBytes { raw in
+            UUID(uuid: raw.loadUnaligned(as: uuid_t.self))
+        }
+    }
+
+    /// one fixture row as a sealed + signed waypoint put whose feature id is the
+    /// raw embeddedId, outer id hashed from outerWireIdFromBytesHex
+    private func embeddedIdRecord(_ row: [String: Any], _ h: SyncManagerHarness) throws -> (item: [String: Any], outer: UUID) {
+        let embedded = try XCTUnwrap(row["embeddedId"] as? String)
+        let outer = uuid(fromHex: try XCTUnwrap(row["outerWireIdFromBytesHex"] as? String))
+        var collection = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(h.peerContent(waypoint: waypoint(outer)).utf8)) as? [String: Any])
+        var features = try XCTUnwrap(collection["features"] as? [[String: Any]])
+        XCTAssertEqual(features.count, 1)
+        features[0]["id"] = embedded
+        collection["features"] = features
+        let content = String(data: jsonData(collection), encoding: .utf8)!
+        return (record(h, wireId: h.wireId(outer), kind: "waypoint", content: content), outer)
+    }
+
+    func testEmbeddedIdCasesMatchTheFixtureOnTheClassifierSnapshotAndLivePaths() throws {
+        let rows = snapshotRules["embeddedIdCases"] as? [[String: Any]] ?? []
+        XCTAssertGreaterThanOrEqual(rows.count, 11, "embeddedIdCases went missing")
+        for row in rows {
+            let name = row["id"] as? String ?? "?"
+            let expect = try XCTUnwrap(row["expect"] as? [String: Any], name)
+            let valid = expect["category"] as? String == "valid"
+            if !valid {
+                XCTAssertEqual(expect["category"] as? String, "skipUnsupported", name)
+                XCTAssertEqual(expect["reason"] as? String, "embedded_uuid_does_not_match_wire_id", name)
+                XCTAssertEqual(expect["issueIfSkipped"] as? String, "SKIPPED_UNSUPPORTED", name)
+            }
+            XCTAssertEqual(expect["paths"] as? [String], ["snapshot", "live"], name)
+            let localId = (expect["localId"] as? String).flatMap(UUID.init(uuidString:))
+
+            // classifier
+            do {
+                let h = try SyncManagerHarness(joinCode: "3:sp2-embedded-id-room")
+                defer { h.tearDown() }
+                let (item, _) = try embeddedIdRecord(row, h)
+                let context = SnapshotRecordContext(
+                    keys: h.keys, roomKey: h.keys.roomKey,
+                    actorKeyIsAcceptable: { _, _ in true },
+                    layers: [], fallbackLayerID: DrawingLayer.legacyFallbackID,
+                    isWaypointID: { _ in false }, isDrawingID: { _ in false },
+                    localIdForWireId: { _ in nil }, wireIdForUUID: { h.wireId($0) })
+                switch SnapshotRecordClassifier.classify(item, deleted: false, context: context) {
+                case .valid(let record):
+                    XCTAssertTrue(valid, "\(name) was accepted")
+                    XCTAssertEqual(record.parsed?.waypoints.first?.id, localId, name)
+                case .skip(let category, let reason):
+                    XCTAssertFalse(valid, "\(name) was skipped as \(reason)")
+                    XCTAssertEqual(category, .unsupported, name)
+                    XCTAssertEqual(reason, "embedded_uuid_does_not_match_wire_id", name)
+                }
+            }
+
+            for path in ["snapshot", "live"] {
+                let h = try SyncManagerHarness(joinCode: "3:sp2-embedded-id-room")
+                defer { h.tearDown() }
+                let (item, outer) = try embeddedIdRecord(row, h)
+                h.join()
+                if path == "snapshot" {
+                    h.connect(items: [item])
+                } else {
+                    h.connect()
+                    h.socket.deliver(asLive(item, deleted: false))
+                    h.pump()
+                }
+                let label = "\(name) via \(path)"
+                if valid {
+                    h.pump(60_000)
+                    XCTAssertEqual(h.manager.status, .connected, label)
+                    XCTAssertEqual(h.socketCount, 1, label)
+                    XCTAssertNil(h.manager.pausedForAction, label)
+                    XCTAssertFalse(h.manager.surfacedIssueLog.contains(.skippedUnsupported), label)
+                    XCTAssertFalse(h.manager.surfacedIssueLog.contains(.skippedUnverified), label)
+                    XCTAssertEqual(h.waypointStore.waypoints.filter { $0.id == localId }.count, 1, label)
+                } else {
+                    let hostile = Hostile(name: name, category: .unsupported, item: item,
+                                          live: asLive(item, deleted: false), probe: outer)
+                    assertSkippedWithoutSideEffects(h, hostile, path: path)
+                }
+            }
+        }
+    }
+
     // MARK: fatal structural, by fixture name
 
     private func jsonText(_ object: [String: Any]) -> String {

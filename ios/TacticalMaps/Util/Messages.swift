@@ -534,6 +534,12 @@ enum Messages {
     static func mapLibraryLocked() -> String {
         L10n.message("id.map_library_locked", fallback: "Unlock mission data to see and change imported maps.")
     }
+    static func mapLibraryRecoveredNotice() -> String {
+        L10n.message("id.map_library_recovered_notice", fallback: "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.")
+    }
+    static func mapLibraryRecoveredNoticeMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.map_library_recovered_notice", fallback: "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.", arguments: [])
+    }
     static func mapLibrarySection() -> String {
         L10n.message("id.map_library_section", fallback: "Imported maps")
     }
