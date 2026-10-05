@@ -255,7 +255,7 @@ version ships (the full store notes live in `docs/store/localizations/*.json`).
 
 ### 3.0.0 (build 73), October 2026
 - GeoPDFs placed in the sheet's own projection and datum, so the MGRS grid sits on the printed grid; USGS US Topo sheets import again.
-- Calibrate a plain PDF or a photo of a paper map from grid references (MGRS, UTM or lat/long) with per-point accuracy; move, edit, undo and resume points.
+- Calibrate a plain PDF (including a scan or photo of a paper map saved as PDF) from grid references (MGRS, UTM or lat/long) with per-point accuracy; move, edit, undo and resume points.
 - Imported maps stay sharp at every zoom, can be saved as offline tiles, and you can keep several maps to switch between.
 - MGRS grid labels match their lines, 10/100 km lines follow the projection curve, tidy at zone edges.
 - Elevation profile and line of sight (dead ground greyed out), red night mode, KML/KMZ export with symbol images.
