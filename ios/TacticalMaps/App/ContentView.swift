@@ -202,6 +202,8 @@ struct ContentView: View {
     @State private var basemapMigrationInFlight = false
     /// "x was never georeferenced" after the library migration, shown once
     @State private var migrationUncalibratedName: String?
+    /// 3.0.1 L10: the migration salvaged or adopted orphan files, say so once
+    @State private var libraryRecoveredNotice = false
     @State private var importInterrupted = false
     /// E3 decided for this launch (it runs once, after the first Loaded restore)
     @State private var autoResumeDecided = false
@@ -1090,6 +1092,7 @@ struct ContentView: View {
         }
         .modifier(MapImportAlerts(controller: importController,
                                   migrationUncalibratedName: $migrationUncalibratedName,
+                                  libraryRecoveredNotice: $libraryRecoveredNotice,
                                   importInterrupted: $importInterrupted,
                                   onCalibrate: { startCalibration(entryID: $0) }))
         .modifier(CalibrationAlerts(session: calibration,
@@ -1675,15 +1678,21 @@ struct ContentView: View {
     private func restoreActiveBasemap() {
         // first launch after the WP5 upgrade moves the old stores into the
         // library, which can re-parse a v1 PDF (seconds on a big USGS sheet). do
-        // that off main and leave the online default up meanwhile
+        // that off main and leave the online default up meanwhile. Same hop for
+        // a salvage or for map files sitting there with no library (3.0.1 L5, L7),
+        // both hash and inspect every file
         guard !basemapMigrationInFlight else { return }
-        if !ImportedMapLibrary.exists() && ImportedMapLibraryMigration.legacyPresent {
+        if !ImportedMapLibrary.exists() && ImportedMapLibraryMigration.pending {
             basemapMigrationInFlight = true
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = ImportedMapLibraryMigration.migrateIfNeeded()
                 DispatchQueue.main.async {
                     basemapMigrationInFlight = false
-                    if case .migrated(let name?) = result { migrationUncalibratedName = name }
+                    switch result {
+                    case .migrated(let name?): migrationUncalibratedName = name
+                    case .salvaged, .adoptedOrphans: libraryRecoveredNotice = true
+                    default: break
+                    }
                     publishRestoredBasemap()
                 }
             }
@@ -2071,6 +2080,7 @@ private struct MapImportAlerts: ViewModifier {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var controller: MapImportController
     @Binding var migrationUncalibratedName: String?
+    @Binding var libraryRecoveredNotice: Bool
     @Binding var importInterrupted: Bool
     var onCalibrate: (UUID) -> Void
 
@@ -2099,6 +2109,11 @@ private struct MapImportAlerts: ViewModifier {
                 Button(Messages.acknowledge(), role: .cancel) { migrationUncalibratedName = nil }
             } message: { name in
                 Text(Messages.mapMigrationUncalibrated(name))
+            }
+            .alert(Messages.mapLibrarySection(), isPresented: $libraryRecoveredNotice) {
+                Button(Messages.acknowledge(), role: .cancel) {}
+            } message: {
+                Text(Messages.mapLibraryRecoveredNotice())
             }
             // E1: changing the page throws the hand calibration away, ask first
             .alert(Messages.mapActionChoosePage(),

@@ -24,6 +24,11 @@ struct LibraryDependencies {
     var reconcile: (LibraryState) -> Bool
     var legacyPresent: () -> Bool
     var clearLegacy: () -> Void
+    /// L2: the live legacy stores D8 may clear (never a .corrupt-* copy)
+    var clearableLegacyPresent: () -> Bool = { false }
+    /// L7: map files in the managed dirs nothing in flight owns. An Empty library
+    /// next to them is a pending adoption, never an authoritative first launch
+    var managedFiles: () -> Bool = { false }
     var fileStatus: (ImportedMapEntry) -> ImportedMapFileStatus
     var fileURL: (ImportedMapEntry) -> URL?
     /// SHA-256 the file on a utility queue, true when it still matches contentKey
@@ -51,6 +56,8 @@ struct LibraryDependencies {
         reconcile: { ImportedMapLibrary.reconcile($0) },
         legacyPresent: { ImportedMapLibraryMigration.legacyPresent },
         clearLegacy: ImportedMapLibraryMigration.clearLegacy,
+        clearableLegacyPresent: { ImportedMapLibraryMigration.clearableLegacyPresent },
+        managedFiles: { ImportedMapLibraryRecovery.managedFilesPresent() },
         fileStatus: ImportedMapLibrary.fileStatus,
         fileURL: ImportedMapLibrary.fileURL,
         verify: { url, key, done in
@@ -592,17 +599,24 @@ final class MapViewModel: ObservableObject {
     @discardableResult
     func restoreActiveMapSelection() -> RestoreOutcome {
         let load = libraryDependencies.load()
+        // an Empty library is only a real first launch with no legacy stores and
+        // no map files around. Otherwise the migration hop still owes a write
+        // (key locked, or the write itself failed) and nothing gets cleaned up
+        var migrationPending = false
+        if case .empty = load {
+            migrationPending = libraryDependencies.legacyPresent() || libraryDependencies.managedFiles()
+        }
         // R3-2: bake only sweep on every restore (launch, unlock, Retry). Only on an
         // authoritative read, locked / corrupt / migration pending deletes nothing.
         // It doesn't need the PDF to be there
-        if case .read(let names) = ImportedMapLibrary.bakeAuthority(load, legacyPresent: libraryDependencies.legacyPresent()) {
+        if case .read(let names) = ImportedMapLibrary.bakeAuthority(load, legacyPresent: migrationPending) {
             _ = libraryDependencies.sweepBakes(names)
         }
         switch load {
-        case .empty where libraryDependencies.legacyPresent():
-            // the old stores still hold maps the migration couldn't move yet (key
-            // locked, unreadable or quarantined): no writes until it has, or a
-            // fresh library would orphan them
+        case .empty where migrationPending:
+            // the old stores (or orphan map files) are still waiting for the
+            // migration hop: key locked or its write failed. no writes until it
+            // has run, or a fresh library would orphan them. Retry runs it again
             libraryStatus = .locked
             library = nil
             reportLockedIssue()
@@ -623,8 +637,12 @@ final class MapViewModel: ObservableObject {
             libraryStatus = .loaded
             mapSelectionPersistenceIssue = nil
             pendingRetry = nil
-            // D8: a crash after the migration write left the old stores behind
-            if libraryDependencies.legacyPresent() { libraryDependencies.clearLegacy() }
+            // D8: a crash after the migration write left the old stores behind. Not
+            // on a flagged (rebuilt / salvaged / adopted) library, its old stores
+            // stay frozen, and never just for a .corrupt-* copy (L2, L8)
+            if s.permitsCleanup, libraryDependencies.legacyPresent(), libraryDependencies.clearableLegacyPresent() {
+                libraryDependencies.clearLegacy()
+            }
             // C3: an unlock / Retry that reads back the selection a calibration
             // display started from isnt a map change, leave the display up
             let calibrationUntouched = calibrationReturn != nil && s.active == calibrationDurableSelection

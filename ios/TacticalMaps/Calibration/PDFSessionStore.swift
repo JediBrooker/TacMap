@@ -201,12 +201,13 @@ enum PDFSessionStore {
         case clear(ClearReason)
         /// publish source. resealed = plaintext legacy bytes sealed in place first,
         /// save = rewrite as content-bound v2, clearIfSaveFails for the rebuilt
-        /// legacy identity that must not survive half done
-        case publish(PDFMapSource, resealed: Data?, save: Bool, clearIfSaveFails: Bool)
+        /// legacy identity that must not survive half done. parkedV1Points = v1
+        /// points we couldnt move to raw space, only parked in pdf_calibrations_v1
+        case publish(PDFMapSource, resealed: Data?, save: Bool, clearIfSaveFails: Bool, parkedV1Points: Bool)
     }
 
     /// why load() would drop the record. the migration only lets gone through
-    private enum ClearReason { case invalidRecord, fileGone, fileUnreadable }
+    private enum ClearReason { case invalidRecord, fileGone, fileUnreadable, hashMismatch }
 
     /// S3: what the library migration may do with the session. load() clears a
     /// record whose file it can't hash or whose bytes changed, which is fine for
@@ -214,11 +215,17 @@ enum PDFSessionStore {
     /// on disk. This reads without touching anything
     enum MigrationRead {
         case none
-        /// there but it won't open, convert or hash: fail closed
-        case blocked
+        /// the key failed somewhere in the read, nothing touched, Retry / unlock
+        case locked
+        /// there and authenticated (or the key is fine) but it won't unseal,
+        /// decode, validate or hash, or its bytes changed. 3.0.1 L3: the migration
+        /// salvages around it and the record stays frozen
+        case uncertain(LegacyMigrationCause)
         /// its file is gone (D5-19), nothing to keep
         case gone
-        case source(PDFMapSource)
+        /// v1PointsUnrebuildable: the map converts but its v1 points only made it
+        /// into pdf_calibrations_v1 (wp4-ios-8), so the read is still uncertain
+        case source(PDFMapSource, v1PointsUnrebuildable: Bool)
     }
 
     static func migrationRead() -> MigrationRead {
@@ -228,10 +235,13 @@ enum PDFSessionStore {
         lock.unlock()
         guard let stored = snapshot else { return .none }
         switch loadStep(stored, defaults: defaults) {
-        case .leave: return .blocked
+        // nil from unseal is either the key or the bytes, ask the key again (L3)
+        case .leave: return (try? SafeStore.keyProvider()) == nil ? .locked : .uncertain(.sessionInvalid)
         case .clear(.fileGone): return .gone
-        case .clear: return .blocked
-        case .publish(let source, _, _, _): return .source(source)
+        case .clear(.invalidRecord): return .uncertain(.sessionInvalid)
+        case .clear(.hashMismatch): return .uncertain(.pdfHashMismatch)
+        case .clear(.fileUnreadable): return .uncertain(.pdfUnconvertible)
+        case .publish(let source, _, _, _, let parked): return .source(source, v1PointsUnrebuildable: parked)
         }
     }
 
@@ -270,7 +280,7 @@ enum PDFSessionStore {
             case .clear:
                 defaults.removeObject(forKey: key)
                 return nil
-            case let .publish(source, resealed, save, clearIfSaveFails):
+            case let .publish(source, resealed, save, clearIfSaveFails, _):
                 if let resealed {
                     // The legacy descriptor remains byte-for-byte intact if this
                     // fails, but the marker-first attempt fences it from a future
@@ -309,7 +319,8 @@ enum PDFSessionStore {
         ) else {
             NSLog("[PDFSessionStore] active PDF file vanished; clearing session")
             // a same name file that doesnt hash to the record isnt gone, it's unreadable
-            return .clear(anyCandidateExists(named: dto.fileName) ? .fileUnreadable : .fileGone)
+            guard anyCandidateExists(named: dto.fileName) else { return .clear(.fileGone) }
+            return .clear(dto.contentKey == nil ? .fileUnreadable : .hashMismatch)
         }
         let url = resolved.url
         guard let actualContentKey = Self.contentKey(for: url) else {
@@ -318,7 +329,7 @@ enum PDFSessionStore {
         }
         if let expectedContentKey = dto.contentKey, actualContentKey != expectedContentKey {
             NSLog("[PDFSessionStore] active PDF content changed; clearing stale session")
-            return .clear(.fileUnreadable)
+            return .clear(.hashMismatch)
         }
 
         // Filename-only descriptors cannot authenticate which bytes their
@@ -330,23 +341,24 @@ enum PDFSessionStore {
         if dto.contentKey == nil && resolved.legacyCorroboratedContentKey != actualContentKey {
             let rebuilt = rebuildFromBytes(url: url, contentKey: actualContentKey, legacy: dto)
             NSLog("[PDFSessionStore] legacy PDF identity was unverified; calibration must be repeated")
-            return .publish(rebuilt, resealed: resealed, save: true, clearIfSaveFails: true)
+            return .publish(rebuilt, resealed: resealed, save: true, clearIfSaveFails: true, parkedV1Points: false)
         }
 
         let source: PDFMapSource
+        var parked = false
         let token = dto.renderGuardToken.flatMap { UUID(uuidString: $0) != nil ? $0 : nil }
         if let georef = dto.georef {
             source = v2Source(dto, georef: georef, url: url, contentKey: actualContentKey, token: token)
         } else {
             // no georef: a real v1 entry, or a v2 one whose georef didn't decode
             // (its points are already raw, only v1 ones need the PDFKit undo)
-            source = migrateV1(dto, url: url, contentKey: actualContentKey,
-                               pointsAreRaw: (dto.version ?? 1) >= 2 || dto.calibration?.pointsAreRaw == true)
+            (source, parked) = migrateV1(dto, url: url, contentKey: actualContentKey,
+                                         pointsAreRaw: (dto.version ?? 1) >= 2 || dto.calibration?.pointsAreRaw == true)
         }
         // v1 and corroborated legacy copies get rewritten as content-bound v2
         // so the next launch doesn't redo the migration (or trust a filename)
         return .publish(source, resealed: resealed, save: dto.contentKey == nil || dto.georef == nil,
-                        clearIfSaveFails: false)
+                        clearIfSaveFails: false, parkedV1Points: parked)
     }
 
     private static func v2Source(_ dto: PersistedPDF, georef: PdfGeoreference, url: URL, contentKey: String,
@@ -376,9 +388,10 @@ enum PDFSessionStore {
         return contentKey(for: source.url) == key
     }
 
-    /// v1 -> v2. See the type doc for the cases.
+    /// v1 -> v2. See the type doc for the cases. parked = the points only made it
+    /// into pdf_calibrations_v1, the source has none of them (wp4-ios-8)
     private static func migrateV1(_ dto: PersistedPDF, url: URL, contentKey: String,
-                                  pointsAreRaw: Bool) -> PDFMapSource {
+                                  pointsAreRaw: Bool) -> (source: PDFMapSource, parked: Bool) {
         if let cal = dto.calibration {
             let crop = CGRect(x: dto.cropX, y: dto.cropY, width: dto.cropW, height: dto.cropH)
             let source = uncalibratedSource(url: url, contentKey: contentKey, legacy: dto,
@@ -393,8 +406,8 @@ enum PDFSessionStore {
                 // (still flagged as display space) so they aren't lost, a later
                 // applyCalibrationIfKnown gets another go at the undo
                 saveToLibrary(fileName: url.lastPathComponent, contentKey: contentKey, cal)
-                NSLog("[PDFSessionStore] v1 fiduciary page space unknown; map is uncalibrated, points kept pending")
-                return source
+                NSLog("[PDFSessionStore] v1 fiduciary page space unknown; map is uncalibrated, points parked in the old library")
+                return (source, true)
             }
             if !refit(source, fiduciaries: fids) {
                 // keep them (raw now) so calibration opens with them already placed,
@@ -402,9 +415,9 @@ enum PDFSessionStore {
                 source.keepPendingFiduciaries(fids)
                 NSLog("[PDFSessionStore] v1 fiduciaries could not be refit; map is uncalibrated, points kept pending")
             }
-            return source
+            return (source, false)
         }
-        return rebuildFromBytes(url: url, contentKey: contentKey, legacy: dto)
+        return (rebuildFromBytes(url: url, contentKey: contentKey, legacy: dto), false)
     }
 
     /// Refit saved fiduciaries (raw page space, WGS84 lat/lon) onto the source
@@ -428,11 +441,16 @@ enum PDFSessionStore {
     /// same rect. So stored = T(raw) whatever the rect was, and raw = T^-1(stored).
     /// v1 only ever showed page 0. nil when the page can't be opened.
     static func legacyDisplayToRaw(url: URL) -> CGAffineTransform? {
-        guard let page = PDFDocument(url: url)?.page(at: 0) else { return nil }
-        let t = page.transform(for: .mediaBox)
+        guard let t = legacyPageTransform(url) else { return nil }
         let det = t.a * t.d - t.b * t.c
         guard [t.a, t.b, t.c, t.d, t.tx, t.ty].allSatisfy(\.isFinite), abs(det) > 1e-9 else { return nil }
         return t.inverted()
+    }
+
+    /// PDFKit's page 0 mediaBox transform. a seam so tests can have PDFKit fail
+    /// on a page CoreGraphics still opens (the wp4-ios-8 case), prod never swaps it
+    static var legacyPageTransform: (URL) -> CGAffineTransform? = { url in
+        PDFDocument(url: url)?.page(at: 0)?.transform(for: .mediaBox)
     }
 
     static func rawFiduciaries(_ fids: [Fiduciary], legacyDisplaySpaceOf url: URL) -> [Fiduciary]? {
@@ -1067,6 +1085,10 @@ enum ManagedImportedMapFileLifecycle {
     private static func isManagedCandidateName(_ name: String) -> Bool {
         isAuthoritativeMapName(name) || isCrashResidueName(name)
     }
+
+    /// a name the reconcile (or the bake sweep, bakes are .mbtiles) would delete
+    /// if nothing kept it. The 3.0.1 managedFiles check (L7)
+    static func isCleanupCandidateName(_ name: String) -> Bool { isManagedCandidateName(name) }
 
     private static func isAuthoritativeMapName(_ name: String) -> Bool {
         let lower = name.lowercased()

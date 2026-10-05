@@ -632,7 +632,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
-  library. A library that was never written while map files sit in app storage is handled the same way, so a
+  library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
+  hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
+  Old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather than
+  being dropped. A library that was never written while map files sit in app storage is handled the same way, so a
   missing or quarantined index can never authorise deleting those files. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
   recognize as retained, requiring re-import. This is a library-format/lifecycle

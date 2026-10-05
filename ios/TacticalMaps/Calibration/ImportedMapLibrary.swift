@@ -500,16 +500,18 @@ enum ImportedMapLibrary {
     }
 
     /// what the sweep may trust: the names of a Loaded library, nothing at all
-    /// for an empty one with no legacy stores left, else unreadable = skip
+    /// for an empty one with no legacy stores left and no map files sitting in
+    /// the managed dirs (3.0.1 L7, those get adopted), else unreadable = skip
     enum BakeAuthority: Equatable {
         case read(Set<String>)
         case unreadable
     }
 
-    static func bakeAuthority(_ load: SafeStore.Load<LibraryState>, legacyPresent: Bool) -> BakeAuthority {
+    static func bakeAuthority(_ load: SafeStore.Load<LibraryState>, legacyPresent: Bool,
+                              managedFiles: Bool = false) -> BakeAuthority {
         switch load {
         case .loaded(let s): return s.permitsCleanup ? .read(bakeFileNames(s)) : .unreadable
-        case .empty: return legacyPresent ? .unreadable : .read([])
+        case .empty: return legacyPresent || managedFiles ? .unreadable : .read([])
         case .locked, .corrupt: return .unreadable
         }
     }

@@ -2,6 +2,7 @@ import XCTest
 import CoreLocation
 import MapKit
 import SQLite3
+import CryptoKit
 @testable import TacticalMaps
 
 /// WP5 library (contract s8.2): one sealed authority for the active map and
@@ -493,9 +494,11 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
     private var saved: (support: () -> URL, library: () -> URL, sel: () -> URL, selSupport: () -> URL,
                         selImported: () throws -> URL, pdfDefaults: () -> UserDefaults, pdfImported: () throws -> URL,
                         legacyDocs: () -> URL?)!
+    private var savedPageTransform: ((URL) -> CGAffineTransform?)!
 
     override func setUp() {
         super.setUp()
+        savedPageTransform = PDFSessionStore.legacyPageTransform
         saved = (ImportedMapStorage.applicationSupportProvider, ImportedMapLibrary.storageURLProvider,
                  ActiveMapSelectionStore.storageURLProvider, ActiveMapSelectionStore.applicationSupportDirectoryProvider,
                  ActiveMapSelectionStore.importedMapsDirectoryProvider, PDFSessionStore.defaultsProvider,
@@ -529,6 +532,7 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         PDFSessionStore.defaultsProvider = saved.pdfDefaults
         PDFSessionStore.importedMapsDirectoryProvider = saved.pdfImported
         PDFSessionStore.legacyDocumentsDirectoryProvider = saved.legacyDocs
+        PDFSessionStore.legacyPageTransform = savedPageTransform
         SafeStore.keyProvider = { try DataKey.key() }
         SealedMigrationPolicy.resetForTests(key: testKey)
         try? FileManager.default.removeItem(at: root)
@@ -656,23 +660,67 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         XCTAssertEqual(ImportedMapLibrary.fileStatus(try XCTUnwrap(lib.entries.first)), .ok)
     }
 
-    func testMalformedLegacySessionBlocksMigrationWithoutClearingItsBytes() throws {
+    // MARK: - 3.0.1 salvage (s13.1 L3-L12): an uncertain legacy read ends, it never blocks forever
+
+    /// the bytes of every map file in ImportedMaps, whatever it's called now
+    private func mapHashes(_ dir: URL) throws -> Set<String> {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        var out = Set<String>()
+        for name in names where name.lowercased().hasSuffix(".pdf") || name.lowercased().hasSuffix(".mbtiles") {
+            let data = try Data(contentsOf: dir.appendingPathComponent(name))
+            out.insert(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+        }
+        return out
+    }
+
+    private func importedNames() throws -> Set<String> {
+        Set(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("ImportedMaps").path)
+            .filter { !$0.hasPrefix(".") })
+    }
+
+    private func loadedLibrary() throws -> LibraryState {
+        guard case .loaded(let lib) = ImportedMapLibrary.load() else {
+            XCTFail("library not written")
+            throw CocoaError(.fileReadNoSuchFile)
+        }
+        return lib
+    }
+
+    private func liveDependencies(_ drafts: CalibrationDraftStoring = InMemoryCalibrationDraftStore()) -> LibraryDependencies {
+        var d = LibraryDependencies.live
+        d.drafts = drafts
+        d.sweepBackup = {}
+        d.recoverInterruptedImport = { false }
+        d.verify = { _, _, done in done(true) }
+        return d
+    }
+
+    func testMalformedLegacySessionIsSalvagedWithoutClearingItsBytes() throws {
         let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Keep malformed session.pdf")
+        let fileBytes = try Data(contentsOf: old)
         XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
         let bytes = Data("unreadable legacy session".utf8)
         PDFSessionStore.defaultsProvider().set(bytes, forKey: "active_pdf_v1")
         let selector = try Data(contentsOf: ActiveMapSelectionStore.storageURLProvider())
 
-        for _ in 0..<2 {
-            XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .blocked)
-            XCTAssertFalse(ImportedMapLibrary.exists())
-            XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), bytes)
-            XCTAssertEqual(try Data(contentsOf: ActiveMapSelectionStore.storageURLProvider()), selector)
-            XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
-        }
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        XCTAssertEqual(lib.recoveryPreservesOrphans, true)
+        XCTAssertEqual(lib.active, .online(.osmTopo))
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(lib.entries.count, 1)
+        XCTAssertEqual(e.displayName, "Keep malformed session", "a 2.x name keeps its stem")
+        XCTAssertTrue(e.fileName.hasPrefix("ImportedMaps/map-"), "linked to an opaque name: \(e.fileName)")
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(e))), fileBytes)
+        XCTAssertEqual(ImportedMapStates.state(e, file: ImportedMapLibrary.fileStatus(e)), .geoPDF, "re-inspected, first valid page")
+        // the old stores stay frozen, byte for byte
+        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), bytes)
+        XCTAssertEqual(try Data(contentsOf: ActiveMapSelectionStore.storageURLProvider()), selector)
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .notNeeded, "ends: the library exists now")
+        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), bytes)
     }
 
-    func testAuthenticatedSessionWithNonPDFBytesCannotBeSilentlyDropped() throws {
+    func testAuthenticatedSessionWithNonPDFBytesIsSalvagedNotDropped() throws {
         let fixture = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Original.pdf")
         let georef = try XCTUnwrap(GeoPDFReader.read(url: fixture)?.georef)
         let old = root.appendingPathComponent("ImportedMaps/Unreadable.pdf")
@@ -684,19 +732,24 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         let session = try XCTUnwrap(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"))
         let selector = try Data(contentsOf: ActiveMapSelectionStore.storageURLProvider())
 
-        for _ in 0..<2 {
-            XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .blocked)
-            XCTAssertFalse(ImportedMapLibrary.exists())
-            XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
-            XCTAssertEqual(try Data(contentsOf: ActiveMapSelectionStore.storageURLProvider()), selector)
-            XCTAssertEqual(try Data(contentsOf: old), contents)
-        }
-        let maps = try FileManager.default.contentsOfDirectory(at: old.deletingLastPathComponent(), includingPropertiesForKeys: nil)
-        XCTAssertEqual(Set(maps.map(\.lastPathComponent)), ["Original.pdf", "Unreadable.pdf"], "blocked conversion removes only its temporary link")
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        XCTAssertEqual(lib.recoveryPreservesOrphans, true)
+        XCTAssertEqual(Set(lib.entries.map(\.displayName)), ["Original", "Unreadable"])
+        let bad = try XCTUnwrap(lib.entries.first { $0.displayName == "Unreadable" })
+        XCTAssertEqual(bad.pdf?.pageCount, 0)
+        XCTAssertEqual(ImportedMapStates.state(bad, file: ImportedMapLibrary.fileStatus(bad)), .unavailable, "listed, Delete only")
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(bad))), contents)
+        XCTAssertEqual(lib.active, .online(OnlineRasterBasemapSource.defaultStyle), "the active PDF didn't convert")
+        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
+        XCTAssertEqual(try Data(contentsOf: ActiveMapSelectionStore.storageURLProvider()), selector)
+        let names = try importedNames()
+        XCTAssertTrue(names.allSatisfy { ImportedMapLibraryRecovery.isOpaqueImportName($0) }, "both linked to opaque names: \(names)")
     }
 
-    func testAuthenticatedSessionWithMissingPageCannotBeSilentlyDropped() throws {
+    func testAuthenticatedSessionWithMissingPageIsSalvagedNotDropped() throws {
         let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Missing page.pdf")
+        let fileBytes = try Data(contentsOf: old)
         var georef = try XCTUnwrap(GeoPDFReader.read(url: old)?.georef)
         georef.page = 99
         let source = PDFMapSource(url: old, georef: georef, contentKey: PDFSessionStore.contentKey(for: old))
@@ -704,14 +757,17 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         XCTAssertTrue(ActiveMapSelectionStore.save(source))
         let session = try XCTUnwrap(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"))
 
-        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .blocked)
-        XCTAssertFalse(ImportedMapLibrary.exists())
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(e.displayName, "Missing page")
+        XCTAssertEqual(e.pdf?.pageIndex, 0, "s9.6 first valid page, not the session's page 99")
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(e))), fileBytes)
         XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
         XCTAssertTrue(ActiveMapSelectionStore.legacyStoreExists)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
     }
 
-    func testLegacyPDFHashMismatchBlocksMigrationWithoutClearingItsCalibration() throws {
+    func testLegacyPDFHashMismatchIsSalvagedAndItsCalibrationStaysFrozen() throws {
         let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Changed.pdf")
         let georef = try XCTUnwrap(GeoPDFReader.read(url: old)?.georef)
         let source = PDFMapSource(url: old, georef: georef, contentKey: PDFSessionStore.contentKey(for: old))
@@ -721,15 +777,22 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         let contents = Data("changed map bytes".utf8)
         try contents.write(to: old)
 
-        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .blocked)
-        XCTAssertFalse(ImportedMapLibrary.exists())
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(lib.entries.count, 1)
+        XCTAssertNil(e.pdf?.embedded, "the old georef was for other bytes")
+        XCTAssertNil(e.pdf?.manual)
+        XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(e))), contents)
         XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
         XCTAssertTrue(ActiveMapSelectionStore.legacyStoreExists)
-        XCTAssertEqual(try Data(contentsOf: old), contents)
     }
 
-    func testQuarantinedLegacySelectorBlocksEveryRestoreWithoutDeletingFilesOrDrafts() throws {
+    /// wp4-ios-1: this used to block every launch forever (locked, no imports, no
+    /// basemap change). Now the first pass salvages and every later one is Loaded
+    func testQuarantinedLegacySelectorIsSalvagedAndNeverDeletesFilesOrDrafts() throws {
         let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Keep after quarantine.pdf")
+        let fileBytes = try Data(contentsOf: old)
         XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
         try Data("corrupt selector".utf8).write(to: ActiveMapSelectionStore.storageURLProvider())
         let bake = try ImportedMapStorage.offlineTilesDirectory().appendingPathComponent("tacmap-bake-legacy.mbtiles")
@@ -739,34 +802,303 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
                                      entryId: UUID(), datumId: "WGS84", points: [], nextNumber: 1,
                                      pending: nil, active: false, updatedAtMs: 1)
         try drafts.save(draft)
-        var dependencies = LibraryDependencies.live
-        dependencies.drafts = drafts
-        dependencies.sweepBackup = {}
-        dependencies.recoverInterruptedImport = { false }
-        for _ in 0..<3 {
-            XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .blocked)
+        let dependencies = liveDependencies(drafts)
+        for pass in 0..<3 {
+            XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(drafts: drafts), pass == 0 ? .salvaged : .notNeeded)
             let vm = MapViewModel(libraryDependencies: dependencies, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
-            XCTAssertEqual(vm.restoreActiveMapSelection(), .locked)
-            XCTAssertFalse(ImportedMapLibrary.exists())
-            XCTAssertTrue(FileManager.default.fileExists(atPath: old.path))
-            XCTAssertTrue(FileManager.default.fileExists(atPath: bake.path))
-            XCTAssertEqual(drafts.drafts.count, 1)
+            vm.pdfRenderGuard = PDFRenderGuard(url: root.appendingPathComponent("guard-\(pass).json"))
+            XCTAssertEqual(vm.restoreActiveMapSelection(), .restored, "pass \(pass)")
+            XCTAssertEqual(vm.libraryStatus, .loaded, "imports pass the s9.2 pre-check")
+            XCTAssertNil(vm.mapSelectionPersistenceIssue, "no 'unlock mission data' any more")
+            XCTAssertEqual(vm.library?.recoveryPreservesOrphans, true)
+            let e = try XCTUnwrap(vm.library?.entries.first { $0.displayName == "Keep after quarantine" })
+            XCTAssertEqual(try Data(contentsOf: try XCTUnwrap(ImportedMapLibrary.fileURL(e))), fileBytes)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: bake.path), "no bake sweep on a salvaged library")
+            XCTAssertEqual(drafts.drafts.count, 1, "no draft prune either")
+            XCTAssertTrue(SafeStore.quarantineSiblingExists(ActiveMapSelectionStore.storageURLProvider()))
+            // and the basemap can change again, keeping the flag
+            XCTAssertTrue(vm.selectOnlineBasemap(pass % 2 == 0 ? .osmStreet : .osmTopo), "pass \(pass)")
+            XCTAssertEqual(try loadedLibrary().recoveryPreservesOrphans, true)
         }
-        XCTAssertTrue(SafeStore.quarantineSiblingExists(ActiveMapSelectionStore.storageURLProvider()))
+    }
+
+    /// what a 2.x build sealed before georefs: box, crop, kind and display-space points
+    private func storeV1Session(file: URL, calibration: [String: Any]) throws {
+        let d: [String: Any] = [
+            "fileName": file.lastPathComponent,
+            "contentKey": try XCTUnwrap(PDFSessionStore.contentKey(for: file)),
+            "swLat": 37.72, "swLng": -122.48, "neLat": 37.81, "neLng": -122.40,
+            "cropX": 0.0, "cropY": 0.0, "cropW": 824.315, "cropH": 1051.087,
+            "kind": MapSourceKind.calibratedPDF.rawValue,
+            "calibration": calibration,
+        ]
+        let sealed = try SealedEnvelope.sealFile(key: testKey, plaintext: JSONSerialization.data(withJSONObject: d),
+                                                 label: "pdf_session/active_pdf")
+        PDFSessionStore.defaultsProvider().set(sealed, forKey: "active_pdf_v1")
+    }
+
+    /// the ring targets of tacmap_grid_sf_plain.pdf, page 0 has no box offset or
+    /// rotate so the old display space is the raw one
+    private func v1Calibration() throws -> [String: Any] {
+        let targets: [(Double, Double, Double, Double)] = [
+            (185.3858268, 185.3858268, 547_000, 4_177_000), (638.9291339, 185.3858268, 551_000, 4_177_000),
+            (638.9291339, 865.7007874, 551_000, 4_183_000), (185.3858268, 865.7007874, 547_000, 4_183_000),
+        ]
+        var fids: [[String: Any]] = []
+        var plain: [Fiduciary] = []
+        for (i, t) in targets.enumerated() {
+            let ll = try XCTUnwrap(GeoCrs.utm(zone: 10, south: false).inverse(x: t.2, y: t.3, ellipsoid: .wgs84))
+            fids.append(["id": "00000000-0000-0000-0000-00000000000\(i + 1)", "pdfX": t.0, "pdfY": t.1,
+                         "mgrs": "f\(i)", "latitude": ll.lat, "longitude": ll.lon])
+            plain.append(Fiduciary(pdfX: t.0, pdfY: t.1, mgrs: "", latitude: ll.lat, longitude: ll.lon))
+        }
+        let t = try AffineFitter.fit(plain).transform
+        return ["fids": fids, "transform": ["a": t.a, "b": t.b, "c": t.c, "d": t.d, "e": t.e, "f": t.f]]
+    }
+
+    /// wp4-ios-8: PDFKit can't rebuild the v1 display space (CoreGraphics still
+    /// opens the page). The points used to be parked in pdf_calibrations_v1 and
+    /// then wiped by clearLegacy with a clean-looking migration
+    func testV1PointsWhosePageSpaceCantBeRebuiltStayParkedAndTheMapStillConverts() throws {
+        let old = try legacyCopy("tacmap_grid_sf_plain.pdf", as: "Hut map.pdf")
+        try storeV1Session(file: old, calibration: try v1Calibration())
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
+        PDFSessionStore.legacyPageTransform = { _ in nil }
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        XCTAssertEqual(lib.recoveryPreservesOrphans, true)
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(lib.entries.count, 1, "converted once, not adopted again")
+        XCTAssertEqual(e.displayName, "Hut map")
+        XCTAssertNil(e.pdf?.manual, "converted without a calibration")
+        XCTAssertEqual(ImportedMapStates.state(e, file: .ok), .needsCalibration)
+        XCTAssertNotNil(PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1"), "parked points kept")
+        XCTAssertNotNil(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), "session frozen, not cleared")
+
+        // the parked points are the real ones: with PDFKit back they calibrate the same bytes
+        PDFSessionStore.legacyPageTransform = savedPageTransform
+        let url = try XCTUnwrap(ImportedMapLibrary.fileURL(e))
+        let readout = try XCTUnwrap(GeoPDFReader.read(url: url))
+        let prov = try XCTUnwrap(PdfGeoreference.provisional(pageBox: readout.page.cropBox, rotation: 0,
+                                                              centredOn: CLLocationCoordinate2D(latitude: 37.7, longitude: -122.4)))
+        let again = PDFMapSource(url: url, georef: prov, contentKey: e.contentKey)
+        PDFSessionStore.applyCalibrationIfKnown(to: again)
+        XCTAssertEqual((again.fiduciaries ?? again.pendingFiduciaries).count, 4)
+    }
+
+    /// L6 / wp4-android-8 on iOS: a draft that won't save writes no library and
+    /// clears nothing; the links this attempt made go again
+    func testMigrationDraftSaveFailureWritesNothingAndClearsNothing() throws {
+        let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Two points.pdf")
+        let georef = try XCTUnwrap(GeoPDFReader.read(url: old)?.georef)
+        let source = PDFMapSource(url: old, georef: georef, contentKey: PDFSessionStore.contentKey(for: old))
+        source.keepPendingFiduciaries([Fiduciary(pdfX: 200, pdfY: 200, mgrs: "a", latitude: 37.75, longitude: -122.45),
+                                       Fiduciary(pdfX: 600, pdfY: 800, mgrs: "b", latitude: 37.79, longitude: -122.42)])
+        XCTAssertTrue(PDFSessionStore.save(source))
+        XCTAssertTrue(ActiveMapSelectionStore.save(source))
+        let session = try XCTUnwrap(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"))
+        let drafts = InMemoryCalibrationDraftStore()
+        drafts.locked = true
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(drafts: drafts), .blocked)
+        XCTAssertFalse(ImportedMapLibrary.exists())
+        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), session)
+        XCTAssertTrue(ActiveMapSelectionStore.legacyStoreExists)
+        XCTAssertEqual(try importedNames(), ["Two points.pdf"], "the attempt's link is gone, the file isn't")
+
+        drafts.locked = false
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(drafts: drafts), .migrated(uncalibratedName: nil))
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        let e = try XCTUnwrap(lib.entries.first)
+        let saved = try XCTUnwrap(drafts.drafts.values.first)
+        XCTAssertEqual(saved.entryId, e.id, "the retry's draft points at the entry that got written")
+        XCTAssertEqual(saved.points.count, 2)
+        XCTAssertFalse(ImportedMapLibraryMigration.legacyPresent)
+    }
+
+    /// L7: map files with no library and no legacy store at all
+    func testOrphanMapFilesWithNoLibraryAreAdoptedNotReconciled() throws {
+        let orphan = root.appendingPathComponent("ImportedMaps/map-\(UUID().uuidString.lowercased()).pdf")
+        try FileManager.default.copyItem(at: try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf")),
+                                         to: orphan)
+        let bake = try ImportedMapStorage.offlineTilesDirectory().appendingPathComponent("tacmap-bake-orphan.mbtiles")
+        try Data("tiles".utf8).write(to: bake)
+        XCTAssertTrue(ImportedMapLibraryMigration.pending)
+        var swept = false
+        var d = liveDependencies()
+        d.sweepBakes = { _ in swept = true; return true }
+        // before the hop ran (or after its write failed): pending, not a first launch
+        let early = MapViewModel(libraryDependencies: d, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        XCTAssertEqual(early.restoreActiveMapSelection(), .locked)
+        XCTAssertFalse(swept)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path))
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .adoptedOrphans)
+        let lib = try XCTUnwrap(try? loadedLibrary())
+        XCTAssertEqual(lib.recoveryPreservesOrphans, true)
+        XCTAssertEqual(lib.active, .online(OnlineRasterBasemapSource.defaultStyle))
+        let e = try XCTUnwrap(lib.entries.first)
+        XCTAssertEqual(lib.entries.count, 1, "the bake isn't a map entry")
+        XCTAssertEqual(e.displayName, Messages.mapRecoveredName(DisplayFormat.number(1, decimals: 0)))
+        XCTAssertEqual(ImportedMapLibrary.fileURL(e)?.lastPathComponent, orphan.lastPathComponent, "opaque, adopted where it is")
+        let vm = MapViewModel(libraryDependencies: d, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        XCTAssertFalse(swept)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bake.path))
+    }
+
+    /// s9.8 owns the copy a pending marker names: never adopted, and not enough
+    /// on its own to call an Empty library pending
+    func testInterruptedImportCopyIsLeftToTheCrashBreaker() throws {
+        let token = "map-\(UUID().uuidString.lowercased())"
+        let copy = root.appendingPathComponent("ImportedMaps/\(token).pdf")
+        try Data("half parsed".utf8).write(to: copy)
+        try Data(token.utf8).write(to: try XCTUnwrap(MapImportPipeline.markerURL))
+        XCTAssertFalse(ImportedMapLibraryRecovery.managedFilesPresent(inFlight: []))
+        XCTAssertTrue(ImportedMapLibraryRecovery.adopt(excluding: [], inFlight: []).entries.isEmpty)
+        XCTAssertTrue(MapImportPipeline.recoverInterruptedImport())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy.path))
+    }
+
+    // MARK: - shared libraryLoad rows, legacy states built from real stores (s13.4)
+
+    private struct Pass {
+        var status = "", migration = "none"
+        var notice = false, reconciled = false, swept = false, cleared = false, pruned = false
+        var migrationDrafts = 0
+        var vm: MapViewModel?
+    }
+
+    /// two pending points on a GeoPDF: they become a migration draft, so a
+    /// failing draft store has something to fail on
+    private func pendingPoints() -> [Fiduciary] {
+        [Fiduciary(pdfX: 200, pdfY: 200, mgrs: "a", latitude: 37.75, longitude: -122.45),
+         Fiduciary(pdfX: 600, pdfY: 800, mgrs: "b", latitude: 37.79, longitude: -122.42)]
+    }
+
+    /// libraryLoad.legacyCodes, on disk the way 2.x / an earlier pass left them
+    private func buildLegacy(_ code: String, imported: URL, georef: PdfGeoreference, geoPDF: URL, plainPDF: URL) throws {
+        let selector = ActiveMapSelectionStore.storageURLProvider()
+        func copy(_ src: URL, _ name: String) throws -> URL {
+            let url = imported.appendingPathComponent(name)
+            try FileManager.default.copyItem(at: src, to: url)
+            return url
+        }
+        func session(_ url: URL) -> PDFMapSource {
+            PDFMapSource(url: url, georef: georef, contentKey: PDFSessionStore.contentKey(for: url))
+        }
+        switch code {
+        case "none":
+            break
+        case "readable", "locked":
+            let source = session(try copy(geoPDF, "Readable.pdf"))
+            source.keepPendingFiduciaries(pendingPoints())
+            XCTAssertTrue(PDFSessionStore.save(source), code)
+            XCTAssertTrue(ActiveMapSelectionStore.save(source), code)
+        case "namesNothing":
+            let url = try copy(geoPDF, "Gone.pdf")
+            XCTAssertTrue(PDFSessionStore.save(session(url)), code)
+            XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)), code)
+            try FileManager.default.removeItem(at: url)
+        case "corrupt":
+            XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)), code)
+            try Data("corrupt selector".utf8).write(to: selector)
+            _ = try copy(geoPDF, "Keep.pdf")
+        case "quarantinedOnly":
+            try Data("quarantined selector".utf8).write(to: URL(fileURLWithPath: selector.path + ".corrupt-1"))
+        case "sessionInvalid":
+            XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)), code)
+            _ = try copy(geoPDF, "Session.pdf")
+            PDFSessionStore.defaultsProvider().set(Data("unreadable legacy session".utf8), forKey: "active_pdf_v1")
+        case "pdfHashMismatch":
+            let url = try copy(geoPDF, "Changed.pdf")
+            let source = session(url)
+            XCTAssertTrue(PDFSessionStore.save(source), code)
+            XCTAssertTrue(ActiveMapSelectionStore.save(source), code)
+            try Data("changed map bytes".utf8).write(to: url)
+        case "pdfUnconvertible":
+            let url = imported.appendingPathComponent("Unreadable.pdf")
+            try Data("unconvertible document".utf8).write(to: url)
+            let source = session(url)
+            XCTAssertTrue(PDFSessionStore.save(source), code)
+            XCTAssertTrue(ActiveMapSelectionStore.save(source), code)
+        case "v1PointsUnrebuildable":
+            try storeV1Session(file: try copy(plainPDF, "Hut map.pdf"), calibration: try v1Calibration())
+            XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)), code)
+            PDFSessionStore.legacyPageTransform = { _ in nil }
+        default:
+            XCTFail("no on-disk builder for legacy code \(code)")
+        }
+    }
+
+    /// one launch: ContentView's migration hop (same gate), then a fresh view
+    /// model's restore. Retry and relaunch both go through exactly this
+    private func restorePass(given: [String: Any], legacy: String, directory: URL, n: Int) throws -> Pass {
+        var p = Pass()
+        let writes = given["writes"] as? String ?? "ok"
+        let migrationDrafts = InMemoryCalibrationDraftStore()
+        migrationDrafts.locked = writes == "draftFails"
+        let write: (LibraryState) throws -> Void = writes == "libraryFails"
+            ? { _ in throw CocoaError(.fileWriteOutOfSpace) } : ImportedMapLibrary.write
+        let keyLocked = given["missionKey"] as? String == "locked"
+        if keyLocked || legacy == "locked" { SafeStore.keyProvider = { throw DataKey.LockedError() } }
+        if !ImportedMapLibrary.exists() && ImportedMapLibraryMigration.pending {
+            switch ImportedMapLibraryMigration.migrateIfNeeded(drafts: migrationDrafts, write: write) {
+            case .notNeeded: p.migration = "none"
+            case .blocked: p.migration = "blocked"
+            case .migrated:
+                guard case .loaded(let s) = ImportedMapLibrary.load() else { XCTFail("migrated, no library"); break }
+                p.migration = s.entries.isEmpty ? "writeEmptyAndClear" : "run"
+            case .salvaged: p.migration = "salvage"; p.notice = true
+            case .adoptedOrphans: p.migration = "adoptOrphans"; p.notice = true
+            }
+        }
+        p.migrationDrafts = migrationDrafts.drafts.count
+        if !keyLocked { SafeStore.keyProvider = { [testKey] in testKey } }
+        let drafts = InMemoryCalibrationDraftStore()
+        try drafts.save(CalibrationDraft(contentKey: "sha256:" + String(repeating: "a", count: 64), pageIndex: 0,
+                                         entryId: UUID(), datumId: nil, points: [], nextNumber: 1,
+                                         pending: nil, active: false, updatedAtMs: 0))
+        var dependencies = liveDependencies(drafts)
+        var reconciled = false, swept = false, cleared = false
+        dependencies.reconcile = { _ in reconciled = true; return true }
+        dependencies.sweepBakes = { _ in swept = true; return true }
+        dependencies.clearLegacy = { cleared = true; ImportedMapLibraryMigration.clearLegacy() }
+        let vm = MapViewModel(libraryDependencies: dependencies, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
+        vm.pdfRenderGuard = PDFRenderGuard(url: directory.appendingPathComponent("guard-\(n).json"))
+        switch vm.restoreActiveMapSelection() {
+        case .restored: p.status = "loaded"
+        case .nothing: p.status = "empty"
+        case .corrupt: p.status = "corrupt"
+        case .locked: p.status = keyLocked ? "locked" : "migrationPending"
+        }
+        SafeStore.keyProvider = { [testKey] in testKey }
+        p.reconciled = reconciled
+        p.swept = swept
+        p.cleared = cleared || p.migration == "run" || p.migration == "writeEmptyAndClear"
+        p.pruned = drafts.drafts.isEmpty
+        p.vm = vm
+        return p
     }
 
     func testSharedLibraryLoadRowsUseTheRealStoresAndRestoreCleanup() throws {
         let fixture = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("import_limits.json"))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
         let table = try XCTUnwrap(json["libraryLoad"] as? [String: Any])
-        let rows = try XCTUnwrap(table["rows"] as? [[String: Any]])
-        XCTAssertEqual(rows.count, 14)
-        let inputPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
-        let georef = try XCTUnwrap(GeoPDFReader.read(url: inputPDF)?.georef)
+        let allRows = try XCTUnwrap(table["rows"] as? [[String: Any]])
+        XCTAssertEqual(allRows.count, 28)
+        let rows = allRows.filter { ($0["platforms"] as? [String])?.contains("ios") == true }
+        XCTAssertEqual(rows.count, 26, "the two retained-selector rows are Android only")
+        let codes = try XCTUnwrap(table["legacyCodes"] as? [String: Any])
+        let geoPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
+        let plainPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_plain.pdf"))
+        let georef = try XCTUnwrap(GeoPDFReader.read(url: geoPDF)?.georef)
         for row in rows {
             let id = try XCTUnwrap(row["id"] as? String)
             let given = try XCTUnwrap(row["given"] as? [String: Any])
             let expected = try XCTUnwrap(row["expect"] as? [String: Any])
+            let next = try XCTUnwrap(expected["nextRestore"] as? [String: Any])
             let directory = root.appendingPathComponent(id)
             let imported = directory.appendingPathComponent("ImportedMaps")
             try FileManager.default.createDirectory(at: imported, withIntermediateDirectories: true)
@@ -777,6 +1109,7 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
             ActiveMapSelectionStore.importedMapsDirectoryProvider = { imported }
             PDFSessionStore.importedMapsDirectoryProvider = { imported }
             PDFSessionStore.defaultsProvider().removePersistentDomain(forName: suite)
+            PDFSessionStore.legacyPageTransform = savedPageTransform
             SafeStore.keyProvider = { [testKey] in testKey }
             SealedMigrationPolicy.resetForTests(key: testKey)
 
@@ -801,57 +1134,69 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
                 }
             }
             let legacy = given["legacy"] as? String ?? "none"
-            if legacy != "none" {
-                XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)), id)
-                if legacy == "corrupt" {
-                    try Data("corrupt selector".utf8).write(to: ActiveMapSelectionStore.storageURLProvider())
-                } else if legacy == "pdfUnconvertible" {
-                    let url = imported.appendingPathComponent("Unreadable.pdf")
-                    try Data("unconvertible document".utf8).write(to: url)
-                    let source = PDFMapSource(url: url, georef: georef, contentKey: PDFSessionStore.contentKey(for: url))
-                    XCTAssertTrue(PDFSessionStore.save(source), id)
-                    XCTAssertTrue(ActiveMapSelectionStore.save(source), id)
+            XCTAssertNotNil(codes[legacy], id)
+            try buildLegacy(legacy, imported: imported, georef: georef, geoPDF: geoPDF, plainPDF: plainPDF)
+            if given["managedFiles"] as? Bool == true {
+                // an opaque map file no store names, what a lost library or an earlier pass leaves
+                try FileManager.default.copyItem(at: plainPDF, to: imported.appendingPathComponent("map-\(UUID().uuidString.lowercased()).pdf"))
+            }
+            XCTAssertEqual(ImportedMapLibraryRecovery.managedFilesPresent(inFlight: []),
+                           try !mapHashes(imported).isEmpty, "\(id) managedFiles")
+            let mapsBefore = try mapHashes(imported)
+            let selector = ActiveMapSelectionStore.storageURLProvider()
+            let quarantined = legacy == "corrupt" || legacy == "quarantinedOnly"
+            let sessionBefore = PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1")
+            let parkedBefore = PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1")
+
+            var everCleared = false
+            for (n, e) in [expected, next].enumerated() {
+                let ctx = "\(id) pass \(n + 1)"
+                let p = try restorePass(given: given, legacy: legacy, directory: directory, n: n)
+                let vm = try XCTUnwrap(p.vm)
+                XCTAssertEqual(p.status, e["status"] as? String, ctx)
+                XCTAssertEqual(p.migration, e["migration"] as? String, ctx)
+                XCTAssertEqual(p.reconciled, e["reconcile"] as? Bool, ctx)
+                XCTAssertEqual(p.cleared, e["clearLegacy"] as? Bool, ctx)
+                XCTAssertEqual(vm.mapSelectionPersistenceIssue != nil, !(e["issue"] is NSNull), ctx)
+                XCTAssertEqual(p.notice, e["notice"] as? String == "recovered", ctx)
+                XCTAssertEqual(vm.libraryStatus == .loaded, e["importAllowed"] as? Bool, ctx)
+                if e["recoveryPreservesOrphans"] is NSNull {
+                    XCTAssertNil(vm.library, ctx)
+                } else {
+                    XCTAssertEqual(vm.library?.recoveryPreservesOrphans ?? false, e["recoveryPreservesOrphans"] as? Bool, ctx)
+                }
+                if n == 0 {
+                    XCTAssertEqual(p.swept, e["bakeSweep"] as? Bool, ctx)
+                    XCTAssertEqual(p.pruned, e["draftPrune"] as? Bool, ctx)
+                    XCTAssertEqual(vm.libraryStatus == .loaded, e["basemapChangeAllowed"] as? Bool, ctx)
+                    // L6: the migration's draft was saved before the library write, failing or not
+                    if legacy == "readable" && given["libraryFile"] as? String == "absent" && given["writes"] as? String != "draftFails" {
+                        XCTAssertEqual(p.migrationDrafts, 1, ctx)
+                    }
+                }
+                everCleared = everCleared || p.cleared
+                // L9: no map bytes, quarantine copy or frozen store goes anywhere
+                XCTAssertTrue(mapsBefore.isSubset(of: try mapHashes(imported)), ctx)
+                if quarantined { XCTAssertTrue(SafeStore.quarantineSiblingExists(selector), ctx) }
+                if !everCleared {
+                    XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1"), sessionBefore, ctx)
+                    // the v1 row parks its points during the read, every other row leaves it alone
+                    if legacy != "v1PointsUnrebuildable" {
+                        XCTAssertEqual(PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1"), parkedBefore, ctx)
+                    }
+                }
+                // L11: a usable restore takes a basemap change and the write keeps the flag
+                if n == 1 {
+                    let wasFlagged = vm.library?.recoveryPreservesOrphans == true
+                    XCTAssertEqual(vm.selectOnlineBasemap(.osmStreet), e["importAllowed"] as? Bool, ctx)
+                    if e["importAllowed"] as? Bool == true, case .loaded(let s) = ImportedMapLibrary.load() {
+                        XCTAssertEqual(s.recoveryPreservesOrphans == true, wasFlagged, ctx)
+                    }
                 }
             }
-            let migrationAction = expected["migration"] as? String ?? "none"
-            if migrationAction != "none" {
-                if legacy == "locked" { SafeStore.keyProvider = { throw DataKey.LockedError() } }
-                let migrated = ImportedMapLibraryMigration.migrateIfNeeded()
-                if migrationAction == "blocked" { XCTAssertEqual(migrated, .blocked, id) }
-                else { XCTAssertEqual(migrated, .migrated(uncalibratedName: nil), id) }
-                SafeStore.keyProvider = { [testKey] in testKey }
+            if legacy == "v1PointsUnrebuildable" {
+                XCTAssertNotNil(PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1"), id)
             }
-            if given["missionKey"] as? String == "locked" { SafeStore.keyProvider = { throw DataKey.LockedError() } }
-            let drafts = InMemoryCalibrationDraftStore()
-            let draft = CalibrationDraft(contentKey: "sha256:" + String(repeating: "a", count: 64), pageIndex: 0,
-                                         entryId: UUID(), datumId: nil, points: [], nextNumber: 1,
-                                         pending: nil, active: false, updatedAtMs: 0)
-            try drafts.save(draft)
-            var reconciled = false, swept = false, cleared = false
-            var dependencies = LibraryDependencies.live
-            dependencies.drafts = drafts
-            dependencies.reconcile = { _ in reconciled = true; return true }
-            dependencies.sweepBakes = { _ in swept = true; return true }
-            dependencies.clearLegacy = { cleared = true; ImportedMapLibraryMigration.clearLegacy() }
-            dependencies.sweepBackup = {}
-            dependencies.recoverInterruptedImport = { false }
-            let vm = MapViewModel(libraryDependencies: dependencies, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
-            vm.pdfRenderGuard = PDFRenderGuard(url: directory.appendingPathComponent("guard.json"))
-            let outcome = vm.restoreActiveMapSelection()
-            let status: String
-            switch outcome {
-            case .restored: status = "loaded"
-            case .nothing: status = "empty"
-            case .corrupt: status = "corrupt"
-            case .locked: status = legacy == "none" ? "locked" : "migrationPending"
-            }
-            XCTAssertEqual(status, expected["status"] as? String, id)
-            XCTAssertEqual(reconciled, expected["reconcile"] as? Bool, id)
-            XCTAssertEqual(swept, expected["bakeSweep"] as? Bool, id)
-            XCTAssertEqual(drafts.drafts.isEmpty, expected["draftPrune"] as? Bool, id)
-            XCTAssertEqual(cleared || migrationAction == "run" || migrationAction == "writeEmptyAndClear",
-                           expected["clearLegacy"] as? Bool, id)
-            XCTAssertEqual(vm.mapSelectionPersistenceIssue != nil, !(expected["issue"] is NSNull), id)
         }
         SafeStore.keyProvider = { [testKey] in testKey }
     }
