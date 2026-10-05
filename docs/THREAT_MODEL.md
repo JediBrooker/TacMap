@@ -502,9 +502,16 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   (device-mode resume, the App Lock PIN, a platform credential or a confirmed
   protection change). A write still in flight behind the lock fails closed
   instead of re-caching the key: a Unit Sync write that missed the two seconds
-  is dropped without a security stop, and a PDF bake that finishes in the
-  background is not recorded and its tiles are deleted, so it has to be
-  generated again.
+  is dropped without a security stop, and a map import still copying, or a
+  map-library change still being written, when the app leaves the foreground
+  (or while the Activity is recreated for a configuration change it doesn't
+  handle) fails without deleting anything and has to be retried. A PDF bake that
+  finishes in the background doesn't try to write: its finished tiles wait,
+  unrecorded, in the app-private bake work folder (cleared at the next process
+  start) until the foreground unlock, then are recorded on their PDF's library
+  entry. With no map screen open at that point the bake is recorded straight
+  into the sealed library, under the same write-counter check. Cancelling the
+  bake while it waits deletes the file.
   iOS keeps the map view mounted to preserve authorized recording:
   previously decrypted mission/library objects, track points and rendered tiles
   may remain beneath the opaque lock overlay. AUTH mode clears the general key

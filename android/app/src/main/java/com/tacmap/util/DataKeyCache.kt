@@ -1,5 +1,8 @@
 package com.tacmap.util
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+
 /**
  * The unwrapped mission DEK that [DataKey] holds for the process, plus the relock gate.
  *
@@ -13,6 +16,8 @@ package com.tacmap.util
 internal class DataKeyCache {
     private var cached: ByteArray? = null
     private var relocked = false
+    // same gate as relocked, just one that work outliving the pause can suspend on
+    private val open = MutableStateFlow(true)
 
     val isCached: Boolean
         @Synchronized get() = cached != null
@@ -20,6 +25,14 @@ internal class DataKeyCache {
     /** lock() ran and nothing unlocked since */
     val isRelocked: Boolean
         @Synchronized get() = relocked
+
+    /**
+     * Straight back while the gate is open, else suspends till unlock() opens it. Cancellable,
+     * never unwraps anything itself. A failed unlock keeps it waiting.
+     */
+    suspend fun awaitUnlocked() {
+        open.first { it }
+    }
 
     /** Copy of the cached DEK, else unwrap and keep a copy. unwrap hands over an array we zero. */
     @Synchronized
@@ -48,6 +61,7 @@ internal class DataKeyCache {
             relocked = wasRelocked
             throw t
         }
+        open.value = true
     }
 
     /** Keep a copy of dek. The caller still owns (and zeroes) its own array. */
@@ -62,6 +76,7 @@ internal class DataKeyCache {
     fun lock() {
         drop()
         relocked = true
+        open.value = false
     }
 
     /** Wipe the copy but leave the gate alone, the next get() unwraps fresh. */

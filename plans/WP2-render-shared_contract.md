@@ -181,6 +181,7 @@ Direct rendering may draw the page up to four times per job; complex pages can c
   - A running job completes. Its tiles that are no longer wanted go to a per-source orphan cache of 8 tiles, which `loadTile` consults first.
 - **Background and foreground:**
   - In the background, VISIBLE and FALLBACK dispatch stops. The bake continues.
+  - 3.0.1 (Android): a bake that finishes while the mission key is relocked behind the Activity pause keeps its finished file in the bake work folder and attaches after the foreground unlock; it is never dropped because the app left the foreground. A cancel while it waits cleans up like any cancel. With no map screen alive at the attach, the bake is recorded straight into the sealed library with the same reducer and write-counter check.
   - While the app is in the foreground and a bake runs, the screen is kept on.
   - The bake pauses at critical/severe thermal state.
 

@@ -83,10 +83,10 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
 
     /**
      * the library side of a publish (M3): every live MapViewModel registers, the one that came
-     * to the front last records. nobody registered = a finished bake can't be recorded and
-     * fails closed
+     * to the front last records. nobody registered (swiped away mid bake, a recording kept the
+     * process up) = it goes straight into the sealed library instead
      */
-    internal val recorders = PdfBakeRecorders()
+    internal val recorders = PdfBakeRecorders(fallback = LibraryBakeRecorder(app.filesDir))
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -378,9 +378,9 @@ class PdfBakeManager(private val app: Application, private val guard: PdfRenderG
  * comes back to the front) and the latest one still registered is [current]. A bake can
  * outlive the view model that started it, so it never gets that one: it gets [atPublish],
  * which looks [current] up at the attach. Closing a second screen just hands recording back
- * to the one under it
+ * to the one under it, closing the last one hands it to [fallback]
  */
-internal class PdfBakeRecorders {
+internal class PdfBakeRecorders(private val fallback: PdfBakeRecorder? = null) {
     private val live = ArrayList<PdfBakeRecorder>()
 
     fun register(recorder: PdfBakeRecorder) {
@@ -396,11 +396,43 @@ internal class PdfBakeRecorders {
 
     val current: PdfBakeRecorder? get() = synchronized(live) { live.lastOrNull() }
 
-    /** what PdfBaker gets: whoever is [current] when the publish attaches or detaches */
+    /** what PdfBaker gets: whoever is [current] when the publish attaches or detaches, else [fallback] */
     val atPublish: PdfBakeRecorder = object : PdfBakeRecorder {
         override fun attach(entryId: String?, contentKey: String?, renderGuardToken: String, bake: PersistedPdfBake): PdfBakeAttach =
-            current?.attach(entryId, contentKey, renderGuardToken, bake) ?: PdfBakeAttach.WriteFailed(null)
+            (current ?: fallback)?.attach(entryId, contentKey, renderGuardToken, bake) ?: PdfBakeAttach.WriteFailed(null)
 
-        override fun detach(entryId: String?, bake: PersistedPdfBake): Boolean = current?.detach(entryId, bake) == true
+        override fun detach(entryId: String?, bake: PersistedPdfBake): Boolean = (current ?: fallback)?.detach(entryId, bake) == true
+    }
+}
+
+/**
+ * Records a bake straight into the sealed library when no screen is alive to do it, eg TacMap
+ * got swiped away mid bake and track recording or Unit Sync kept the process going. The library
+ * is the authority, so this is the same reducer and the same generation checked commit the view
+ * model uses, just without a copy of its own. Locked, unreadable or never written = writeFailed.
+ * No reconcile from here, the next restore runs one and reaps a superseded bake. On main like
+ * every other library write
+ */
+internal class LibraryBakeRecorder(filesDir: File) : PdfBakeRecorder {
+    private val library = ImportedMapLibraryStore(filesDir)
+
+    override fun attach(entryId: String?, contentKey: String?, renderGuardToken: String, bake: PersistedPdfBake): PdfBakeAttach {
+        val state = (library.loadCurrent() as? LibraryLoad.Loaded)?.state ?: return PdfBakeAttach.WriteFailed(null)
+        val id = entryId ?: return PdfBakeAttach.SourceChanged
+        val next = when (val r = LibraryReducer.apply(LibraryTransition.AttachBake(id, contentKey, renderGuardToken, bake), state)) {
+            is LibraryReduction.Ok -> r.state
+            is LibraryReduction.Rejected ->
+                return if (r.error == LibraryTransitionError.INVALID_BAKE) PdfBakeAttach.WriteFailed(null)
+                else PdfBakeAttach.SourceChanged
+        }
+        return if (library.commit(next) is LibraryCommit.Written) PdfBakeAttach.Attached else PdfBakeAttach.WriteFailed(null)
+    }
+
+    override fun detach(entryId: String?, bake: PersistedPdfBake): Boolean {
+        val id = entryId ?: return false
+        val state = (library.loadCurrent() as? LibraryLoad.Loaded)?.state ?: return false
+        val next = (LibraryReducer.apply(LibraryTransition.ClearBake(id, bake.fileName), state) as? LibraryReduction.Ok)?.state
+            ?: return false
+        return library.commit(next) is LibraryCommit.Written
     }
 }

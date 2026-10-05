@@ -1,5 +1,11 @@
 package com.tacmap.util
 
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -74,6 +80,36 @@ class DataKeyCacheTest {
         assertFalse(cache.isRelocked)
         cache.get(::unwrap).fill(0)
         assertEquals(2, unwraps)
+    }
+
+    @Test fun awaitUnlockedParksBehindTheLockTillTheExplicitUnlock() = runBlocking {
+        val cache = DataKeyCache()
+        // never locked: straight back, nothing unwrapped for it
+        withTimeout(1_000) { cache.awaitUnlocked() }
+        cache.lock()
+        val waiter = async(start = CoroutineStart.UNDISPATCHED) { cache.awaitUnlocked(); true }
+        yield()
+        assertFalse("went through the lock", waiter.isCompleted)
+        assertThrows(DataKey.LockedException::class.java) { cache.unlock { throw DataKey.LockedException() } }
+        yield()
+        assertFalse("a failed unlock let it through", waiter.isCompleted)
+        assertEquals("waiting never unwraps", 0, unwraps)
+        cache.unlock(::unwrap)
+        assertTrue(withTimeout(1_000) { waiter.await() })
+        assertEquals(1, unwraps)
+        // and a drop isn't a lock, nothing to wait for
+        cache.drop()
+        withTimeout(1_000) { cache.awaitUnlocked() }
+    }
+
+    @Test fun aCancelGetsOutOfTheWait() = runBlocking {
+        val cache = DataKeyCache()
+        cache.lock()
+        val waiter = launch(start = CoroutineStart.UNDISPATCHED) { cache.awaitUnlocked() }
+        waiter.cancel()
+        waiter.join()
+        assertTrue(waiter.isCancelled)
+        assertTrue(cache.isRelocked)
     }
 
     @Test fun lockZeroesTheCachedBytes() {

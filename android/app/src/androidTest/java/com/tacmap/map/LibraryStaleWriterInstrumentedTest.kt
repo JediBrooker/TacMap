@@ -49,6 +49,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import com.tacmap.util.DataKey
 import com.tacmap.util.MissionKeyUnlockRule
 import java.io.File
 import java.util.UUID
@@ -301,6 +302,76 @@ class LibraryStaleWriterInstrumentedTest {
         val bake = durable.entry(p.id)?.pdf?.bake
         assertNotNull("the bake wasn't recorded", bake)
         assertTrue(File(files, "offline_tiles/${bake!!.fileName}").isFile)
+    }
+
+    /**
+     * What MainActivity.lockForBackground does to the key mid bake (Home, the power button, a
+     * call), then wait till every tile is written and a bit past it. The bake has to be parked
+     * by then: still running, nothing recorded, nothing new in offline_tiles
+     */
+    private fun lockAndLetTheTilesFinish(manager: PdfBakeManager) {
+        DataKey.lock()
+        assertTrue("bake finished before the lock, make it bigger: ${manager.state.value}", manager.state.value is PdfBakeManager.State.Running)
+        waitUntil(ms = 240_000, what = "every tile written") {
+            (manager.state.value as? PdfBakeManager.State.Running)?.let { it.total > 0 && it.done >= it.total } ?: true
+        }
+        Thread.sleep(1_500)
+        // still Running means nothing was recorded, Idle only comes after the attach. the
+        // library itself can't be read to check, that would need the key
+        assertTrue("didn't wait for the unlock: ${manager.state.value}", manager.state.value is PdfBakeManager.State.Running)
+        assertTrue("published behind the lock", File(files, PdfBaker.PUBLISH_DIR).list().orEmpty().none { it.startsWith("tacmap-bake-") })
+        assertTrue("the finished file waits in the work dir", workFiles().any { it.name.endsWith(".partial") })
+    }
+
+    @Test
+    fun aBakeThatFinishesAfterHomeIsRecordedOnceTheAppIsBack() {
+        val p = pdfEntry(lines = 8)
+        seed(p, p)
+        File(files, PdfBaker.PUBLISH_DIR).listFiles().orEmpty().forEach { it.delete() }
+        val vm = viewModel()
+        val manager = startBake(vm, biggest = false)
+        try {
+            lockAndLetTheTilesFinish(manager)
+            // MainActivity.onResume: the explicit unlock, then MapScreen composes again
+            instrumentation.runOnMainSync {
+                DataKey.unlock()
+                vm.onMissionDataUnlocked()
+            }
+            waitUntil(what = "bake to land") { manager.state.value !is PdfBakeManager.State.Running }
+            assertEquals("bake thrown away: ${manager.state.value}", PdfBakeManager.State.Idle, manager.state.value)
+            val bake = loaded().entry(p.id)?.pdf?.bake
+            assertNotNull("the bake wasn't recorded", bake)
+            assertTrue(File(files, "offline_tiles/${bake!!.fileName}").isFile)
+            assertEquals("the screen's copy has it too", bake, vm.libraryState.value?.entry(p.id)?.pdf?.bake)
+        } finally {
+            DataKey.unlock()
+        }
+    }
+
+    @Test
+    fun aBakeThatFinishesWithNoScreenAliveGoesStraightIntoTheLibrary() {
+        val p = pdfEntry(lines = 8)
+        seed(p, p)
+        File(files, PdfBaker.PUBLISH_DIR).listFiles().orEmpty().forEach { it.delete() }
+        val store = ViewModelStore()
+        val manager = startBake(viewModel(store), biggest = false)
+        try {
+            lockAndLetTheTilesFinish(manager)
+            // swiped away after the pause: the screen is gone, a recording keeps the process up
+            instrumentation.runOnMainSync { store.clear() }
+            // the user opens TacMap again and it unlocks before any map screen is back
+            instrumentation.runOnMainSync { DataKey.unlock() }
+            waitUntil(what = "bake to land") { manager.state.value !is PdfBakeManager.State.Running }
+            assertEquals("bake thrown away: ${manager.state.value}", PdfBakeManager.State.Idle, manager.state.value)
+            val bake = loaded().entry(p.id)?.pdf?.bake
+            assertNotNull("the bake wasn't recorded", bake)
+            assertTrue(File(files, "offline_tiles/${bake!!.fileName}").isFile)
+            // and the next screen picks it up from the library like any restore
+            assertEquals(bake, viewModel().libraryState.value?.entry(p.id)?.pdf?.bake)
+            assertTrue("the restore reaped it", File(files, "offline_tiles/${bake.fileName}").isFile)
+        } finally {
+            DataKey.unlock()
+        }
     }
 
     @Test

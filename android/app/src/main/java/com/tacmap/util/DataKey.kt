@@ -180,6 +180,16 @@ object DataKey {
     @Synchronized
     fun unlock() = cache.unlock(::unwrapActive)
 
+    /** [lock] ran and no [unlock] since */
+    val isRelocked: Boolean get() = cache.isRelocked
+
+    /**
+     * Suspends from a [lock] till the next [unlock], straight back otherwise. For work that
+     * finishes behind the pause and can wait to write instead of failing (a PDF bake), so it
+     * writes once the user is back. Cancellable.
+     */
+    suspend fun awaitUnlocked() = cache.awaitUnlocked()
+
     /** Opens the active wrapper. Hands back a fresh DEK array the cache zeroes. */
     private fun unwrapActive(): ByteArray {
         val record = activeRecord() ?: throw UnrecoverableException(null)
