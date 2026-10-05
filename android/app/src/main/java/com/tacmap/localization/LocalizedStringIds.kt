@@ -218,6 +218,7 @@ internal val localizedStringIds: Map<String, Int> = mapOf(
     "id.map_library_empty" to R.string.map_library_empty,
     "id.map_library_footer" to R.string.map_library_footer,
     "id.map_library_locked" to R.string.map_library_locked,
+    "id.map_library_recovered_notice" to R.string.map_library_recovered_notice,
     "id.map_library_section" to R.string.map_library_section,
     "id.map_migration_uncalibrated" to R.string.map_migration_uncalibrated,
     "id.map_point_copy" to R.string.map_point_copy,

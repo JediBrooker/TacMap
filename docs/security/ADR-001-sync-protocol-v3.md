@@ -469,7 +469,9 @@ Every other per-record failure skips that one record:
   still opened and verified under that kind) but not usable by this build:
   unknown `kind`, empty content, importer failure or skipped features, not
   exactly one object, kind/content mismatch, embedded UUID not matching the
-  wire ID, identity collision, or no receiver model hash.
+  wire ID (an embedded id that isn't a canonical 8-4-4-4-12 hex UUID string
+  counts as not matching, and is never hashed leniently), identity collision,
+  or no receiver model hash.
 
 A skipped record commits nothing (no stamp, tombstone, actor pin, counter,
 content hash or pending marker) and touches no model. The snapshot still
