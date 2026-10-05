@@ -20271,5 +20271,18 @@
     "deferred": true,
     "context": "Chat notice when a message from a new unit session was blocked because the room chat replay protection table is full. Recommend a new join code.",
     "parameters": []
+  },
+  "sync_legacy_room_mixed_versions": {
+    "en": "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.",
+    "de": "Älterer Raumtyp: Wenn Mitglieder unterschiedliche TacMap-Versionen verwenden, sehen manche möglicherweise nicht dieselben Wegpunkte und Zeichnungen, und manche Änderungen oder Löschungen erreichen nicht alle. Um das zu vermeiden, erstelle einen neuen Beitrittscode (er beginnt mit 3:) und lass alle in den neuen Raum wechseln.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "syncLegacyRoomMixedVersions",
+    "deferred": true,
+    "context": "Unit Sync (3.0.2). Plain-language line shown right under the red LEGACY ROOM line, both while a 2: join code is typed in the join form and for as long as the device is in a 2: room. Legacy v2 rooms behave differently across app versions, so a team on mixed versions can end up seeing different objects. The fix is a new join code starting with 3:. Keep 3: verbatim.",
+    "parameters": []
   }
 }

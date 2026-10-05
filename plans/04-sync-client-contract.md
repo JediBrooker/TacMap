@@ -226,6 +226,14 @@ Rules (both platforms, snapshot and live paths):
 - Invariant: every record the validator accepts also passes the replay commit's own checks (`validRemote` / `remoteSnapshotValid`). A validated record therefore can never end in `persistenceFailure`. `validRemote` can stay as it is, since a canonical id, folded or resolved to a stored canonical id, is a subset of what it accepts; existing replay files keep loading.
 - Vectors: `snapshot.embeddedIdCases`, scenario `poison_embedded_id_skipped`. Each row says how to build the hostile record (the outer wire id is the HMAC of `outerWireIdFromBytesHex`, the bytes 3.0.0 Android's lenient hasher produced) and the expected classification on both paths.
 
+**Amendment 2026-10-06 (3.0.2), the received casing is kept** (finding interop-v3-android-fold-duplicates-on-300). The lowercase fold above had a cost the A7 review missed: shipped 3.0.0 and 2.x Android keep a v3 object under its raw embedded id and upsert by exact id. When a 3.0.1 Android device met a legacy uppercase object for the first time (new member, reinstall, new device), it stored it lowercase, its next edit exported the embedded id lowercase under the same wire id, and every 3.0.0/2.x Android holder of the uppercase id added a second copy; a later delete then tombstoned only one of them. From 3.0.2, Android only:
+
+- An accepted canonical embedded id is resolved through its lowercase form (the state key) to the id a local object already has, in any casing (unchanged), and when no local object has that UUID it is stored exactly as received: uppercase, lowercase or mixed. The fallback is never the lowercase fold. That applies to snapshot validation, the live path, the restage and the snapshot-end identity recheck (`rebindLocalIds` keeps the record's id when nothing is stored).
+- Every lookup stays keyed by the lowercase state key (local kind, case aliases, wire-id index), so one UUID still never gets two local objects on this device.
+- Outbound v3 embedded ids are still the local id as stored, so an object first met uppercase goes back out uppercase and shipped holders update their own copy. iOS is unchanged (it parses a `UUID` value and always sends lowercase); in rooms with iOS editors the shipped-Android duplicate remains a documented transitional residual, as it was in 3.0.0.
+- Objects 3.0.1 already folded to lowercase stay lowercase; there is no migration.
+- Vectors: `snapshot.embeddedIdCases` rows now expect `localId` = the embedded id verbatim plus `stateKey` (lowercase), and `snapshot.embeddedIdCasingCases` (Android) gives the stored-twin cases. Findings list of `poison_embedded_id_skipped` gains this finding.
+
 ## 3. Snapshot layer-metadata ordering
 
 Finding: S3-08.
@@ -714,6 +722,19 @@ Vectors: `v2.vectors` (`casing`, `tie`).
 - **v3 rooms**: unaffected. Wire ids are HMACs of the UUID bytes, and embedded ids follow 2.7.
 - Vectors: `v2.outboundId` / `v2.outboundIdRules`, plus `v2.vectors.outbound` (frame id per platform from local id + remembered raw id) and `v2.vectors.remember` (what Android learns from a sequence of inbound records). These are added to the existing `casing` and `tie`.
 
+**Amendment 2026-10-06 (3.0.2), Android pins the first casing it uses or accepts, and the app says what a `2:` room costs** (findings interop-v2-2xandroid-regression, gap-v2-room-2x-interop-3). The 3.0.1 text above called the 2.x Android loss preexisting. Against the 3.0.0 that was live, it is a regression: 3.0.0 iOS sent lowercase v2 ids, which 2.x Android accepts, so 2.x Android + 3.0.0 iOS rooms converged. After 3.0.1, 2.x Android drops every uppercase frame: objects 3.0.1 iOS creates never reach it, iOS edits and deletes of objects it holds never reach it, and because its clock no longer advances past those writes, its own later edit or delete of such an object can carry a `v` at or below the iOS record's and be ignored by every 3.x device while fresh joiners fold to the iOS version. The 3.0.1 Android learning rule widened this to Android-created objects: once a 3.0.1 iOS teammate edited one, 3.0.1 Android sent its own later edits uppercase too, contradicting "Android-created objects stay lowercase". The owner trade-off stands (2.x iOS echo-deletes are worse: they delete objects room-wide), so iOS keeps sending uppercase. From 3.0.2:
+
+- **Android pins the first casing** this device uses or accepts for a state key, either case (`v2.outboundIdRules.remember`):
+  - its own first put or del for a key with no pin pins the lowercase local id;
+  - an inbound put or del that passes `stateKey`, `beats`, AEAD and signature (and, for a put, the embedded check), applied or not, pins its raw id when the key has no pin;
+  - a later record in another casing is applied as usual and never re-pins; pins outlive deletes.
+  So an object this device created, or first accepted lowercase (from an Android peer or 3.0.0 iOS), stays lowercase and visible to 2.x Android after a 3.0.1 iOS edit. That costs nothing with 2.x iOS, which already echo-deleted it on its first lowercase put. An object first met uppercase (2.x or 3.0.1 iOS) stays uppercase, so 2.x iOS doesn't echo-delete Android's edits of it (gap-v2-room-2x-interop-2, unchanged).
+- **Persistence**: the per-room store now holds every pin (version 2, either case); a 3.0.1 version 1 file (uppercase only) loads as it is and its entries stick, so objects 3.0.1 already switched to uppercase stay uppercase. Written at most once per snapshot, once per live batch and once per outbound diff pass that pinned something new; the 10,000 cap now counts lowercase pins too (when full nothing new is pinned and an unpinned key sends its lowercase local id). `v2.vectors.rememberStore` pins the file format.
+- **Per-device, not per-object**: a fresh device whose first sight of an Android-created object is a snapshot that also holds a 3.0.1 iOS uppercase record for it meets the uppercase record first (the relay sorts uppercase before lowercase) and pins uppercase. Accepted residual.
+- **Residual risk, corrected**: 2.x Android never sees objects 3.0.1+ iOS creates, nor iOS edits and deletes, and can lose its own later edit or delete of an object an iOS 3.0.1+ device wrote at a higher `v`; this is a regression against 3.0.0, the price of protecting 2.x iOS members. Android-created objects are no longer pulled into it. A 2.x iOS device that reconnects to a room holding a stale lowercase put still echo-deletes that object (unchanged).
+- **What the user is told** (both platforms; catalog key `sync_legacy_room_mixed_versions`): a plain-language line directly under the existing red "LEGACY ROOM" line, in both places that line appears: the join form while a `2:` code is typed (so it is on screen through the tap-again confirm) and the joined-room section for as long as the device is in a `2:` room. EN: "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room." Store and What's New copy that promised better compatibility in older-style rooms has to say this instead (docs, not this contract).
+- Vectors: `v2.vectors.remember` now has 12 rows (events may be `{own: put|del}`, this device's send; `lower_only` now pins lowercase), `v2.vectors.outbound` adds `android_own_object_after_ios_edit`, `v2.vectors.rememberStore` (5 rows) is new, and the `v2_casing_and_tie` scenario lists interop-v2-2xandroid-regression.
+
 ## 17. SP3 persistence batching
 
 Findings: S5-01, S5-03, S4-04, S2-09, S3-12, S2 verifier note 1, S5 verifier
@@ -942,6 +963,7 @@ iOS `Messages.swift`, `Resources/{en,de}.lproj/Localizable.strings`) and run
 | `sync_background_paused_title` | Android | Background Unit Sync paused |
 | `chat_recipient_in_background` | both | That unit's TacMap is in the background and can't receive chat until it is opened again. |
 | `chat_replay_table_full` | both | A message from a new unit session was blocked because this room's chat replay protection is full. ... |
+| `sync_legacy_room_mixed_versions` (3.0.2, s16) | both | Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. ... move everyone to the new room. |
 
 German uses du, „…“ quotes, "Beitrittscode" for join code and "Erneut versuchen"
 for Retry, matching the existing catalogue. Reused existing strings: Retry,

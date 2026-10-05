@@ -432,6 +432,7 @@ internal val localizedStringIds: Map<String, Int> = mapOf(
     "id.sync_identity_rejected" to R.string.sync_identity_rejected,
     "id.sync_join_location_consent" to R.string.sync_join_location_consent,
     "id.sync_legacy_membership_help" to R.string.sync_legacy_membership_help,
+    "id.sync_legacy_room_mixed_versions" to R.string.sync_legacy_room_mixed_versions,
     "id.sync_liveness_caveat" to R.string.sync_liveness_caveat,
     "id.sync_metadata_migration_failed" to R.string.sync_metadata_migration_failed,
     "id.sync_metadata_privacy" to R.string.sync_metadata_privacy,

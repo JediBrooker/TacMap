@@ -108,6 +108,11 @@ holds client policy, not wire format, so the relay does not load it.
   object id isn't canonical (plans/04 s2.7); `v2.vectors.outbound` and
   `v2.vectors.remember` pin the legacy-room id casing (plans/04 s16, 3.0.1
   amendment).
+- 3.0.2: Android keeps a received v3 embedded id's casing when no local object
+  has that UUID (`snapshot.embeddedIdCasingCases`, plans/04 s2.7) and pins the
+  first v2 casing it sends or accepts, either case (`v2.vectors.remember` now
+  has own-send events, `v2.vectors.rememberStore` pins the store format;
+  plans/04 s16, 3.0.2 amendment).
 ## PDF georeference contract
 
 `pdf_georef.json` pins the georeference model from
@@ -321,8 +326,9 @@ json says before anything is computed, so reruns are byte-identical. Each file h
 | `import_limits.lifecycle.draftActive` | r1 (T3, C1/C5/C6): drive `steps` from `draftBefore` through the real session + draft store, assert `expect.draft` (`none`/`active`/`inactive`/`deleted`), `session` and `toast` | exact |
 | `import_limits.lifecycle.autoResume` | r1 (E3, M10, C2/C6/C8, F3, OD-F1): given draft / entry / library / `crashSuspect`, the launch decision `action` (`resume`/`skip`/`deferUntilLoaded`), draft flag after, `frameSheet`, `reopenPending`, `toast` | exact |
 | `import_limits.lifecycle.suspectStart`, `.choosePage`, `.importPipeline` | r1 (C2; E1/E4/E14; E2/E5/E7/OD-F5): Open Anyway on start, Choose page confirm/no-op/activate/online fallback and its picker message, pipeline order, cancel visibility and re-checks | exact |
-| `import_limits.libraryLoad` | r1 (S1-S4, D8, F3) + 3.0.1 (contract s13.1): restore outcome per library file / key / quarantine sibling / written-before record / legacy state / `managedFiles` / failing `writes`: `status`, `migration` (`none`/`run`/`blocked`/`writeEmptyAndClear`/`salvage`/`adoptOrphans`), whether reconcile + bake sweep + draft prune may run, `clearLegacy`, `issue`, `notice`, `recoveryPreservesOrphans`, `importAllowed`, `basemapChangeAllowed` and `nextRestore` (the pass after this one). Rows carry `platforms`; build each `legacy` state from real stores per `legacyCodes`. `retry`, `salvage` and `adoptOrphans` describe the writes | exact |
-| `import_limits.mbtilesMetadataAdmission` | s3.1 + 3.0.1 (contract s13.2): constants, metadata / extension / tile-zoom vectors, `relationVariants` (each vector again with metadata and/or tiles as a view, same result) and `relationCases` (whole packs as SQL, expected values from the generator's reference admission; `testBudgetMs` replaces `admissionBudgetMs` through the test seam) | exact |
+| `import_limits.libraryLoad` | r1 (S1-S4, D8, F3) + 3.0.1 (contract s13.1): restore outcome per library file / key / quarantine sibling / written-before record / legacy state / `managedFiles` / failing `writes`: `status`, `migration` (`none`/`run`/`blocked`/`writeEmptyAndClear`/`salvage`/`adoptOrphans`), whether reconcile + bake sweep + draft prune may run, `clearLegacy`, `issue`, `notice`, `recoveryPreservesOrphans`, `importAllowed`, `basemapChangeAllowed` and `nextRestore` (the pass after this one). Rows carry `platforms`; build each `legacy` state from real stores per `legacyCodes`. `retry`, `salvage` and `adoptOrphans` describe the writes. 3.0.2 (contract s14.3): `given.ledgerOnly` (Android: ledger without file or marker) and real-store write failures | exact |
+| `import_limits.mbtilesMetadataAdmission` | s3.1 + 3.0.1 (contract s13.2) + 3.0.2 (s14.1, s14.2): constants, metadata / extension / tile-zoom vectors, `relationVariants` (each vector again with metadata and/or tiles as a view, same result), `relationCases` (whole packs as SQL, expected values from the generator's hardened reference admission; `testBudgetMs` replaces `admissionBudgetMs` through the test seam; skip rows above the runtime `minSqliteVersion`), `connection` (per-connection hardening) and `viewShape` (the view grammar and its `cases`, verdict + reason + base tables, no SQLite needed) | exact |
+| `import_limits.mbtilesOpenGuard` | 3.0.2 (s14.1): the MBTiles open crash guard: file name and version, window and suppress rules, and reducer `cases` (each step's `result` and full `state` after it) | exact |
 | `import_limits.sizeDisplay`, `prechecks[].expect.argText` | r1 (OD-F6): byte args via the `pdf_tile_render.json` bakeFormat size rule (the generator asserts it equals WP2's cases) | exact |
 
 Choices the contract left open, pinned here (the rule text says so too):
