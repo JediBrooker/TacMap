@@ -74,8 +74,17 @@ object SafeStore {
     /** Seal [text] under [label] and atomically replace [file]. */
     fun writeAtomically(file: File, label: String, text: String) {
         val key = keyProvider.key()
-        markSealedOnlyAuthenticated(label)
-        writeSealedBytes(file, SealedEnvelope.sealFile(key, text.toByteArray(Charsets.UTF_8), label))
+        val tmp = writeTemp(file, SealedEnvelope.sealFile(key, text.toByteArray(Charsets.UTF_8), label))
+        // ledger after the flushed temp file and before the rename (WP4 s14.3). sealed bytes
+        // still never hit the real path without it, but a write that dies before this point
+        // (full disk) leaves no record of a write that never happened
+        try {
+            markSealedOnlyAuthenticated(label)
+        } catch (e: Throwable) {
+            tmp.delete()
+            throw e
+        }
+        replaceWith(tmp, file)
         markSealedOnly(file)
     }
 
@@ -136,7 +145,10 @@ object SafeStore {
         }
     }
 
-    private fun writeSealedBytes(file: File, bytes: ByteArray) {
+    private fun writeSealedBytes(file: File, bytes: ByteArray) = replaceWith(writeTemp(file, bytes), file)
+
+    /** the sibling temp file with [bytes] in it, fsynced, nothing renamed yet */
+    private fun writeTemp(file: File, bytes: ByteArray): File {
         val dir = file.parentFile
             ?: throw IOException("No parent directory for ${file.absolutePath}")
         if (!dir.exists()) dir.mkdirs()
@@ -146,6 +158,10 @@ object SafeStore {
             fos.flush()
             fos.fd.sync() // fsync before rename so we don't lose data on crash
         }
+        return tmp
+    }
+
+    private fun replaceWith(tmp: File, file: File) {
         val moved = runCatching {
             Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         }.isSuccess

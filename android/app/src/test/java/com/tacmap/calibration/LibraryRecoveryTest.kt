@@ -133,14 +133,13 @@ class LibraryRecoveryTest {
             recoveredName = { "Recovered map $it" },
             inspectPdf = { f -> inspect(f) },
             validateMbtiles = { true },
-            // fails before SafeStore sees it, aLibraryWriteThatReallyFails... does a real one
-            writeLibrary = if (writes == "libraryFails") ({ LibraryCommit.Failed }) else store::create,
         )
 
         init {
             sealedLabels.clear()
             locked = false
             val libraryFile = File(dir, libraryName)
+            val absent = given.str("libraryFile") == "absent"
             when (val f = given.str("libraryFile")) {
                 "ok" -> assertTrue(store.write(state().copy(recoveryPreservesOrphans = given.bool("recoveryPreservesOrphans"))))
                 // not a sealed blob and not json either: SafeStore quarantines it
@@ -152,10 +151,15 @@ class LibraryRecoveryTest {
                 "absent" -> Unit
                 else -> error("libraryFile $f")
             }
-            // a write that happened long ago leaves our record behind, nothing else
-            if (given.str("libraryFile") == "absent" && given.bool("writtenBefore")) sealedLabels += ImportedMapLibraryStore.LABEL
+            // a write that finished long ago leaves its marker and the ledger behind, nothing else
+            if (absent && given.bool("writtenBefore")) {
+                assertTrue(store.write(state()))
+                assertTrue(libraryFile.delete())
+            }
+            // a first write that died between its ledger mark and the rename: the ledger alone
+            if (absent && given.bool("ledgerOnly")) sealedLabels += ImportedMapLibraryStore.LABEL
             if (given.bool("corruptSibling")) File(dir, "$libraryName.corrupt-1700000000000").writeBytes(ByteArray(8))
-            layOutLegacy(libraryAbsent = given.str("libraryFile") == "absent")
+            layOutLegacy(libraryAbsent = absent)
             if (given.bool("managedFiles")) {
                 map("mbtiles/import-aaaaaaaaaaaaaaaa.mbtiles", 3_000L)
                 map("pdf_maps/import-bbbbbbbbbbbbbbbb.pdf", 4_000L, pdf = true)
@@ -163,8 +167,13 @@ class LibraryRecoveryTest {
                 map("offline_tiles/tacmap-bake-1234.mbtiles", 6_000L)
                 map("pdf_maps/import-dddddddddddddddd.pdf.partial", 7_000L)
             }
+            // the library's temp file can't be written (a full disk), so the real write fails in
+            // SafeStore. a directory there stops root too
+            if (writes == "libraryFails") jamLibraryWrite()
             locked = given.str("missionKey") == "locked"
         }
+
+        fun jamLibraryWrite(): File = File(dir, "$libraryName.tmp").apply { mkdirs(); File(this, "x").writeText("x") }
 
         fun map(rel: String, mtime: Long, pdf: Boolean = false): File = File(dir, rel).apply {
             parentFile!!.mkdirs()
@@ -233,12 +242,12 @@ class LibraryRecoveryTest {
             val clearsBefore = session.clears
             val copiesBefore = quarantineCopies()
             val first = store.load()
-            val hop = first == LibraryLoad.Empty && migrator.isDue()
+            val hop = migrator.isDue(first)
             val migrated = if (hop) {
                 // legacy locked: the key goes right in the middle of the legacy read
                 if (legacy == "locked") locked = true
                 try {
-                    migrator.migrate()
+                    migrator.migrate(first)
                 } finally {
                     if (legacy == "locked") locked = false
                 }
@@ -286,16 +295,28 @@ class LibraryRecoveryTest {
         val section = limits["libraryLoad"]!!.jsonObject
         val rows = section["rows"]!!.jsonArray.map { it.jsonObject }
         val android = rows.filter { r -> r["platforms"]!!.jsonArray.any { it.jsonPrimitive.content == "android" } }
-        assertEquals("libraryLoad rows", 28, rows.size)
-        assertEquals("android rows", 27, android.size)
+        assertEquals("libraryLoad rows", 32, rows.size)
+        assertEquals("android rows", 31, android.size)
         // every legacy code an android row uses is one the reader can come back with
         val codes = section["legacyCodes"]!!.jsonObject.keys
         android.forEach { assertTrue(it.str("id"), it["given"]!!.jsonObject.str("legacy") in codes) }
         for (row in android) {
             val id = row.str("id")
             val expect = row["expect"]!!.jsonObject
-            val device = RowDevice(row["given"]!!.jsonObject)
+            val given = row["given"]!!.jsonObject
+            val device = RowDevice(given)
             assertPass(id, expect, device.pass())
+            if (given.str("writes") == "libraryFails") {
+                // the real write failed in SafeStore and left no record of a library that never landed
+                assertFalse("$id ledger", ImportedMapLibraryStore.LABEL in sealedLabels)
+                assertEquals("$id library", LibraryLoad.Empty, device.store.load())
+            }
+            if (given.bool("ledgerOnly") && given.str("legacy") == "readable") {
+                // the migration that died gets its names and points back, it isn't rebuilt
+                val old = (device.store.load() as LibraryLoad.Loaded).state.entries.single()
+                assertEquals("$id name", "Old sheet", old.displayName)
+                assertEquals("$id draft", 2, device.drafts.load("${old.contentKey}#0")!!.points.size)
+            }
             if (expect.str("migration") == "salvage" || expect.str("migration") == "adoptOrphans") {
                 // every map file in our dirs is listed once (bakes and .partial residue aren't maps)
                 val library = (device.store.load() as LibraryLoad.Loaded).state
@@ -313,7 +334,7 @@ class LibraryRecoveryTest {
     }
 
     private fun given(legacy: String, files: Boolean = true) = Json.parseToJsonElement(
-        """{"libraryFile":"absent","missionKey":"unlocked","corruptSibling":false,"writtenBefore":false,"legacy":"$legacy","recoveryPreservesOrphans":false,"managedFiles":$files,"writes":"ok"}""",
+        """{"libraryFile":"absent","missionKey":"unlocked","corruptSibling":false,"writtenBefore":false,"ledgerOnly":false,"legacy":"$legacy","recoveryPreservesOrphans":false,"managedFiles":$files,"writes":"ok"}""",
     ).jsonObject
 
     @Test
@@ -379,29 +400,60 @@ class LibraryRecoveryTest {
 
     @Test
     fun aLibraryWriteThatReallyFailsNeverDeletesAnythingAndRetryGetsEveryFileBack() {
-        // SafeStore puts the sealed-only record down before the bytes, so after a real failure
-        // (full disk) the library reads as written before and gone: corrupt, where the fixture's
-        // seam says pending. Both are safe, this pins that: no pass deletes a file (pass() checks
-        // every one), cleans up or clears, and the corrupt Retry (S2 rebuild) brings every map back
+        // a real failure in SafeStore (its temp file can't be written, a full disk). 3.0.1 had the
+        // sealed-only record down before the bytes, so the library read as written before and gone:
+        // corrupt. the ledger waits for the flushed temp file now (s14.3), so it's pending like the
+        // fixture says, with nothing on record. no pass deletes a file (pass() checks every one),
+        // cleans up or clears, and once the disk takes it the Retry salvages every map back
         val device = RowDevice(given("corrupt"))
-        val jam = File(device.dir, "$libraryName.tmp").apply { mkdirs(); File(this, "x").writeText("x") }
+        val jam = device.jamLibraryWrite()
         repeat(2) {
             val seen = device.pass()
+            assertEquals(RestoreStatus.MIGRATION_PENDING, seen.plan.status)
+            assertEquals(RestoreIssue.LOCKED_RETRY, seen.plan.issue)
             assertFalse(seen.plan.authoritative)
             assertFalse(seen.cleared)
-            assertTrue(seen.plan.status.toString(), seen.plan.status == RestoreStatus.MIGRATION_PENDING || seen.plan.status == RestoreStatus.CORRUPT)
+            assertEquals(LibraryLoad.Empty, device.store.load())
         }
         jam.deleteRecursively()
-        val rebuilt = LibraryRebuild.rebuild(
-            filesDir = device.dir, defaultStyle = "OSM_TOPO", nowMs = 1L, recoveredName = { "Recovered map $it" },
-            inspectPdf = { f -> inspect(f) }, validateMbtiles = { true },
-        )
-        assertTrue(device.store.create(rebuilt) is LibraryCommit.Written)
+        val retried = device.pass()
+        assertEquals(RestoreMigration.SALVAGE, retried.plan.migration)
         assertEquals(
             listOf("mbtiles/import-aaaaaaaaaaaaaaaa.mbtiles", "pdf_maps/import-bbbbbbbbbbbbbbbb.pdf", "pdf_maps/import-cccccccccccccccc.pdf"),
             (device.store.load() as LibraryLoad.Loaded).state.entries.map { it.fileName },
         )
         device.pass()
+    }
+
+    @Test
+    fun aFirstLibraryWriteOnAFullDiskKeepsTheOldNamesForItsRetry() {
+        // F2: a 2.x user upgrades with the phone nearly full. the read and the drafts are fine, the
+        // library write fails in SafeStore. 3.0.1 had the ledger down by then, so the library read
+        // as corrupt and its Retry rebuilt the sheet as Recovered map 1, its 2.x name and points
+        // stuck in the old stores for good
+        val device = RowDevice(given("readable", files = false))
+        val jam = device.jamLibraryWrite()
+        val blocked = device.pass()
+        assertEquals(RestoreStatus.MIGRATION_PENDING, blocked.plan.status)
+        assertEquals(RestoreIssue.LOCKED_RETRY, blocked.plan.issue)
+        assertFalse(blocked.cleared)
+        // nothing on record for a library that never landed, the old stores all still there
+        assertFalse(ImportedMapLibraryStore.LABEL in sealedLabels)
+        assertEquals(LibraryLoad.Empty, device.store.load())
+        assertTrue(device.session.activeStored)
+        assertTrue(device.selection.hasClearableLegacyState())
+
+        // room again: the Retry is the migration it was, name and points kept, then the old stores go
+        jam.deleteRecursively()
+        val retried = device.pass()
+        assertEquals(RestoreMigration.RUN, retried.plan.migration)
+        assertTrue(retried.plan.authoritative)
+        assertTrue(retried.cleared)
+        val library = (device.store.load() as LibraryLoad.Loaded).state
+        assertTrue(library.permitsCleanup)
+        val old = library.entries.single()
+        assertEquals("Old sheet", old.displayName)
+        assertEquals(2, device.drafts.load("${old.contentKey}#0")!!.points.size)
     }
 
     @Test
@@ -441,9 +493,14 @@ class LibraryRecoveryTest {
         File(dir, libraryName).delete()
         // the plaintext marker next to it says so
         assertEquals(LibraryLoad.Corrupt, store.load())
-        // and with that gone too, the sealed ledger still does
+        // with that gone too the sealed ledger can't tell it from a first write that died before
+        // its rename (s14.3), so it's never empty. with no old store to salvage from the restore
+        // comes to corrupt all the same, and its Retry (the S2 rebuild) can write over it
         dir.listFiles()!!.filter { it.name.contains("sealed-only") }.forEach { it.delete() }
-        assertEquals(LibraryLoad.Corrupt, store.load())
+        assertEquals(LibraryLoad.Unfinished, store.load())
+        assertEquals(RestoreStatus.CORRUPT, LibraryRestoreRules.plan(store.load(), LegacyLibraryState.NONE, managedFiles = true).status)
+        assertTrue(store.create(state().copy(recoveryPreservesOrphans = true)) is LibraryCommit.Written)
+        assertTrue(store.load() is LibraryLoad.Loaded)
         // can't ask the ledger with the key locked: that's locked, not empty
         sealedLabels.clear()
         locked = true

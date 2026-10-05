@@ -425,7 +425,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private fun restoreLibrary() {
         if (restoring || rebuilding) return
         val load = library.load()
-        if (load == LibraryLoad.Empty && migrator.isDue()) {
+        // Empty, or ledger only with old stores waiting (s14.3, that one only ever salvages)
+        if (migrator.isDue(load)) {
             // old stores to migrate or map files to adopt: that hashes and parses, so off main.
             // the online map stands in meanwhile, unpersisted, and with the library still LOADING
             // nothing imports, reconciles or sweeps till the write lands
@@ -433,7 +434,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             if (_mapSource.value !is OnlineRasterMapSourceAndroid) publish(onlineBasemap(), frame = false)
             viewModelScope.launch {
                 val migrated = try {
-                    withContext(Dispatchers.IO) { migrator.migrate() }
+                    withContext(Dispatchers.IO) { migrator.migrate(load) }
                 } finally {
                     restoring = false
                 }
@@ -794,6 +795,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             is LibraryLoad.Loaded -> adoptNewer(cached, current.state)
             // it went bad under us: same as finding it corrupt at launch, nothing's written or deleted from here
             LibraryLoad.Corrupt -> onLibraryCorrupt()
+            // ledger only under a loaded copy (file and marker gone, or a first write died at its
+            // rename): corrupt like in 3.0.1, only a restore pass salvages that one
+            LibraryLoad.Unfinished -> onLibraryCorrupt()
             LibraryLoad.Locked, LibraryLoad.Empty -> Unit
         }
     }

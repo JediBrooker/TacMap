@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.tacmap.calibration.ActiveMapSelectionStore
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.ImportedMapLibraryStore
 import com.tacmap.calibration.LibraryLoad
@@ -19,6 +20,8 @@ import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -211,5 +214,70 @@ class LegacyMigrationSalvageInstrumentedTest {
         assertIntact(seeded + bake, "next launch")
         assertRecovered(next, seeded, "next launch")
         assertNull(next.launchAlert.value)
+    }
+
+    /** a 2.x selector: online active, [pack] retained, so nothing has to open at restore */
+    private fun legacySelectorRetaining(pack: File) {
+        val legacy = ActiveMapSelectionStore(context)
+        assertTrue(legacy.saveOnline(BasemapStyle.OSM_STREET))
+        assertTrue(legacy.saveRetainedOffline(pack.path, BasemapStyle.OSM_STREET))
+    }
+
+    @Test
+    fun aFirstLibraryWriteThatDiedBeforeItsRenameIsSalvagedWithTheOldNames() {
+        // F2 (WP4 s14.3): the ledger names the library but there's no file and no marker, and the
+        // 2.x selector is still waiting. 3.0.1 read that as corrupt and its Retry rebuilt the
+        // retained pack as Recovered map n, its name stuck in the old selector
+        val pack = seed("mbtiles/import-2a2b2c2d2e2f2a2b.mbtiles", ByteArray(4096) { 5 })
+        val sheet = pdf("pdf_maps/import-3a3b3c3d3e3f3a3b.pdf")
+        legacySelectorRetaining(pack)
+        ledger += ImportedMapLibraryStore.LABEL
+
+        val first = restored(viewModel())
+        assertIntact(listOf(pack, sheet), "first restore")
+        assertRecovered(first, listOf(pack, sheet), "first restore")
+        assertEquals(MapLaunchAlert.LibraryRecovered, first.launchAlert.value)
+        val sealed = (ImportedMapLibraryStore(files).load() as LibraryLoad.Loaded).state
+        assertEquals("import-2a2b2c2d2e2f2a2b", sealed.entries.single { it.fileName == "mbtiles/${pack.name}" }.displayName)
+        // a salvage clears nothing, the old selector stays frozen
+        assertTrue(File(files, "active_map_source.json").isFile)
+
+        val next = restored(viewModel())
+        assertIntact(listOf(pack, sheet), "next launch")
+        assertRecovered(next, listOf(pack, sheet), "next launch")
+        assertNull(next.launchAlert.value)
+    }
+
+    @Test
+    fun aLibraryWriteThatFailsOnAFullDiskIsPendingAndItsRetryStillMigrates() {
+        // F2 through the real view model and SafeStore: the library's temp file can't be written.
+        // 3.0.1 had the ledger down before that, read the library back corrupt and only offered
+        // the rebuild
+        val pack = seed("mbtiles/import-4a4b4c4d4e4f4a4b.mbtiles", ByteArray(4096) { 6 })
+        legacySelectorRetaining(pack)
+        val jam = File(files, "${ImportedMapLibraryStore.FILE_NAME}.tmp").apply { mkdirs(); File(this, "x").writeText("x") }
+        try {
+            val vm = restored(viewModel())
+            // pending: the locked issue with Retry, nothing on record, nothing cleared
+            assertEquals(LibraryStatus.LOCKED, vm.libraryStatus.value)
+            assertNotNull(vm.mapSelectionPersistenceIssue.value)
+            assertFalse("ledger marked for a write that never landed", ImportedMapLibraryStore.LABEL in ledger)
+            assertEquals(LibraryLoad.Empty, ImportedMapLibraryStore(files).load())
+            assertTrue(File(files, "active_map_source.json").isFile)
+            assertIntact(listOf(pack), "blocked restore")
+
+            jam.deleteRecursively()
+            instrumentation.runOnMainSync { vm.retryMapSelectionPersistence() }
+            waitUntil(what = "retry") { vm.libraryStatus.value == LibraryStatus.LOADED }
+            restored(vm)
+            // the migration it was: the old name, a library that may clean up, the old selector gone
+            val sealed = (ImportedMapLibraryStore(files).load() as LibraryLoad.Loaded).state
+            assertTrue(sealed.permitsCleanup)
+            assertEquals("import-4a4b4c4d4e4f4a4b", sealed.entries.single().displayName)
+            assertFalse(File(files, "active_map_source.json").exists())
+            assertIntact(listOf(pack), "retry")
+        } finally {
+            jam.deleteRecursively()
+        }
     }
 }

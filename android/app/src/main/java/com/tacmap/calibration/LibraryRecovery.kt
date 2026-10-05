@@ -90,6 +90,14 @@ internal object LibraryRestoreRules {
             }
             LibraryLoad.Locked -> RestorePlan(RestoreStatus.LOCKED, RestoreMigration.NONE, false, false, RestoreIssue.LOCKED_RETRY)
             LibraryLoad.Corrupt -> RestorePlan(RestoreStatus.CORRUPT, RestoreMigration.NONE, false, false, RestoreIssue.CORRUPT_RETRY)
+            // s14.3 ledger only: a first write that died before its rename. old stores still waiting
+            // means it was the migration's, so salvage (never a run, deleting file + marker leaves
+            // the same state). nothing to go on without them, corrupt as before
+            LibraryLoad.Unfinished -> when (legacy) {
+                LegacyLibraryState.NONE -> plan(LibraryLoad.Corrupt, legacy)
+                LegacyLibraryState.LOCKED -> PENDING
+                else -> written(RestoreMigration.SALVAGE, clear = false, recovered = true, drafts = legacy != LegacyLibraryState.NAMES_NOTHING)
+            }
             LibraryLoad.Empty -> when (legacy) {
                 // map files with no library and nothing to migrate get adopted, never reconciled
                 // away. only an Empty with nothing in the dirs is authoritative (L7)
