@@ -519,8 +519,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   atomic rename. On flash storage the old blocks may survive until wear-levelling
   reclaims them, protected only by the platform's own full-disk encryption.
 
-  Per-room Chat and rollback-state files use DEK-bound opaque filenames so a
-  filesystem or backup index does not disclose the routing room ID. On upgrade,
+  Per-room Chat and rollback-state files, and on Android the sealed legacy-v2
+  wire-id casing file (object UUIDs only, no content), use DEK-bound opaque
+  filenames so a filesystem or backup index does not disclose the routing room ID. On upgrade,
   both apps scan and rename every canonical legacy room filename after the DEK is
   available, including inactive rooms; a locked key causes no filesystem changes
   and interrupted passes resume on the next unlocked launch.
@@ -588,7 +589,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   follows symlinks, and runs under the same managed-files lock as bake publish, which
   moves the file and writes its record as one step. It runs only on an authoritative
   read of the library: a library that loaded, or a first launch where no library was
-  ever written and no legacy store is left to migrate (that names nothing). A library
+  ever written, no legacy store is left to migrate and no map file is in the managed
+  directories (that names nothing and has nothing to delete). A library
   that was written before and is gone now, or that was quarantined as unreadable (a
   `.corrupt-<time>` copy next to it), counts as unreadable, never as empty. If the library
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
@@ -632,16 +634,27 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   launches. Explicit georeference changes and bake replacement remove only their known
   superseded bake after the sealed write. Unmatched map files, files beyond the recovery entry cap, bakes and drafts
   stay on disk; only an explicit Delete Map or Remove Offline Tiles deletes its known
-  owned files. Older valid indexes omit this flag and keep normal cleanup. The one-time migration from older builds is
-  fail-closed: a stored PDF content key must match a fresh hash before its calibration
+  owned files. Older valid indexes omit this flag and keep normal cleanup. The one-time migration from older builds
+  never deletes anything it can't vouch for: a stored PDF content key must match a fresh hash before its calibration
   is migrated, and a document that will not open never gets a fabricated page count.
-  If a legacy store is locked or damaged, or a legacy PDF is present but
-  can't be read or converted, nothing is written, cleared or deleted and Retry is
-  offered. Downgrading to an implementation that knows only one retained map is
+  If the mission-data key is locked, or a write the migration needs (calibration drafts first, then the
+  library) fails, nothing is written, cleared or deleted and Retry is offered. If a legacy store is damaged
+  or was quarantined (only its `.corrupt-<time>` copy is left), or a legacy PDF is present but can't be read
+  or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
+  the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
+  leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
+  library. A library that was never written while map files sit in app storage is handled the same way, so a
+  missing or quarantined index can never authorise deleting those files. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
   recognize as retained, requiring re-import. This is a library-format/lifecycle
   boundary, not a marketing-version boundary.
-- **Untrusted MBTiles metadata.** Both readers reject more than 64 metadata
+- **Untrusted MBTiles metadata.** `tiles` and `metadata` may each be a table or
+  a view (MBTiles 1.3, used by deduplicated packs); anything else is refused. A
+  view has no rowid for incremental reads, so it is read with key-addressed
+  queries under the same bounds. A view's row count isn't limited by the file
+  size, so all admission queries share a 30 s budget and each later query on a
+  view gets 2 s; an interrupted admission rejects the pack and an interrupted
+  tile read returns no tile. Both readers reject more than 64 metadata
   rows using bounded row/type descriptors before copying text. Keys are bounded
   to 32 characters; known name/format/min-max zoom/bounds fields to
   128/32/16/256. Copied UTF-8 prefixes are at most four bytes per allowed

@@ -211,6 +211,7 @@
     <string name="map_library_empty">"Keine importierten Karten. Füge über „Importieren“ eine PDF-, GeoPDF- oder MBTiles-Karte hinzu."</string>
     <string name="map_library_footer">"%1$s · %2$s auf diesem Gerät. Importierte Karten bleiben auf diesem Gerät, bis du sie löschst, und sind nicht in Backups enthalten."</string>
     <string name="map_library_locked">"Entsperre die Einsatzdaten, um importierte Karten zu sehen und zu ändern."</string>
+    <string name="map_library_recovered_notice">"Einige gespeicherte Kartendetails konnten nicht gelesen werden. Jede Kartendatei auf diesem Gerät wurde behalten und steht unter „Importierte Karten“, möglicherweise fehlen aber Namen oder Kalibrierungen. Prüfe deine Karten und kalibriere sie bei Bedarf neu. Es wurde nichts gelöscht."</string>
     <string name="map_library_section">"Importierte Karten"</string>
     <string name="map_migration_uncalibrated">"„%1$s“ war nie georeferenziert und wird daher nicht mehr als Grundkarte angezeigt. Kalibriere sie über „Ebenen“."</string>
     <string name="map_point_copy">"Koordinaten kopieren"</string>
