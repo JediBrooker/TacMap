@@ -91,11 +91,13 @@ must submit a signed proof-of-possession announcement:
 
 The relay recomputes `actorId` from the room and public key, verifies this
 signature, and transactionally requires the signed session epoch to be newer
-than the actor's durable epoch. The acknowledgement echoes `by`, `sd`, and `vs`.
-The actor record shares the same total record/byte quota as objects and
-tombstones. Durable put/delete records carry both `pub` and `sd`,
-so a late joiner has all context needed to authenticate the encrypted inner
-signature. Presence counters are session-local and cannot advance the durable
+than the actor's durable epoch. That epoch outlives idle expiry as the actor's
+epoch floor (see *Retention*), so a captured older hello stays refused until
+the room's 90-day idle purge. The acknowledgement echoes `by`, `sd`, and `vs`.
+The actor record (and the floor that replaces it) shares the same total
+record/byte quota as objects and tombstones. Durable put/delete records carry
+both `pub` and `sd`, so a late joiner has all context needed to authenticate
+the encrypted inner signature. Presence counters are session-local and cannot advance the durable
 room high-water. The exact preimages and state-machine rules are normative in
 ADR-001 and `testdata/sync_protocol_v3.json`.
 
@@ -331,38 +333,59 @@ The relay stores, per room: a hash of the admission token, the protocol, the
 room `seq` and counter `highWater`, record/byte counters, the last-activity
 time, the latest sealed record per object, tombstones, and one pin per v3 actor
 (public key, first-seen time, the hour of its latest hello, the latest signed
-hello). Relay-only bookkeeping rows (`tomb:<id>` delete hour,
-`meta:tombIndexAt`, `meta:expiredAt`, `meta:horizonSeq`,
-`meta:droppedPinsSeen`, and `meta:expiring` while an expiry pass is unfinished)
-are never sent to clients and never change the record shape in snapshots.
-`meta:tombIndexAt` is 0 in rooms this relay creates, so no creation time
-survives idle expiry (pin first-seen times go with the pins); rooms from
-before SP1 get the hour they were first indexed (about the deploy time). Presence, chat and chat keys are never stored.
+hello), which idle expiry swaps for that actor's epoch floor (`epoch:<actorId>`,
+just the 16-hex epoch of its latest accepted hello). Relay-only bookkeeping
+rows (`tomb:<id>` delete hour, `meta:tombIndexAt`, `meta:expiredAt`,
+`meta:horizonSeq`, `meta:droppedPinsSeen`, and `meta:expiring` while an
+expiry pass is unfinished) and the floors are never sent to clients and never
+change the record shape in snapshots. `meta:tombIndexAt` is 0 in rooms this
+relay creates, so no stored time survives idle expiry that records when the
+room was created (pin first-seen times go with the pins); rooms from before
+SP1 get the hour they were first indexed (about the deploy time). A floor
+holds no time either, but current apps start a device's epoch at the Unix
+minute of its first hello in the room and only count up from there, so a
+floor still shows that device joined no later than that minute. Presence,
+chat and chat keys are never stored.
 
 - **No write per frame.** `meta:lastActivity` is written at most once an hour
-  for joins, accepted writes and hellos, whenever the relay sees the last open socket go (its own
+  for joins, hellos, accepted writes, relayed presence, routed chat and
+  answered pings, whenever the relay sees the last open socket go (its own
   close, the client's close, or a transport error), and by the maintenance
-  alarm (daily while anyone is connected). Presence, chat and rejected frames
-  cause no storage write, and a failed activity write never closes a socket or
-  fails a join.
+  alarm (daily while anyone is connected). So while devices are sending
+  anything it is at most an hour behind, even if a deploy or restart then drops
+  their sockets without a close callback. Rejected frames never write it, no
+  frame traffic writes it more than once an hour, presence and chat cause no
+  other storage write, and a failed activity write never closes a socket or
+  fails a join. The last-socket-gone write is only skipped when the stored
+  value is under a minute old with nothing newer pending, so a device that
+  keeps reconnecting writes it once per disconnect.
 - **Idle expiry.** About 7 days after the last recorded activity, with no
-  socket open, the relay deletes live object records and actor pins. It keeps
-  the token hash, protocol, `seq` (advanced), `highWater`, counters,
-  last-activity time, the bookkeeping rows and all tombstones, so returning
-  devices are not rolled back, not locked out by the 10,000 counter window,
-  and cannot resurrect deletes. These rows hold no mission content, but the
+  socket open, the relay deletes live object records and swaps every actor pin
+  for its epoch floor. It keeps the token hash, protocol, `seq` (advanced),
+  `highWater`, counters, last-activity time, the bookkeeping rows, the floors
+  and all tombstones, so returning devices are not rolled back, not locked out
+  by the 10,000 counter window, and cannot resurrect deletes, and nobody
+  holding the join code can replay another device's older session (ADR-001
+  §14): a hello still has to beat the floor, which a device's next session
+  always does, and that hello turns the floor back into a pin. A floor is one
+  row per device counted against the room quota like the pin was, and no hello
+  writes anything extra for it. These rows hold no mission content, but the
   token hash still confirms join-code guesses like the room ID does, until the
-  idle purge takes them. A room that never accepted a write is deleted
-  entirely. A pass that fails half way has already advanced `seq`; the alarm
+  idle purge takes them. A room that never accepted a write and has no hello
+  epoch to keep (v2, or nobody said hello) is deleted entirely. One whose
+  devices only shared positions or chatted keeps its floors like any other
+  room and its `seq` moves to 1, otherwise a captured session's presence and
+  chat would be accepted again after 7 days. A pass that fails half way has already
+  advanced `seq` and stores every floor before it drops any pin; the alarm
   retries within an hour and a join in between recounts the counters.
 - **Idle purge.** About 90 days after the last recorded activity (after the
   last expiry if none was ever recorded), with no socket open, the relay
-  deletes everything left for the room, meta rows and tombstones included, in
-  one atomic `deleteAll`, then its alarm. Any activity in between restarts the
+  deletes everything left for the room, meta rows, tombstones and epoch floors
+  included, in one atomic `deleteAll`, then its alarm. Any activity in between restarts the
   clock, and a failed purge leaves the room whole and is retried within an
-  hour. So: objects and pins go after 7 idle days, counters and tombstones
-  after at most 90, then nothing. A device returning after the purge finds a
-  fresh room at `seq` 0, which shipped clients report as a rollback, and if
+  hour. So: objects and pins go after 7 idle days, counters, tombstones and
+  epoch floors after at most 90, then nothing. A device returning after the
+  purge finds a fresh room at `seq` 0, which shipped clients report as a rollback, and if
   its counters had passed 10,000 its writes are nacked `counter-window`; it
   has to move to a new join code (SP2 clients say so plainly). In v2
   whoever connects first afterwards pins the fresh room, as before SP1. A join that
@@ -394,7 +417,10 @@ for legacy v2 and
 The health endpoint returns `ok` with a no-store
 `X-TacMap-Relay-Release` header. A release is not deployment-verified until
 that header matches `RELAY_RELEASE_ID` in `src/release.ts`; an `ok` body alone is
-only a liveness check.
+only a liveness check. Every change to `src/index.ts`, `src/limits.ts` or
+`wrangler.jsonc` needs a new id: `test/contract.test.ts` hashes those files and
+fails until `src/release.ts` carries the new hash, and it refuses ids that
+already shipped with other source.
 
 Verified end-to-end against the deployed Durable Object (two-client WebSocket
 test): snapshot-on-connect, peer broadcast with the opaque `ct` preserved, no

@@ -13,7 +13,8 @@ import {
 // audited defect (S1-xx / S3-xx / S4-xx / S5-xx / S6-xx)
 
 const LIMITS = fixture.relayLimits.values
-const DAY = 24 * 60 * 60 * 1000
+const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
 
 function room(name: string): DurableObjectStub {
   return env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(name))
@@ -39,9 +40,12 @@ function recordBytesV2(record: any): number {
 async function recomputeAccounting(state: DurableObjectState, protocol: 2 | 3 = 3): Promise<{ total: number; bytes: number }> {
   let total = 0
   let bytes = 0
-  for (const [key, value] of await state.storage.list<any>({ prefix: "actor:" })) {
-    total += 1
-    bytes += utf8(key) + utf8(JSON.stringify(value))
+  // pins and the epoch floors idle expiry leaves in their place
+  for (const prefix of ["actor:", "epoch:"]) {
+    for (const [key, value] of await state.storage.list<any>({ prefix })) {
+      total += 1
+      bytes += utf8(key) + utf8(JSON.stringify(value))
+    }
   }
   for (const value of (await state.storage.list<any>({ prefix: "obj:" })).values()) {
     total += 1
@@ -225,6 +229,80 @@ describe("SP1 item 1: no durable write per frame", () => {
     })
     a.close()
   })
+
+  it("relay-ref-3: relayed presence, routed chat and pings keep the stored idle clock within the hour, rejected frames still don't", async () => {
+    const { stub, a, b, keyA } = await openChatPair("sp1-live-traffic-activity")
+    // the room 20 h after the daily alarm last wrote its activity, nothing
+    // durable since. presence and chat used to leave it there
+    const stale = Date.now() - 20 * HOUR
+    const age = (): Promise<void> => runInDurableObject(stub, async (instance, state) => {
+      await state.storage.put("meta:lastActivity", stale)
+      ;(instance as any).activityAt = stale
+      ;(instance as any).activityPersistedAt = stale
+    })
+    const stored = (): Promise<number> => runInDurableObject(stub, async (_instance, state) =>
+      (await state.storage.get<number>("meta:lastActivity"))!)
+    // an identical chat-key retry is re-acked and isn't activity itself, so
+    // its ack means everything a sent before it is fully handled
+    const settle = async (): Promise<void> => {
+      const acked = collectUntil(a, frame => frame.t === "chat-key-ack")
+      a.send(JSON.stringify(keyA))
+      expect(await acked).not.toBeNull()
+    }
+
+    await age()
+    a.send(JSON.stringify(loc(1, { sd: bytesToBase64url(CHAT_SD_B_RAW) })))
+    await settle()
+    expect(await stored()).toBe(stale)
+
+    const relayed = collectUntil(b, frame => frame.t === "loc")
+    a.send(JSON.stringify(loc(1)))
+    expect(await relayed).not.toBeNull()
+    await settle()
+    expect(Date.now() - await stored()).toBeLessThan(60_000)
+    // still at most once an hour
+    const log = await instrumentStorage(stub)
+    const next = collectUntil(b, frame => frame.t === "loc")
+    a.send(JSON.stringify(loc(2)))
+    expect(await next).not.toBeNull()
+    await settle()
+    await restoreStorage(stub)
+    expect(writeCount(log)).toBe(0)
+
+    await age()
+    const routed = collectUntil(a, frame => frame.t === "chat-ack")
+    a.send(JSON.stringify(await signedChat(A, base64urlBytes(SD), keyA.kid, 1)))
+    expect(await routed).not.toBeNull()
+    await settle()
+    expect(Date.now() - await stored()).toBeLessThan(60_000)
+
+    await age()
+    const pong = collectUntil(a, frame => frame.t === "pong")
+    a.send(JSON.stringify({ t: "ping" }))
+    expect(await pong).toEqual({ t: "pong" })
+    await settle()
+    const last = await stored()
+    expect(Date.now() - last).toBeLessThan(60_000)
+
+    // now a deploy drops both sockets with no close callback and nobody comes
+    // back. the idle clock has to run from that last frame, not 20 h earlier
+    await runInDurableObject(stub, async (instance, state) => {
+      const relay = instance as any
+      relay.activityAt = 0
+      relay.activityPersistedAt = undefined
+      relay.alarmAt = undefined
+      relay.state.getWebSockets = () => []
+      await state.storage.setAlarm(Date.now() + 60_000)
+    })
+    try {
+      expect(await runDurableObjectAlarm(stub)).toBe(true)
+      expect(await runInDurableObject(stub, async (_instance, state) => state.storage.getAlarm()))
+        .toBe(last + LIMITS.IDLE_TTL_MS)
+    } finally {
+      await runInDurableObject(stub, instance => { delete (instance as any).state.getWebSockets })
+    }
+    a.close(); b.close()
+  })
 })
 
 describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
@@ -259,12 +337,14 @@ describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
       expect(await state.storage.get<number>("meta:seq")).toBeGreaterThanOrEqual(before.seq)
       expect(await state.storage.get("meta:auth")).toBe(before.auth)
       expect(await state.storage.get("meta:protocol")).toBe(3)
-      // live ciphertext and actor pins are gone, the tombstone stays
+      // live ciphertext and actor pins are gone, the tombstone stays and A's
+      // pin leaves just its hello epoch behind
       expect(await state.storage.get(`obj:${WIRE_ID}`)).toBeUndefined()
       expect(await state.storage.get(`actor:${A.actor_id}`)).toBeUndefined()
+      expect(await state.storage.get(`epoch:${A.actor_id}`)).toBe("0000000000000001")
       expect(await state.storage.get(`obj:${other}`)).toMatchObject({ deleted: true, vs: stamp(17_500) })
       const exact = await recomputeAccounting(state)
-      expect(exact.total).toBe(1)
+      expect(exact.total).toBe(2)
       expect(await state.storage.get("meta:totalRecords")).toBe(exact.total)
       expect(await state.storage.get("meta:bytes")).toBe(exact.bytes)
     })
@@ -329,6 +409,8 @@ describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
     await runInDurableObject(stub, async (_instance, state) => {
       expect(await state.storage.get("obj:live")).toBeUndefined()
       expect(await state.storage.get("obj:gone")).toMatchObject({ deleted: true, v: 2 })
+      // v2 has no hellos, so nothing to keep a floor for
+      expect((await state.storage.list({ prefix: "epoch:" })).size).toBe(0)
       expect(await state.storage.get<number>("meta:seq")).toBeGreaterThanOrEqual(seqBefore)
       const exact = await recomputeAccounting(state, 2)
       expect(await state.storage.get("meta:totalRecords")).toBe(exact.total)
@@ -430,10 +512,9 @@ describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
     b.close()
   })
 
-  it("purges a room that never accepted a write instead of keeping its meta rows", async () => {
+  it("purges a room nobody wrote to or said hello in instead of keeping its meta rows", async () => {
     const stub = room("sp1-expiry-drive-by")
     const a = await openV3Socket(stub); await drainSnapshot(a)
-    await helloOn(a, hello())
     const closed = waitForClose(a); a.close(1000, "bye"); await closed
     await sleep(50)
     await runInDurableObject(stub, async (_instance, state) => {
@@ -443,6 +524,8 @@ describe("SP1 item 2: idle expiry keeps monotonic room state", () => {
     })
     expect(await runDurableObjectAlarm(stub)).toBe(true)
     await runInDurableObject(stub, async (_instance, state) => {
+      // no record to roll back and no hello epoch to hold anyone to. a room
+      // where someone did say hello keeps its floor, see relay-ref-1 below
       expect([...(await state.storage.list()).keys()]).toEqual([])
       expect(await state.storage.getAlarm()).toBeNull()
     })
@@ -657,6 +740,374 @@ describe("SP1 item 2b: bounded retention, the 90 day idle purge", () => {
     await runInDurableObject(stub, async (_instance, state) => {
       expect(await state.storage.getAlarm()).toBeNull()
     })
+  })
+})
+
+// ADR-001 §14: a join-code holder can't activate an older hello session.
+// idle expiry used to drop the only durable epoch the relay checked (the pin),
+// after which any captured hello and its records went through again
+describe("3.0.1 relay-ref-1: the hello epoch floor outlives idle expiry", () => {
+  const floorOf = (actor: string): string => `epoch:${actor}`
+  const session = (byte: number): Uint8Array => new Uint8Array(32).fill(byte)
+
+  const sockets = (stub: DurableObjectStub): Promise<number> =>
+    runInDurableObject(stub, async (_instance, state) => state.getWebSockets().length)
+
+  // a hello on a fresh socket, plus one frame right behind it. result is
+  // "hello-ack" or the close code, op whatever the follow-up got back.
+  // doesn't return till the relay has dropped the socket: its close callback
+  // only runs once the client sends or echoes the close and it writes
+  // lastActivity. one that landed inside idle() put the idle clock back to
+  // now and the expiry quietly didn't happen (flaked on a cold full run)
+  async function tryHello(
+    stub: DurableObjectStub, frame: Record<string, unknown>, follow?: Record<string, unknown>,
+  ): Promise<{ result: string | number | null; op: any }> {
+    const before = await sockets(stub)
+    const ws = await openV3Socket(stub); await drainSnapshot(ws)
+    const acked = collectUntil(ws, message => message.t === "hello-ack", 2_000)
+    const closed = waitForClose(ws, 2_000)
+    const op = follow
+      ? collectUntil(ws, message => message.t === "op-ack" || message.t === "op-nack", 1_000)
+      : Promise.resolve(null)
+    ws.send(JSON.stringify(frame))
+    if (follow) ws.send(JSON.stringify(follow))
+    const result = await Promise.race([
+      acked.then(message => message ? "hello-ack" : null),
+      closed.then(event => event?.code ?? null),
+    ])
+    const reply = await op
+    try { ws.close() } catch { /* the relay closed it */ }
+    for (let tries = 0; await sockets(stub) > before; tries++) {
+      if (tries === 200) throw new Error("relay never let go of the tryHello socket")
+      await sleep(10)
+    }
+    return { result, op: reply }
+  }
+
+  async function leave(ws: WebSocket): Promise<void> {
+    const closed = waitForClose(ws); ws.close(1000, "bye"); await closed
+    await sleep(50)
+  }
+
+  // last activity daysAgo days back, isolate long since evicted, then the
+  // alarm. an expiry already on record ran IDLE_TTL_MS after that activity,
+  // or a day before it when earlierExpiry (the device came back in between)
+  async function idle(stub: DurableObjectStub, daysAgo: number, earlierExpiry = false): Promise<number> {
+    const last = Date.now() - daysAgo * DAY
+    await runInDurableObject(stub, async (instance, state) => {
+      await state.storage.put("meta:lastActivity", last)
+      ;(instance as any).activityAt = 0
+      ;(instance as any).activityPersistedAt = undefined
+      if (await state.storage.get("meta:expiredAt") !== undefined) {
+        await state.storage.put("meta:expiredAt", earlierExpiry ? last - DAY : last + LIMITS.IDLE_TTL_MS)
+      }
+      await state.storage.setAlarm(Date.now() + 60_000)
+    })
+    expect(await runDurableObjectAlarm(stub)).toBe(true)
+    // make sure the pass actually ran: the room is gone, or an expiry from
+    // after that activity is on record. anything that wrote lastActivity in
+    // between (a late close) skips it and every check after this is moot
+    await runInDurableObject(stub, async (_instance, state) => {
+      if ((await state.storage.list({ limit: 1 })).size === 0) return
+      expect(await state.storage.get<number>("meta:expiredAt")).toBeGreaterThanOrEqual(last)
+    })
+    return last
+  }
+
+  async function floors(stub: DurableObjectStub): Promise<Record<string, unknown>> {
+    return runInDurableObject(stub, async (_instance, state) =>
+      Object.fromEntries(await state.storage.list({ prefix: "epoch:" })))
+  }
+
+  async function expectExactAccounting(stub: DurableObjectStub): Promise<void> {
+    await runInDurableObject(stub, async (_instance, state) => {
+      const exact = await recomputeAccounting(state)
+      expect(await state.storage.get("meta:totalRecords")).toBe(exact.total)
+      expect(await state.storage.get("meta:bytes")).toBe(exact.bytes)
+    })
+  }
+
+  // A writes WIRE_ID at 10 in session 1 (epoch 1), then at 20 in session 2
+  // (epoch 2), and leaves. every member, insider M included, saw all of it
+  async function twoSessions(name: string): Promise<DurableObjectStub> {
+    const stub = room(name)
+    const first = await openV3Socket(stub); await drainSnapshot(first)
+    await helloOn(first, hello())
+    expect((await ackedOrNacked(first, put(10, { rid: rid("session-1") }))).t).toBe("op-ack")
+    const superseded = waitForClose(first)
+    const second = await openV3Socket(stub); await drainSnapshot(second)
+    await helloOn(second, hello2())
+    expect((await superseded)?.code).toBe(4015)
+    expect((await ackedOrNacked(second, put(20, { sd: SD_2, rid: rid("session-2") }))).t).toBe("op-ack")
+    await leave(second)
+    return stub
+  }
+
+  it("still refuses a captured older session after idle expiry, so its old record can't roll the object back", async () => {
+    const stub = await twoSessions("floor-review-replay")
+    // M replays session 1 and its stamp 10 put while A's pin is there
+    expect(await tryHello(stub, hello(), put(10, { rid: rid("m-before") }))).toEqual({ result: 4014, op: null })
+    await idle(stub, 8)
+    // the review got hello-ack and op-ack here, then a fresh joiner saw the
+    // object back at stamp 10
+    const replays = [
+      await tryHello(stub, hello(), put(10, { rid: rid("m-after-1") })),
+      // A's last session from a second socket is refused too, same as before expiry
+      await tryHello(stub, hello2(), put(20, { sd: SD_2, rid: rid("m-after-2") })),
+    ]
+    console.log(JSON.stringify({ relay_ref_1: "replay-after-expiry", replays }))
+    expect(replays).toEqual([{ result: 4014, op: null }, { result: 4014, op: null }])
+    const fresh = await openV3Socket(stub)
+    const live = collectUntil(fresh, frame => frame.t === "hello", 500)
+    const snapshot = await drainSnapshot(fresh)
+    expect(snapshot.items.find(item => item.id === WIRE_ID)).toBeUndefined()
+    // and no stale session of A's is advertised as live
+    expect(await live).toBeNull()
+    // all that's left of A is its newest epoch
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.get(`actor:${A.actor_id}`)).toBeUndefined()
+      expect(await state.storage.get(`obj:${WIRE_ID}`)).toBeUndefined()
+    })
+    expect(await floors(stub)).toEqual({ [floorOf(A.actor_id)]: "0000000000000002" })
+    await expectExactAccounting(stub)
+    fresh.close()
+  })
+
+  it("keeps the floor in a room that only ever shared positions, so a captured session can't come back there either", async () => {
+    // position sharing only: A in session 1 then session 2, nothing written.
+    // any member saw both hellos and session 1's loc
+    const stub = room("floor-presence-only")
+    const first = await openV3Socket(stub); await drainSnapshot(first)
+    await helloOn(first, hello())
+    first.send(JSON.stringify(loc(1)))
+    const superseded = waitForClose(first)
+    const second = await openV3Socket(stub); await drainSnapshot(second)
+    await helloOn(second, hello2())
+    expect((await superseded)?.code).toBe(4015)
+    second.send(JSON.stringify(loc(1, { sd: SD_2 })))
+    await leave(second)
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.get("meta:seq")).toBeUndefined()
+      expect(await state.storage.get("meta:highWater")).toBeUndefined()
+      expect((await state.storage.list({ prefix: "obj:" })).size).toBe(0)
+    })
+    await idle(stub, 8)
+    // this used to wipe the room whole, pin and all, so the replay below got
+    // hello-ack and a fresh joiner saw A's old session and position as live
+    const observer = await openV3Socket(stub); await drainSnapshot(observer)
+    const leaked = collectUntil(observer, frame => frame.by === A.actor_id, 1_500)
+    expect(await tryHello(stub, hello(), loc(2))).toEqual({ result: 4014, op: null })
+    expect((await tryHello(stub, hello2())).result).toBe(4014)
+    expect(await leaked).toBeNull()
+    await leave(observer)
+    expect(await floors(stub)).toEqual({ [floorOf(A.actor_id)]: "0000000000000002" })
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect(await state.storage.get(`actor:${A.actor_id}`)).toBeUndefined()
+      expect(await state.storage.get("meta:auth")).toBeDefined()
+      // seq moves like any expiry that drops something, so a device back
+      // after the purge gets the rollback notice and a new join code
+      expect(await state.storage.get("meta:seq")).toBe(1)
+    })
+    await expectExactAccounting(stub)
+    // A's own next session still gets in
+    expect((await tryHello(stub, await signedHello(A, session(0x71), 3))).result).toBe("hello-ack")
+    // and the 90-day purge takes all of it
+    await idle(stub, 91)
+    expect(await runInDurableObject(stub, async (_instance, state) => [...(await state.storage.list()).keys()])).toEqual([])
+  })
+
+  it("takes a device back on its next session after expiry, swaps its floor for a pin, and keeps that session's retry idempotent", async () => {
+    const stub = room("floor-return")
+    const a = await openV3Socket(stub); await drainSnapshot(a)
+    await helloOn(a, hello())
+    expect((await ackedOrNacked(a, put(10, { rid: rid("before") }))).t).toBe("op-ack")
+    await leave(a)
+    await idle(stub, 8)
+    expect(await floors(stub)).toEqual({ [floorOf(A.actor_id)]: "0000000000000001" })
+    // what the app sends next: its persisted epoch + 1 on a fresh session
+    const back = await openV3Socket(stub); await drainSnapshot(back)
+    await helloOn(back, hello2())
+    // the identical hello again on the same socket is the same session, re-acked
+    const again = collectUntil(back, frame => frame.t === "hello-ack")
+    back.send(JSON.stringify(hello2()))
+    expect(await again).toEqual({ t: "hello-ack", by: A.actor_id, sd: SD_2, vs: stamp(2) })
+    expect((await ackedOrNacked(back, put(21, { sd: SD_2, rid: rid("after") }))).t).toBe("op-ack")
+    expect(await floors(stub)).toEqual({})
+    expect(await runInDurableObject(stub, async (_instance, state) => state.storage.get(`actor:${A.actor_id}`)))
+      .toMatchObject({ helloEpoch: "0000000000000002", hello: hello2() })
+    await expectExactAccounting(stub)
+    // a second socket presenting that live session gets the 4014 it always got
+    // (relay.test.ts, same and older epochs), the bound one is left alone
+    expect((await tryHello(stub, hello2())).result).toBe(4014)
+    expect((await ackedOrNacked(back, put(22, { sd: SD_2, rid: rid("still-bound") }))).t).toBe("op-ack")
+    back.close()
+  })
+
+  it("holds a device that lost its replay state to the floor, as the pin would, until its recovery epoch clears it", async () => {
+    const stub = room("floor-lost-state")
+    const a = await openV3Socket(stub); await drainSnapshot(a)
+    await helloOn(a, await signedHello(A, session(0x31), 7))
+    expect((await ackedOrNacked(a, put(10, { sd: bytesToBase64url(session(0x31)), rid: rid("before") }))).t).toBe("op-ack")
+    await leave(a)
+    await idle(stub, 8)
+    // a 2.x app with lost state restarts at 1 and climbs one per retry
+    expect((await tryHello(stub, await signedHello(A, session(0x32), 1))).result).toBe(4014)
+    expect((await tryHello(stub, await signedHello(A, session(0x33), 7))).result).toBe(4014)
+    // a 3.0 app restarts at the unix minute (plans/04 s14), well clear of it
+    const recovered = await signedHello(A, session(0x34), Math.floor(Date.now() / 60_000))
+    expect((await tryHello(stub, recovered)).result).toBe("hello-ack")
+  })
+
+  it("keeps the floor through 89 idle days and the 90-day purge takes it with the rest", async () => {
+    const stub = await twoSessions("floor-purge")
+    await idle(stub, 8)
+    await idle(stub, 89)
+    expect(await floors(stub)).toEqual({ [floorOf(A.actor_id)]: "0000000000000002" })
+    await idle(stub, 91)
+    expect(await runInDurableObject(stub, async (_instance, state) => [...(await state.storage.list()).keys()])).toEqual([])
+    // the purged room starts over with nothing to hold a hello to, which is
+    // why a device back after it has to move to a new join code (ADR-001 §16)
+    expect((await tryHello(stub, hello())).result).toBe("hello-ack")
+  })
+
+  it("is durable: evicting the Durable Object after expiry changes nothing", async () => {
+    const stub = await twoSessions("floor-eviction")
+    await idle(stub, 8)
+    await evictDurableObject(stub)
+    expect((await tryHello(stub, hello())).result).toBe(4014)
+    await evictDurableObject(stub)
+    expect((await tryHello(stub, await signedHello(A, session(0x41), 3))).result).toBe("hello-ack")
+    expect(await floors(stub)).toEqual({})
+  })
+
+  it("stores every floor before it drops any pin, so a pass that dies half way loses no epoch and the counts stay exact", async () => {
+    const stub = room("floor-crash")
+    const other = await genIdentity()
+    const a = await openV3Socket(stub); await drainSnapshot(a)
+    await helloOn(a, hello2())
+    expect((await ackedOrNacked(a, put(10, { sd: SD_2, rid: rid("a-put") }))).t).toBe("op-ack")
+    const b = await openV3Socket(stub); await drainSnapshot(b)
+    await helloOn(b, await genHello(other, 5))
+    await leave(a); await leave(b)
+    await runInDurableObject(stub, async (instance, state) => {
+      await state.storage.put("meta:lastActivity", Date.now() - 8 * DAY)
+      await state.storage.setAlarm(Date.now() + 60_000)
+      // the pass dies at its first pin delete
+      const storage = (instance as any).state.storage
+      const original = storage.delete.bind(storage)
+      storage.delete = (keys: unknown, ...rest: unknown[]) => {
+        const list = (Array.isArray(keys) ? keys : [keys]).map(String)
+        return list.some(key => key.startsWith("actor:"))
+          ? Promise.reject(new Error("injected pin delete failure"))
+          : original(keys, ...rest)
+      }
+    })
+    expect(await runDurableObjectAlarm(stub)).toBe(true)
+    const afterFailure = await runInDurableObject(stub, async (instance, state) => {
+      delete (instance as any).state.storage.delete
+      return {
+        pins: (await state.storage.list({ prefix: "actor:" })).size,
+        expiring: await state.storage.get("meta:expiring"),
+      }
+    })
+    expect(afterFailure.pins).toBe(2)
+    expect(afterFailure.expiring).toBeDefined()
+    expect(await floors(stub)).toEqual({
+      [floorOf(A.actor_id)]: "0000000000000002", [floorOf(other.actor)]: "0000000000000005",
+    })
+    // a join in between recounts pins and floors, and A coming back on that
+    // socket swaps its floor for a pin without the counts drifting
+    const back = await openV3Socket(stub); await drainSnapshot(back)
+    await expectExactAccounting(stub)
+    await helloOn(back, await signedHello(A, session(0x51), 3))
+    expect(await floors(stub)).toEqual({ [floorOf(other.actor)]: "0000000000000005" })
+    await expectExactAccounting(stub)
+    await leave(back)
+    // the retry finishes the job
+    await idle(stub, 8)
+    await runInDurableObject(stub, async (_instance, state) => {
+      expect((await state.storage.list({ prefix: "actor:" })).size).toBe(0)
+      expect(await state.storage.get("meta:expiring")).toBeUndefined()
+      expect(await state.storage.get("meta:expiredAt")).toBeDefined()
+    })
+    expect(await floors(stub)).toEqual({
+      [floorOf(A.actor_id)]: "0000000000000003", [floorOf(other.actor)]: "0000000000000005",
+    })
+    await expectExactAccounting(stub)
+  })
+
+  it("adds no write to a hello: floors are written by expiry and only the hello that replaces one removes it", async () => {
+    const stub = room("floor-writes")
+    const a = await openV3Socket(stub); await drainSnapshot(a)
+    await helloOn(a, hello())
+    expect((await ackedOrNacked(a, put(1))).t).toBe("op-ack")
+    let log = await instrumentStorage(stub)
+    const superseded = waitForClose(a)
+    const b = await openV3Socket(stub); await drainSnapshot(b)
+    await helloOn(b, hello2())
+    expect((await superseded)?.code).toBe(4015)
+    await restoreStorage(stub)
+    expect([...log.puts, ...log.deletes].filter(key => key.startsWith("epoch:"))).toEqual([])
+    await leave(b)
+    await idle(stub, 8)
+    log = await instrumentStorage(stub)
+    const c = await openV3Socket(stub); await drainSnapshot(c)
+    await helloOn(c, await signedHello(A, session(0x61), 3))
+    await restoreStorage(stub)
+    console.log(JSON.stringify({ relay_ref_1: "hello-after-expiry-writes", puts: log.puts, deletes: log.deletes }))
+    expect(log.puts.filter(key => key.startsWith("epoch:"))).toEqual([])
+    expect(log.deletes).toEqual([floorOf(A.actor_id)])
+    c.close()
+  })
+
+  it("arms nothing of its own, and a later expiry only rewrites the floors that moved", async () => {
+    const stub = room("floor-alarms")
+    const other = await genIdentity()
+    const a = await openV3Socket(stub); await drainSnapshot(a)
+    await helloOn(a, hello())
+    expect((await ackedOrNacked(a, put(1))).t).toBe("op-ack")
+    const b = await openV3Socket(stub); await drainSnapshot(b)
+    await helloOn(b, await genHello(other, 4))
+    await leave(a); await leave(b)
+    const last = await idle(stub, 8)
+    expect(await runInDurableObject(stub, async (_instance, state) => state.storage.getAlarm()))
+      .toBe(last + LIMITS.ROOM_PURGE_TTL_MS)
+    expect(await floors(stub)).toEqual({
+      [floorOf(A.actor_id)]: "0000000000000001", [floorOf(other.actor)]: "0000000000000004",
+    })
+    // A comes back for a while, the other device never does
+    const back = await openV3Socket(stub); await drainSnapshot(back)
+    await helloOn(back, hello2())
+    await leave(back)
+    const log = await instrumentStorage(stub)
+    await idle(stub, 8, true)
+    await restoreStorage(stub)
+    expect(log.puts.filter(key => key.startsWith("epoch:"))).toEqual([floorOf(A.actor_id)])
+    expect(await floors(stub)).toEqual({
+      [floorOf(A.actor_id)]: "0000000000000002", [floorOf(other.actor)]: "0000000000000004",
+    })
+    expect(await runInDurableObject(stub, async (_instance, state) => (await state.storage.list({ prefix: "actor:" })).size)).toBe(0)
+    await expectExactAccounting(stub)
+  })
+
+  it("counts a floor against the room quota like the pin it replaced, so a returning device still fits a full room", async () => {
+    const stub = room("floor-quota")
+    const a = await openV3Socket(stub); await drainSnapshot(a)
+    await helloOn(a, hello())
+    expect((await ackedOrNacked(a, put(1))).t).toBe("op-ack")
+    await leave(a)
+    await idle(stub, 8)
+    await runInDurableObject(stub, async (_instance, state) => {
+      // A's floor is all that's left to count
+      expect(await state.storage.get("meta:totalRecords")).toBe(1)
+      await state.storage.put("meta:totalRecords", LIMITS.MAX_RECORDS)
+    })
+    expect((await tryHello(stub, await genHello(await genIdentity()))).result).toBe(4013)
+    const back = await openV3Socket(stub); await drainSnapshot(back)
+    await helloOn(back, hello2())
+    expect(await runInDurableObject(stub, async (_instance, state) => state.storage.get("meta:totalRecords")))
+      .toBe(LIMITS.MAX_RECORDS)
+    back.close()
   })
 })
 
