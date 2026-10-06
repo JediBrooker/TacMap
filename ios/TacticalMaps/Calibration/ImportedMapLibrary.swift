@@ -441,6 +441,14 @@ enum ImportedMapLibrary {
         FileManager.default.fileExists(atPath: storageURLProvider().path)
     }
 
+    /// C2: are the library's bytes still on the device somewhere, the file itself
+    /// (quarantine move failed) or a .corrupt-* copy beside it. false = it just
+    /// vanished after a write (keychain record only), nothing was kept
+    static func bytesKept() -> Bool {
+        let url = storageURLProvider()
+        return FileManager.default.fileExists(atPath: url.path) || SafeStore.quarantineSiblingExists(url)
+    }
+
     /// Absolute URL of an entry's file, nil for anything that tries to leave
     /// the two managed directories.
     static func fileURL(_ e: ImportedMapEntry) -> URL? {
