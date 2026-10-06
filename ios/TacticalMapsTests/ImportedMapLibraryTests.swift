@@ -154,6 +154,9 @@ final class ImportedMapLibraryTests: XCTestCase {
 
     // MARK: - D5-19: delete removes files, tiles, sidecars and drafts
 
+    // on main like the app: since M2 the restored pack's open lands on main, and
+    // racing it from a background executor could put it back up after the delete
+    @MainActor
     func testDeleteCascadesToDerivedTilesSidecarsAndDrafts() async throws {
         let drafts = InMemoryCalibrationDraftStore()
         let vm = MapViewModel(libraryDependencies: deps(drafts: drafts), initialMapSource: OnlineRasterBasemapSource(.osmTopo))

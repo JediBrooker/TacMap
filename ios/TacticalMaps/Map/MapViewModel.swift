@@ -452,10 +452,13 @@ final class MapViewModel: ObservableObject {
         pendingPackOpen = nil
         guard let src else {
             // refused: nothing written. A restore goes online in memory like it
-            // always did, an activation leaves the old map up
+            // always did, an activation leaves the old map up. Unless the old map
+            // is a restore's blank placeholder this tap took over from
             if armed { guardStore.complete(token: token) }
             if plan.placeholder {
                 publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+            } else {
+                replaceOrphanedPlaceholder(refused: e.id)
             }
             return
         }
@@ -475,13 +478,22 @@ final class MapViewModel: ObservableObject {
             self.clearCalibrationReturn()
             self.publishMapSource(src, reframe: plan.reframe)
         }
-        // this tap took over from a restore still opening and its write failed:
-        // dont leave the blank placeholder up with nothing coming
-        if !ok, pendingPackOpen == nil, let held = mapSource as? MBTilesOpeningSource,
-           let restored = library?.entry(held.entryID), !openPack(restored, plan: .restore) {
-            publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
-        }
+        // this tap took over from a restore still opening and its write failed
+        if !ok { replaceOrphanedPlaceholder() }
         return ok
+    }
+
+    /// an activation took over from a restore that was still opening, then
+    /// didnt land (pack refused, or its write failed). The restore's result got
+    /// dropped, so nothing is coming for the blank placeholder: open the restored
+    /// pack again, online in memory when that can't happen or it's the very pack
+    /// that just got refused. Never leave the blank up with nothing pending
+    private func replaceOrphanedPlaceholder(refused: UUID? = nil) {
+        guard pendingPackOpen == nil, let held = mapSource as? MBTilesOpeningSource else { return }
+        if held.entryID != refused, let restored = library?.entry(held.entryID), openPack(restored, plan: .restore) {
+            return
+        }
+        publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
     }
 
     private static func entryID(of s: MapSource) -> UUID? {

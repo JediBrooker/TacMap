@@ -126,6 +126,31 @@ final class MBTilesOpenGuardTests: XCTestCase {
         }
     }
 
+    /// two overlapping opens of one pack: one marker on disk, it comes off with
+    /// the last complete, not the first
+    func testOverlappingArmsOfOnePackKeepTheMarkerUntilTheLastCompletes() {
+        let url = dir.appendingPathComponent("overlap.json")
+        let g = MBTilesOpenGuard(url: url)
+        let a = UUID().uuidString, b = UUID().uuidString
+        XCTAssertTrue(g.arm(token: a, foreground: true))
+        XCTAssertTrue(g.arm(token: b, foreground: true))
+        XCTAssertTrue(g.arm(token: a, foreground: true))
+        XCTAssertEqual(MBTilesOpenGuard(url: url).snapshot.inProgress, [b, a], "still one per pack on disk")
+        g.complete(token: a)
+        XCTAssertEqual(MBTilesOpenGuard(url: url).snapshot.inProgress, [b, a], "the other open of a is still running")
+        g.complete(token: b)
+        g.complete(token: a)
+        XCTAssertEqual(MBTilesOpenGuard(url: url).snapshot.inProgress, [])
+        // a background arm never counts, the foreground one still clears alone
+        XCTAssertFalse(g.arm(token: a, foreground: false))
+        XCTAssertTrue(g.arm(token: a, foreground: true))
+        g.complete(token: a)
+        XCTAssertEqual(MBTilesOpenGuard(url: url).snapshot.inProgress, [])
+        // an extra complete stays a no op
+        g.complete(token: a)
+        XCTAssertEqual(MBTilesOpenGuard(url: url).snapshot.inProgress, [])
+    }
+
     func testFileDecodeIsStrictAndOnlyHoldsEntryIds() throws {
         let a = UUID().uuidString, b = UUID().uuidString, c = UUID().uuidString, d = UUID().uuidString
         let e = UUID().uuidString

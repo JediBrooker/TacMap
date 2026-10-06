@@ -100,6 +100,11 @@ final class MBTilesOpenGuard {
     private let url: URL
     private let lock = NSLock()
     private var state: MBTilesOpenGuardState
+    /// arms still out per token, this process only. Two opens of one pack can
+    /// overlap (tapping the pack a restore is still opening, a superseded open
+    /// landing late) and the first one done mustnt pull the marker out from
+    /// under the other. The file still holds one marker per pack
+    private var outstanding: [String: Int] = [:]
 
     init(url: URL) {
         self.url = url
@@ -120,12 +125,19 @@ final class MBTilesOpenGuard {
         guard MBTilesOpenGuardState.isToken(token) else { return false }
         lock.lock(); defer { lock.unlock() }
         guard MBTilesOpenGuardReducer.arm(&state, token: token, foreground: foreground) else { return false }
+        outstanding[token, default: 0] += 1
         persist()
         return true
     }
 
+    /// one per arm that returned true. The marker comes off with the last one
     func complete(token: String) {
         lock.lock(); defer { lock.unlock() }
+        if let n = outstanding[token], n > 1 {
+            outstanding[token] = n - 1
+            return
+        }
+        outstanding[token] = nil
         let before = state
         MBTilesOpenGuardReducer.complete(&state, token: token)
         if state != before { persist() }
