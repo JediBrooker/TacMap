@@ -197,7 +197,8 @@ internal class SnapshotValidator(
         // an object we already keep under an uppercase id (old imports kept the raw feature id)
         // stays under it. folding past it made a second copy, or tombstoned our own record.
         // with no local twin keep the sender's casing (3.0.2): 3.0.0 and 2.x android upsert by
-        // exact id, so a lowercase fold made them a second copy once we edited it
+        // exact id, so a lowercase fold made them a second copy once we edited it. localIdOf
+        // also gives the id the diff still tracks a just deleted one under (3.0.3), see trackedAliases
         val localId = localIdOf(canonical) ?: canonical.takeIf { localKindOf(it) != null } ?: embeddedId
         val folded = withLocalId(parsed, localId)
         // a waypoint and a drawing never share one UUID. applying it anyway left
@@ -258,6 +259,29 @@ internal class SnapshotValidator(
                 if (id.none { it in 'A'..'F' }) continue
                 val lower = SyncIdentity.canonicalUuid(id) ?: continue
                 if (isStored(lower)) continue
+                (out ?: HashMap<String, String>().also { out = it }).putIfAbsent(lower, id)
+            }
+            return out ?: emptyMap()
+        }
+
+        /**
+         * lowercase UUID -> the id the outbound diff still tracks an object under (echo baseline,
+         * forced re-diff, delivery in flight) once no stored object has that UUID in any casing.
+         * Thats a local delete the diff hasn't sent yet. A newer put for it has to land back on
+         * that id: under the sender's other casing the old id looked gone to the diff, which then
+         * tombstoned the object we'd just applied, room wide (R1-V3-STALE-BASELINE). First one wins.
+         */
+        fun trackedAliases(
+            trackedIds: Sequence<String>,
+            isStored: (String) -> Boolean,
+            storedAliases: Map<String, String>,
+        ): Map<String, String> {
+            var out: HashMap<String, String>? = null
+            for (id in trackedIds) {
+                // still stored is the common case and needs no regex
+                if (isStored(id)) continue
+                val lower = SyncIdentity.canonicalUuid(id) ?: continue
+                if (isStored(lower) || lower in storedAliases) continue
                 (out ?: HashMap<String, String>().also { out = it }).putIfAbsent(lower, id)
             }
             return out ?: emptyMap()
