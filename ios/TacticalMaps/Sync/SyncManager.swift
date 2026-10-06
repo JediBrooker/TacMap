@@ -1209,6 +1209,9 @@ final class SyncManager: ObservableObject {
     private var relockedRevisionEvents: [[String]] = []
     /// K1: configure's journal read ran behind the relock, read it after the unlock
     private var relockedJournalLoad: LocalModelRevisionJournal?
+    /// K1: a v3 join whose replay state read hit the relock (Join tapped right
+    /// before leaving the app). Finished after the unlock instead of abandoned
+    private var relockedJoin: (@MainActor () -> Void)?
 
     // v2 containment ceilings (pending v3 protocol limits)
     private static let maxBase64Bytes = 1_048_576        // 1 MiB encoded ct
@@ -1361,6 +1364,11 @@ final class SyncManager: ObservableObject {
         if let journal = relockedJournalLoad {
             relockedJournalLoad = nil
             loadRevisionJournal(journal)
+        }
+        // after the journal: finishJoin waits on a journal still loading
+        if let join = relockedJoin {
+            relockedJoin = nil
+            join()
         }
         guard !relockedRevisionEvents.isEmpty else { return }
         let ids = relockedRevisionEvents.flatMap { $0 }
@@ -1893,6 +1901,16 @@ final class SyncManager: ObservableObject {
             }) { [weak self] in
                 guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
                 guard loaded.success else {
+                    if rs.loadHitRelock {
+                        // the key relocked under the read, the file's fine. not
+                        // a damaged state: finish this join after the unlock
+                        self.relockedJoin = { [weak self] in
+                            guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                            self.finishJoin(code: code, v3: v3, v2: v2, proposedRoomName: proposedRoomName)
+                        }
+                        self.resumeRelockedJournalWork()
+                        return
+                    }
                     self.pendingLastError = Messages.syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage()
                     self.abandonJoin()
                     return
@@ -1987,6 +2005,7 @@ final class SyncManager: ObservableObject {
         reconnectBackoff.reset()
         closeClassifier.reset()
         joinState = JoinState()
+        relockedJoin = nil
         mutationsPaused = false
         pausedForAction = nil
         surfacedIssueLog.removeAll()

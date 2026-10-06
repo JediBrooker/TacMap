@@ -335,6 +335,43 @@ final class SyncRelockTests: XCTestCase {
         XCTAssertNil(manager.lastError)
     }
 
+    /// Join tapped just before leaving the app: its replay state read ran behind
+    /// the relock. That used to abandon the join with "Saved rollback-protection
+    /// state is locked or damaged" and the user had to join again
+    func testAJoinWhoseReplayReadHitTheRelockFinishesAfterUnlock() throws {
+        let executor = HoldablePersistenceExecutor()
+        harness = try SyncManagerHarness(persistenceExecutor: executor)
+        let key = InstrumentedDataKey(dek: SyncManagerHarness.testKey)
+        try key.install()
+        // a room this device was in before, so there's a sealed state to read
+        harness.join()
+        harness.connect()
+        XCTAssertEqual(manager.status, .connected)
+        manager.leave()
+        let reads = key.reads
+
+        executor.holding = true
+        harness.join()
+        // the join's ordering hop, then the replay read, both on the worker
+        executor.runNext()
+        XCTAssertEqual(executor.queuedCount, 1, "the replay read is waiting on the worker")
+        goBackground(key)
+        executor.runNext()
+        assertNoStop(key, reads: reads)
+        XCTAssertEqual(manager.room, harness.joinCode, "still joined, not abandoned")
+        XCTAssertEqual(harness.socketCount, 1, "no socket without the replay state")
+
+        // the unlock queues the read again, the worker gets to it after
+        try comeBack(key)
+        XCTAssertEqual(executor.queuedCount, 1, "read again now")
+        executor.resume()
+        XCTAssertNil(manager.lastError)
+        XCTAssertEqual(harness.socketCount, 2, "the join finished after the unlock")
+        harness.connect()
+        XCTAssertEqual(manager.status, .connected)
+        XCTAssertNil(manager.lastError)
+    }
+
     func testAJournalReadBehindTheRelockAtLaunchIsReadAgainAfterUnlock() throws {
         let executor = HoldablePersistenceExecutor()
         executor.holding = true
