@@ -142,8 +142,9 @@ private struct RootGate: View {
     /// Keep Screen On only suppresses auto-lock while TacMap is frontmost;
     /// iOS restores its normal idle timer whenever another app is active.
     private func applyKeepScreenOn() {
-        // a running offline tile bake keeps the screen on while we're in front too
-        UIApplication.shared.isIdleTimerDisabled = opsec.keepScreenOn || PDFBakeController.shared.isRunning
+        // a running offline tile bake keeps the screen on while we're in front too,
+        // one parked behind the relock doesnt
+        UIApplication.shared.isIdleTimerDisabled = opsec.keepScreenOn || PDFBakeController.shared.keepsScreenAwake
     }
 }
 

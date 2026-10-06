@@ -285,11 +285,14 @@ final class PDFBakeTests: XCTestCase {
         let p = try proposal()
         let partialsBefore = Set(workFiles())
         controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
+        XCTAssertTrue(controller.keepsScreenAwake)
         // left the app: the bake carries on, the key relocks
         relocked = true
         waitFor("bake") { controller.waitingForUnlock || !controller.isRunning }
         XCTAssertTrue(controller.waitingForUnlock, "ended in \(controller.state) instead of waiting")
         XCTAssertTrue(controller.isRunning)
+        // back in front on the locked screen: applyKeepScreenOn mustnt hold auto lock off for it
+        XCTAssertFalse(controller.keepsScreenAwake, "a parked bake isnt working, the device should still auto lock")
         XCTAssertEqual(lockedAttaches, 0, "no library write behind the lock")
         XCTAssertNil(pdf.bake)
         XCTAssertTrue(persisted.isEmpty)
@@ -304,7 +307,11 @@ final class PDFBakeTests: XCTestCase {
         XCTAssertEqual(lockedAttaches, 0)
 
         relocked = false
+        // whatever the timer was left at (an older applyKeepScreenOn), the publish hands it back
+        UIApplication.shared.isIdleTimerDisabled = !OpsecSettings.shared.keepScreenOn
         controller.publishParkedBake()
+        XCTAssertEqual(UIApplication.shared.isIdleTimerDisabled, OpsecSettings.shared.keepScreenOn,
+                       "Keep Screen On decides once the parked bake is done")
         XCTAssertFalse(controller.waitingForUnlock)
         XCTAssertEqual(controller.state, .idle)
         XCTAssertTrue(controller.finishedMessage)
@@ -323,7 +330,11 @@ final class PDFBakeTests: XCTestCase {
         controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
         waitFor("bake") { controller.waitingForUnlock || !controller.isRunning }
         XCTAssertTrue(controller.waitingForUnlock)
+        XCTAssertFalse(controller.keepsScreenAwake)
+        UIApplication.shared.isIdleTimerDisabled = !OpsecSettings.shared.keepScreenOn
         controller.cancel()
+        XCTAssertEqual(UIApplication.shared.isIdleTimerDisabled, OpsecSettings.shared.keepScreenOn,
+                       "cancelling the parked bake gives the timer back to Keep Screen On")
         XCTAssertFalse(controller.waitingForUnlock)
         XCTAssertEqual(controller.state, .idle)
         XCTAssertNil(pdf.bake)

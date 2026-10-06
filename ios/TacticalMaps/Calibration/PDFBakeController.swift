@@ -218,6 +218,9 @@ final class PDFBakeController: ObservableObject {
 
     /// done baking, waiting on the unlock to record it (state stays running)
     var waitingForUnlock: Bool { parked != nil }
+    /// does the bake hold the idle timer off. a parked one is done working, so
+    /// no: otherwise the device never auto locks while it waits on the unlock
+    var keepsScreenAwake: Bool { isRunning && parked == nil }
     /// tests point this somewhere private
     var finalDirectory: URL = PDFBakeReader.directoryURL()
     // The three below go through the sealed imported-map library (the one
@@ -591,7 +594,8 @@ final class PDFBakeController: ObservableObject {
     func publishParkedBake() {
         guard let p = parked, !keyRelocked() else { return }
         parked = nil
-        defer { endGuard() }
+        // the scenePhase pass may have put the timer back on for us, give it back
+        defer { endGuard(); endBackgroundWork() }
         publishFinished(p.out, pdf: p.pdf, ctx: p.ctx, maxZoom: p.maxZoom, neededBytes: p.neededBytes)
     }
 
@@ -601,6 +605,7 @@ final class PDFBakeController: ObservableObject {
         parked = nil
         try? FileManager.default.removeItem(at: p.out.url)
         endGuard()
+        endBackgroundWork()
     }
 
     private func endGuard() {
