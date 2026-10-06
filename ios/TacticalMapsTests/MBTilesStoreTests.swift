@@ -586,7 +586,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(reserved.count, 149)
         XCTAssertEqual(Set(reserved), MBTilesViewShape.reservedWords)
         let cases = try XCTUnwrap(shape["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 82)
+        XCTAssertEqual(cases.count, 88)
         var reasons: [String: Int] = [:]
         for c in cases {
             let id = try XCTUnwrap(c["id"] as? String)
@@ -608,8 +608,9 @@ final class MBTilesStoreTests: XCTestCase {
             }
         }
         // 3.0.2 SEC-M1-SHADOW moved ifNotExists from accepted to shape. SHADOW-PARITY-2
-        // moved onWithAnd the other way and added the comma join / AND rows
-        XCTAssertEqual(reasons, ["accepted": 23, "tooLong": 1, "token": 18, "shape": 40])
+        // moved onWithAnd the other way and added the comma join / AND rows. 3.0.3
+        // added six more shape rows (widening review F3: IS, USING, empty parens)
+        XCTAssertEqual(reasons, ["accepted": 23, "tooLong": 1, "token": 18, "shape": 46])
         for id in ["gdal2mbtiles", "tippecanoe", "onWithAnd"] {
             let c = try XCTUnwrap(cases.first { $0["id"] as? String == id }, id)
             XCTAssertEqual((c["expect"] as? [String: Any])?["accepted"] as? Bool, true, id)
