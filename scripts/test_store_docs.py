@@ -58,6 +58,21 @@ class StoreCopyTests(unittest.TestCase):
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
                 self.assertIn(f'```\n{text}\n```', history, path.name)
 
+    def test_memory_note_only_says_more_packs_are_refused(self):
+        # F1: THREAT_MODEL s7 keeps the index residual (a huge index key still gets loaded whole, with no cap
+        # on iOS or android before 12), so the notes can say more packs built that way are refused, never
+        # all of them. if that residual ever goes, this can go too
+        self.assertIn("What remains: indexes aren't checked", (ROOT / 'docs/THREAT_MODEL.md').read_text())
+        words = {'en-US.json': ('too much memory', r'\b[Mm]ore\b', 'built to'),
+                 'de-DE.json': ('zu viel Speicher', r'\bWeitere\b', 'so gebaut')}
+        for name, (memory, partial, built) in words.items():
+            data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
+            for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
+                lines = [line for line in text.split('\n') if memory in line]
+                self.assertEqual(len(lines), 1, name)
+                self.assertRegex(lines[0], partial, name)
+                self.assertIn(built, lines[0], name)
+
     def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):
         # F2: a missing or changed pack is unavailable, Delete only, and just a refused one (openFailed) has
         # the tap to retry. so a notes sentence that offers a retry has to say it's for one that won't open
