@@ -26,7 +26,12 @@ class MBTilesViewShapeTest {
     fun everyViewShapeCaseGetsTheSharedVerdictReasonAndTables() {
         val cases = shape["cases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} cases", cases.size >= 63)
+        assertTrue("only ${cases.size} cases", cases.size >= 82)
+        // SHADOW-PARITY-2: gdal2mbtiles' comma join and tippecanoe's ON ... and ... opened in 3.0.1, keep them open
+        for (id in listOf("gdal2mbtiles", "tippecanoe", "onWithAnd", "commaJoinWhereAnd")) {
+            val case = cases.single { it["id"]!!.jsonPrimitive.content == id }
+            assertTrue(id, case["expect"]!!.jsonObject["accepted"]!!.jsonPrimitive.boolean)
+        }
         val reasons = HashSet<String>()
         for (case in cases) {
             val id = case["id"]!!.jsonPrimitive.content

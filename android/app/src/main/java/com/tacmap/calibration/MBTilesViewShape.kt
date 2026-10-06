@@ -4,10 +4,12 @@ import java.util.Locale
 
 /**
  * s14.1 viewShape: the only views an MBTiles pack may have. A plain projection of one table
- * or an equi-join of two, made of column refs and aliases, checked on the view's text before
- * anything reads it, so no expression stored in the file ever gets evaluated. Straight port
- * of the generator's _vs_tokens() / view_shape() (scripts/gen_calibration_fixtures.py),
- * pinned by import_limits.json viewShape.cases. Pure, no SQLite in here
+ * or an equi-join of two (JOIN ... ON / USING, or a comma join with WHERE, the condition
+ * colref = colref joined by AND), made of column refs and aliases, checked on the view's
+ * text before anything reads it, so no expression stored in the file ever gets evaluated.
+ * Straight port of the generator's _vs_tokens() / view_shape()
+ * (scripts/gen_calibration_fixtures.py), pinned by import_limits.json viewShape.cases.
+ * Pure, no SQLite in here
  */
 internal object MBTilesViewShape {
     sealed class Result {
@@ -147,8 +149,21 @@ internal object MBTilesViewShape {
             if (kw("AS")) ident() else maybeIdent()
         }
 
+        // colref = colref, any number of them joined by AND, parens round the whole lot or none
+        private fun equalities() {
+            val paren = punct("(")
+            do {
+                colref()
+                need(punct("="))
+                colref()
+            } while (kw("AND"))
+            if (paren) need(punct(")"))
+        }
+
         // no IF NOT EXISTS (SEC-M1-SHADOW): sqlite drops it when it stores a view, so only a hand edit has it,
-        // and the duplicate it lets sqlite skip is how a decoy row sat behind the live view
+        // and the duplicate it lets sqlite skip is how a decoy row sat behind the live view.
+        // SHADOW-PARITY-2: the comma join and ON ... AND ... are still an equi-join on column refs, gdal2mbtiles
+        // and tippecanoe write them and 3.0.1 opened those packs
         fun view(): List<String> {
             need(kw("CREATE"))
             need(kw("VIEW"))
@@ -165,7 +180,12 @@ internal object MBTilesViewShape {
             need(kw("FROM"))
             tableRef()
             var joined = false
-            if (kw("INNER") || kw("CROSS")) {
+            if (punct(",")) {
+                // gdal2mbtiles' comma join, its WHERE is only the join's equalities
+                tableRef()
+                need(kw("WHERE"))
+                equalities()
+            } else if (kw("INNER") || kw("CROSS")) {
                 need(kw("JOIN"))
                 joined = true
             } else if (kw("LEFT")) {
@@ -178,11 +198,7 @@ internal object MBTilesViewShape {
             if (joined) {
                 tableRef()
                 if (kw("ON")) {
-                    val paren = punct("(")
-                    colref()
-                    need(punct("="))
-                    colref()
-                    if (paren) need(punct(")"))
+                    equalities()
                 } else if (kw("USING")) {
                     need(punct("("))
                     ident()

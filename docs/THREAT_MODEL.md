@@ -739,8 +739,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   a view (MBTiles 1.3, used by deduplicated packs); anything else is refused.
   No SQL stored in the pack runs when it is read: a view is only admitted as a
   plain projection of one table or an equi-join of two (column names and
-  aliases only, checked on its text before anything reads it, so no function,
-  literal, operator, condition or subquery), and every table a read touches has
+  aliases only, checked on its text before anything reads it; the join may only
+  match columns with `=`, several such matches joined by `AND`, written as
+  `JOIN ... ON`, `USING` or a comma join with `WHERE`, so no function, literal,
+  other operator, filter or subquery), and every table a read touches has
   to be an ordinary table with no generated column and not a virtual table.
   These checks read the schema rows SQLite actually runs: each name is looked up
   the way SQLite resolves it (any letter case) and has to match exactly one row
@@ -748,8 +750,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   stores), so a hand-edited duplicate or a row that misnames its object can't
   stand in for the live view or table. The
   plain views real tools write (node-mbtiles, TileMill, mbutil, MapTiler,
-  martin, planetiler) still open; a pack whose views compute anything is
-  refused. Every connection to a pack also caps a single value at 4 MiB + 64 KiB
+  martin, planetiler, gdal2mbtiles, tippecanoe and tile-join) still open; a
+  pack whose views compute anything is refused. Every connection to a pack
+  also caps a single value at 4 MiB + 64 KiB
   and a schema statement at 100,000 bytes (iOS through SQLite's own limits;
   Android checks the same lengths itself and, from Android 12, caps SQLite's
   heap at 128 MiB for the process), turns off untrusted schema functions where

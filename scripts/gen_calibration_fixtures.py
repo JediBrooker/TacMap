@@ -2737,11 +2737,14 @@ def _vs_tokens(sql):
 def view_shape(sql, relation):
     """the base table names a plain view reads, or _ShapeReject(tooLong | token | shape). The grammar:
     CREATE VIEW <relation> [(ident, ...)] AS SELECT col [, col ...] FROM table
-    [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON colref = colref | ON (colref = colref) | USING (ident, ...))]
+    [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON equalities | USING (ident, ...)) | , table WHERE equalities]
     where col = * | ident.* | colref [[AS] ident], colref = ident | ident.ident, table = ident [[AS] ident],
+    equalities = colref = colref [AND colref = colref ...], bare or in one pair of parens,
     ident = a bare word that isn't reserved, or a quoted identifier. Nothing may follow.
     3.0.2 SEC-M1-SHADOW: no IF NOT EXISTS. SQLite drops it when it stores a view, so only a hand edited schema has
-    it, and the duplicate it lets SQLite skip is how a decoy row sat behind the live view admission never read"""
+    it, and the duplicate it lets SQLite skip is how a decoy row sat behind the live view admission never read.
+    3.0.2 SHADOW-PARITY-2: the comma join and the AND are still an equi-join of two tables on column refs, and
+    they're how gdal2mbtiles (FROM map, images WHERE ...) and tippecanoe/tile-join (ON ... and ...) store tiles"""
     if sql is None or len(sql.encode("utf-8")) > MBT_MAX_SCHEMA_SQL_BYTES:
         raise _ShapeReject("tooLong" if sql is not None else "shape")
     toks = _vs_tokens(sql)
@@ -2807,6 +2810,17 @@ def view_shape(sql, relation):
         else:
             maybe_ident()
 
+    def equalities():
+        paren = punct("(")
+        while True:
+            colref()
+            need(punct("="))
+            colref()
+            if not kw("AND"):
+                break
+        if paren:
+            need(punct(")"))
+
     need(kw("CREATE"))
     need(kw("VIEW"))
     need(ident().lower() == relation)
@@ -2823,7 +2837,12 @@ def view_shape(sql, relation):
     need(kw("FROM"))
     table_ref()
     joined = False
-    if kw("INNER") or kw("CROSS"):
+    if punct(","):
+        # the comma join gdal2mbtiles writes, its WHERE is only the join's equalities
+        table_ref()
+        need(kw("WHERE"))
+        equalities()
+    elif kw("INNER") or kw("CROSS"):
         need(kw("JOIN"))
         joined = True
     elif kw("LEFT"):
@@ -2835,12 +2854,7 @@ def view_shape(sql, relation):
     if joined:
         table_ref()
         if kw("ON"):
-            paren = punct("(")
-            colref()
-            need(punct("="))
-            colref()
-            if paren:
-                need(punct(")"))
+            equalities()
         elif kw("USING"):
             need(punct("("))
             ident()
@@ -3289,6 +3303,49 @@ def mbtiles_relation_cases():
             "INSERT INTO images VALUES (X'01', 'a'), (X'0203', 'b')",
             "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM map JOIN images "
             "USING (tile_id)"], probes, True, "JOIN ... USING"),
+        # 3.0.2 SHADOW-PARITY-2: producers 3.0.1 opened whose tiles view the first 3.0.2 grammar refused. Their own
+        # DDL, tile ids and dedup the way they write them
+        ("gdal2mbtilesCommaJoin", [
+            "CREATE TABLE images (\n    tile_id INTEGER PRIMARY KEY,\n    tile_data BLOB NOT NULL\n)",
+            "CREATE TABLE map (\n    zoom_level INTEGER NOT NULL,\n    tile_column INTEGER NOT NULL,\n    tile_row INTEGER "
+            "NOT NULL,\n    tile_id INTEGER NOT NULL\n        REFERENCES images (tile_id)\n        ON DELETE CASCADE ON "
+            "UPDATE CASCADE,\n    PRIMARY KEY (zoom_level, tile_column, tile_row)\n)",
+            GDAL2MBTILES_VIEW,
+            "CREATE TABLE metadata (\n    name TEXT PRIMARY KEY,\n    value TEXT NOT NULL\n)",
+            "INSERT OR REPLACE INTO images (tile_id, tile_data) VALUES (1, X'89504E470D0A1A0A01'), "
+            "(2, X'89504E470D0A1A0A02')",
+            "INSERT OR REPLACE INTO map (zoom_level, tile_column, tile_row, tile_id) VALUES (0, 0, 0, 1), (1, 0, 1, 2), "
+            "(1, 1, 0, 1)",
+            "INSERT OR REPLACE INTO metadata (name, value) VALUES ('name', 'Sample'), ('type', 'baselayer'), "
+            "('version', '1.0.0'), ('description', 'gdal2mbtiles'), ('format', 'png')"],
+         {"tiles": [(0, 0, 0), (1, 0, 0), (1, 1, 1), (1, 0, 1)]}, True,
+         "gdal2mbtiles (ecometrica, PyPI 2.1.5), a raster PNG producer: tiles is FROM map, images WHERE map.tile_id = "
+         "images.tile_id. 3.0.1 opened it, 3.0.2 before SHADOW-PARITY-2 refused it at the shape check. 1/1/1 is a "
+         "deduplicated tile, 1/0/1 has none"),
+        ("tippecanoeAndJoin", [
+            "CREATE TABLE metadata (name text, value text);",
+            "create unique index name on metadata (name);",
+            "CREATE TABLE map (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_id TEXT);",
+            "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row);",
+            "CREATE TABLE images (zoom_level integer, tile_data blob, tile_id text);",
+            "CREATE UNIQUE INDEX images_id ON images (zoom_level, tile_id);",
+            TIPPECANOE_VIEW + ";",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'pbf')",
+            "INSERT INTO images VALUES (0, X'1F8B0801', 'a'), (1, X'1F8B0802', 'a')",
+            "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'a')"],
+         probes, True, "felt/tippecanoe and tile-join: ON images.tile_id = map.tile_id and images.zoom_level = "
+                       "map.zoom_level, so the same tile id at two zooms is two images. Vector tiles TacMap doesn't "
+                       "draw, but 3.0.1 opened the pack"),
+        ("commaJoinWhereCallsFunction", [
+            "CREATE TABLE images (tile_id INTEGER PRIMARY KEY, tile_data BLOB NOT NULL)",
+            "CREATE TABLE map (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_id INTEGER)",
+            "INSERT INTO images VALUES (1, X'01'), (2, X'0203')",
+            "INSERT INTO map VALUES (0, 0, 0, 1), (1, 0, 1, 2)",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM map, images "
+            "WHERE map.tile_id = images.tile_id AND length(zeroblob(map.tile_id)) = map.tile_id"] + meta_table,
+         None, False, "SEC-1 through the comma join: its WHERE is only the join's equalities. A zeroblob() sized by a "
+                      "value from the file there is refused by the shape check before any read (true on every row, "
+                      "so a looser WHERE would admit the pack and run it on every tile)"),
         ("dedupNoIndexOversizedImage", meta_table + [
             "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
             "CREATE TABLE images (tile_data blob, tile_id text)",
@@ -3483,6 +3540,14 @@ NODE_MBTILES_VIEW = ("CREATE VIEW tiles AS\n    SELECT\n        map.zoom_level A
                      "        images.tile_data AS tile_data\n    FROM map\n    JOIN images ON images.tile_id = map.tile_id")
 DEDUP_SELECT = ("SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, map.tile_row AS tile_row, "
                 "images.tile_data AS tile_data FROM map")
+# 3.0.2 SHADOW-PARITY-2: two producers 3.0.1 opened and the first 3.0.2 grammar refused, as SQLite stores them
+# (CREATE VIEW then the text from the name on, so the indentation stays and the semicolon goes).
+# gdal2mbtiles (ecometrica, PyPI 2.1.5) MBTiles._create, a raster PNG producer: a comma join
+GDAL2MBTILES_VIEW = ("CREATE VIEW tiles AS\n                    SELECT zoom_level, tile_column, tile_row, tile_data\n"
+                     "                    FROM map, images\n                    WHERE map.tile_id = images.tile_id")
+# felt/tippecanoe and tile-join mbtiles.cpp (vector tiles): ON with two equalities
+TIPPECANOE_VIEW = ("CREATE VIEW tiles AS " + DEDUP_SELECT + " JOIN images ON images.tile_id = map.tile_id and "
+                   "images.zoom_level = map.zoom_level")
 
 
 def view_shape_cases():
@@ -3518,6 +3583,22 @@ def view_shape_cases():
         ("metadataPlain", "metadata", "CREATE VIEW metadata AS SELECT name, value FROM meta_base", ["meta_base"], ""),
         ("metadataRenamed", "metadata", "CREATE VIEW metadata AS SELECT k AS name, v AS value FROM kv", ["kv"], ""),
         ("newlinesTabs", "tiles", "CREATE\tVIEW\r\ntiles\nAS\n\tSELECT\n\t*\nFROM\n\tt", ["t"], "ASCII whitespace"),
+        # 3.0.2 SHADOW-PARITY-2: the same equi-join written as a comma join, and ON with an AND of equalities
+        ("gdal2mbtiles", "tiles", GDAL2MBTILES_VIEW, ["map", "images"],
+         "gdal2mbtiles (raster PNG): a comma join, the join's equality in WHERE. 3.0.1 opened it, 3.0.2 before "
+         "SHADOW-PARITY-2 refused it"),
+        ("tippecanoe", "tiles", TIPPECANOE_VIEW, ["map", "images"],
+         "felt/tippecanoe and tile-join: two equalities joined by a lowercase and"),
+        ("onWithAnd", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND b.j = a.j", ["a", "b"],
+         "refused before SHADOW-PARITY-2: an AND of column equalities is still an equi-join"),
+        ("onAndInParens", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " LEFT JOIN images ON (images.tile_id = "
+         "map.tile_id AND images.zoom_level = map.zoom_level AND images.tile_id = map.tile_id)", ["map", "images"],
+         "one pair of parens round the whole condition, any number of equalities"),
+        ("commaJoinWhereAnd", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k AND a.j = b.j",
+         ["a", "b"], "a comma join takes the same equalities ON does"),
+        ("commaJoinAliasesParens", "tiles", "CREATE VIEW tiles AS SELECT m.zoom_level, m.tile_column, m.tile_row, "
+         "i.tile_data FROM map AS m, \"images\" i WHERE (m.tile_id = i.tile_id)", ["map", "images"],
+         "table aliases, a quoted table and the condition in parens"),
     ]
     bad = [
         ("tooLong", "tiles", "CREATE VIEW tiles AS SELECT * FROM t" + " " * MBT_MAX_SCHEMA_SQL_BYTES, "tooLong",
@@ -3553,7 +3634,8 @@ def view_shape_cases():
          "TRUE/FALSE are literals when no such column exists"),
         ("reservedColumn", "tiles", "CREATE VIEW tiles AS SELECT key FROM t", "shape",
          "every reserved word, even ones SQLite would take as a name"),
-        ("where", "tiles", "CREATE VIEW tiles AS SELECT * FROM t WHERE zoom_level = tile_row", "shape", ""),
+        ("where", "tiles", "CREATE VIEW tiles AS SELECT * FROM t WHERE zoom_level = tile_row", "shape",
+         "WHERE only as a comma join's condition, on one table it's a filter"),
         ("unionAll", "tiles", "CREATE VIEW tiles AS SELECT * FROM a UNION ALL SELECT * FROM b", "shape", ""),
         ("withCte", "tiles", "CREATE VIEW tiles AS WITH x AS (SELECT * FROM t) SELECT * FROM x", "shape", ""),
         ("distinct", "tiles", "CREATE VIEW tiles AS SELECT DISTINCT * FROM t", "shape", ""),
@@ -3561,9 +3643,36 @@ def view_shape_cases():
         ("threeTables", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k JOIN c ON c.k = a.k",
          "shape", "at most two tables"),
         ("naturalJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a NATURAL JOIN b", "shape", ""),
-        ("commaJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b", "shape", ""),
+        ("commaJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b", "shape",
+         "a comma join needs its WHERE equalities, without them it's a cross join"),
         ("joinWithoutConstraint", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b", "shape", ""),
-        ("onWithAnd", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND b.j = a.j", "shape", ""),
+        # 3.0.2 SHADOW-PARITY-2: the comma join's WHERE and the AND chain are column equalities and nothing else
+        ("commaJoinWhereOr", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k OR a.j = b.j", "shape",
+         "only AND joins equalities"),
+        ("commaJoinWhereFunction", "tiles", "CREATE VIEW tiles AS SELECT * FROM map, images WHERE map.tile_id = "
+         "lower(images.tile_id)", "shape", "the comma join's WHERE is column refs too"),
+        ("commaJoinWhereLiteral", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k AND a.z = 0",
+         "token", "no filter on a value, only the join"),
+        ("commaJoinOn", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b ON a.k = b.k", "shape",
+         "SQLite takes ON after a comma, no producer writes it"),
+        ("commaJoinThreeTables", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b, c WHERE a.k = b.k AND b.k = c.k",
+         "shape", "at most two tables either way"),
+        ("commaJoinThenJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b JOIN c ON c.k = a.k", "shape", ""),
+        ("joinOnThenWhere", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k WHERE a.j = b.j",
+         "shape", "no WHERE after a JOIN"),
+        ("onAndDangling", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND", "shape", ""),
+        ("onAndNot", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND NOT b.j = a.j", "shape",
+         ""),
+        ("onEachEqualityInParens", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON (b.k = a.k) AND (b.j = a.j)",
+         "shape", "parens go round the whole condition or nowhere"),
+        ("onAndUnclosedParen", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON (b.k = a.k AND b.j = a.j",
+         "shape", ""),
+        ("commaJoinWhereNestedParens", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE ((a.k = b.k))", "shape",
+         ""),
+        ("commaJoinWhereChained", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k = a.j", "shape",
+         "(a.k = b.k) = a.j compares a truth value"),
+        ("commaJoinWhereCollate", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k COLLATE NOCASE",
+         "shape", ""),
         ("subquery", "tiles", "CREATE VIEW tiles AS SELECT * FROM (SELECT * FROM t)", "shape", ""),
         ("schemaQualifiedTable", "tiles", "CREATE VIEW tiles AS SELECT * FROM main.map", "shape", ""),
         ("threePartColumn", "tiles", "CREATE VIEW tiles AS SELECT main.t.zoom_level FROM t", "shape", ""),
@@ -3934,11 +4043,14 @@ def mbtiles_admission():
             "CREATE VIEW name [( ident {, ident} )] AS SELECT column {, column} FROM table "
             "[join] <end>. name = ident equal to the relation (ASCII case-insensitive). column = * | ident . * | "
             "colref [[AS] ident]. colref = ident [. ident]. table = ident [[AS] ident]. join = [INNER | LEFT "
-            "[OUTER] | CROSS] JOIN table (ON colref = colref | ON ( colref = colref ) | USING ( ident {, ident} )). "
-            "ident = a quoted identifier, or a word not in reservedWords (ASCII case-insensitive). Keywords match "
-            "words only, ASCII case-insensitively. Any other token sequence is reason shape, IF NOT EXISTS included "
-            "(3.0.2 SEC-M1-SHADOW: SQLite never stores it, so it only turns up in a hand edited schema). Accepted: "
-            "the base tables, each table's ident in order (quoted ones without their marks)"),
+            "[OUTER] | CROSS] JOIN table (ON equalities | USING ( ident {, ident} )) | , table WHERE equalities. "
+            "equalities = eq {AND eq} | ( eq {AND eq} ), eq = colref = colref (3.0.2 SHADOW-PARITY-2: the comma "
+            "join and the AND, how gdal2mbtiles and tippecanoe/tile-join store tiles; still an equi-join of two "
+            "tables on column refs). ident = a quoted identifier, or a word not in reservedWords (ASCII "
+            "case-insensitive). Keywords match words only, ASCII case-insensitively. Any other token sequence is "
+            "reason shape, IF NOT EXISTS included (3.0.2 SEC-M1-SHADOW: SQLite never stores it, so it only turns up "
+            "in a hand edited schema). Accepted: the base tables, each table's ident in order (quoted ones without "
+            "their marks)"),
         "cases": view_shape_cases(),
     }
     adm["baseTableShape"] = {

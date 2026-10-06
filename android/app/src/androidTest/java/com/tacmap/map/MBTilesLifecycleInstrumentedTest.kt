@@ -185,6 +185,55 @@ class MBTilesLifecycleInstrumentedTest {
     }
 
     @Test
+    fun gdal2mbtilesCommaJoinPackImportsOpensAndDraws() {
+        // SHADOW-PARITY-2: gdal2mbtiles (a raster producer) stores tiles as FROM map, images WHERE map.tile_id =
+        // images.tile_id. 3.0.1 opened it, the first 3.0.2 grammar didn't, so an upgrade lost the basemap.
+        // the generator's pack as is, just real png pixels in its images so there's something to decode
+        val case = admissionFixture()["relationCases"]!!.jsonArray.map { it.jsonObject }
+            .single { it["id"]!!.jsonPrimitive.content == "gdal2mbtilesCommaJoin" }
+        val expect = case["expect"]!!.jsonObject
+        assertTrue(expect["accepted"]!!.jsonPrimitive.boolean)
+        val png = ByteArrayOutputStream().use { out ->
+            val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+        val file = File(context.cacheDir, "${System.nanoTime()}-gdal2mbtiles.mbtiles")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+            db.execSQL("UPDATE images SET tile_data = ?", arrayOf(png))
+        }
+
+        requireNotNull(MBTilesStore.open(file.path)).use { store ->
+            assertEquals(expect["name"]!!.jsonPrimitive.content, store.metadata.name)
+            assertEquals(expect["format"]!!.jsonPrimitive.content, store.metadata.format)
+            assertEquals(expect["minZoom"]!!.jsonPrimitive.int, store.metadata.minZoom)
+            assertEquals(expect["maxZoom"]!!.jsonPrimitive.int, store.metadata.maxZoom)
+        }
+        val source = requireNotNull(OfflineTileMapSourceAndroid.open(file.path))
+        try {
+            // 1/1/1 is the deduplicated tile (map row points at image 1), 1/0/1 has no map row
+            val tile = runBlocking { source.renderTileSource().loadTile(TileIndex(1, 1, 1)) }
+            assertNotNull("comma join tile must draw", tile)
+            assertEquals(Color.BLUE, tile!!.getPixel(128, 128))
+            tile.recycle()
+            assertNull(runBlocking { source.renderTileSource().loadTile(TileIndex(1, 0, 1)) })
+        } finally {
+            source.close()
+        }
+
+        val journalDir = File(context.cacheDir, "mbtiles-import-journal-${System.nanoTime()}").apply { mkdirs() }
+        val pipeline = MapImportPipeline(context, DocumentImportCopyJournal.forTests(journalDir))
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val outcome = runBlocking { pipeline.runMbtiles(Uri.fromFile(file), "gdal-${System.nanoTime()}", snapshot) { } }
+        assertTrue("import refused: $outcome", outcome is PreparedOutcome.Mbtiles)
+        val prepared = (outcome as PreparedOutcome.Mbtiles).prepared
+        InFlightImportFiles.release(prepared.file)
+        prepared.file.delete()
+    }
+
+    @Test
     fun anMbtilesImportIsAdmittedUnderTheInterruptedImportMarker() {
         // s14.1 r7: a pack that kills its own admission is swept at the next launch like a PDF,
         // and the replayed pick doesn't go round again
@@ -380,11 +429,14 @@ class MBTilesLifecycleInstrumentedTest {
         val fixture = admissionFixture()
         val cases = fixture["relationCases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} relation cases", cases.size >= 40)
+        assertTrue("only ${cases.size} relation cases", cases.size >= 43)
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "nodeMbtilesDedup" })
         // SEC-M1-SHADOW: case variant and name lie rows, they come as packBase64 (sql[] needs writable_schema)
         for (id in listOf("tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant", "tableRowKeepsIfNotExists",
                 "baseRowNameLie")) assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
+        // SHADOW-PARITY-2: gdal2mbtiles' comma join and tippecanoe's ON ... and ..., both opened in 3.0.1
+        for (id in listOf("gdal2mbtilesCommaJoin", "tippecanoeAndJoin", "commaJoinWhereCallsFunction"))
+            assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "tilesViewEndless" })
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "metadataViewOversizedName" })
         val version = sqliteVersion()

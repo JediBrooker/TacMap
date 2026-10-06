@@ -154,11 +154,14 @@ enum MBTilesViewShape {
     }
 
     /// CREATE VIEW <relation> [(ident, ...)] AS SELECT col [, col ...]
-    /// FROM table [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON colref = colref |
-    /// ON (colref = colref) | USING (ident, ...))], nothing after it. no IF NOT
-    /// EXISTS: sqlite drops it when it stores a view, so only a hand edit has it,
-    /// and the duplicate it lets sqlite skip is how a decoy row sat behind the
-    /// live view (SEC-M1-SHADOW)
+    /// FROM table [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON equalities |
+    /// USING (ident, ...)) | , table WHERE equalities], nothing after it, where
+    /// equalities = colref = colref [AND colref = colref ...], bare or in one
+    /// pair of parens. no IF NOT EXISTS: sqlite drops it when it stores a view,
+    /// so only a hand edit has it, and the duplicate it lets sqlite skip is how
+    /// a decoy row sat behind the live view (SEC-M1-SHADOW). the comma join and
+    /// the AND are SHADOW-PARITY-2, gdal2mbtiles and tippecanoe write those and
+    /// 3.0.1 opened them. still just column refs, nothing to evaluate
     private struct Parser {
         let tokens: [Token]
         var pos = 0
@@ -234,6 +237,18 @@ enum MBTilesViewShape {
             }
         }
 
+        /// colref = colref, as many as you like joined by AND, parens round
+        /// the whole lot or none at all
+        private mutating func equalities() throws {
+            let paren = punct("(")
+            repeat {
+                try colref()
+                try need(punct("="))
+                try colref()
+            } while kw("AND")
+            if paren { try need(punct(")")) }
+        }
+
         mutating func view(relation: String) throws -> [String] {
             try need(kw("CREATE"))
             try need(kw("VIEW"))
@@ -250,7 +265,12 @@ enum MBTilesViewShape {
             try need(kw("FROM"))
             try tableRef()
             var joined = false
-            if kw("INNER") || kw("CROSS") {
+            if punct(",") {
+                // gdal2mbtiles' comma join, the WHERE is only the join's equalities
+                try tableRef()
+                try need(kw("WHERE"))
+                try equalities()
+            } else if kw("INNER") || kw("CROSS") {
                 try need(kw("JOIN"))
                 joined = true
             } else if kw("LEFT") {
@@ -263,11 +283,7 @@ enum MBTilesViewShape {
             if joined {
                 try tableRef()
                 if kw("ON") {
-                    let paren = punct("(")
-                    try colref()
-                    try need(punct("="))
-                    try colref()
-                    if paren { try need(punct(")")) }
+                    try equalities()
                 } else if kw("USING") {
                     try need(punct("("))
                     _ = try ident()

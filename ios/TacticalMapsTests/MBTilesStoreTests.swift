@@ -455,7 +455,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
         XCTAssertEqual(fixture["admissionBudgetAppliesTo"] as? String, "views")
         let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 40)
+        XCTAssertEqual(cases.count, 43)
         var seen: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
@@ -503,7 +503,10 @@ final class MBTilesStoreTests: XCTestCase {
                                            "viewDateTrigger", "martinNormalizedLeftJoin", "dedupNoIndexOversizedImage",
                                            "tableOversizedValues", "schemaStatementTooLong", "budgetUnindexedJoin",
                                            "tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant",
-                                           "tableRowKeepsIfNotExists", "baseRowNameLie"]))
+                                           "tableRowKeepsIfNotExists", "baseRowNameLie",
+                                           // SHADOW-PARITY-2, both opened in 3.0.1
+                                           "gdal2mbtilesCommaJoin", "tippecanoeAndJoin",
+                                           "commaJoinWhereCallsFunction"]))
     }
 
     /// "3.31.0" -> 3031000, what sqlite3_libversion_number gives
@@ -559,7 +562,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(reserved.count, 149)
         XCTAssertEqual(Set(reserved), MBTilesViewShape.reservedWords)
         let cases = try XCTUnwrap(shape["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 63)
+        XCTAssertEqual(cases.count, 82)
         var reasons: [String: Int] = [:]
         for c in cases {
             let id = try XCTUnwrap(c["id"] as? String)
@@ -580,8 +583,13 @@ final class MBTilesStoreTests: XCTestCase {
                 reasons[reason, default: 0] += 1
             }
         }
-        // 3.0.2 SEC-M1-SHADOW moved ifNotExists from accepted to shape
-        XCTAssertEqual(reasons, ["accepted": 17, "tooLong": 1, "token": 17, "shape": 28])
+        // 3.0.2 SEC-M1-SHADOW moved ifNotExists from accepted to shape. SHADOW-PARITY-2
+        // moved onWithAnd the other way and added the comma join / AND rows
+        XCTAssertEqual(reasons, ["accepted": 23, "tooLong": 1, "token": 18, "shape": 40])
+        for id in ["gdal2mbtiles", "tippecanoe", "onWithAnd"] {
+            let c = try XCTUnwrap(cases.first { $0["id"] as? String == id }, id)
+            XCTAssertEqual((c["expect"] as? [String: Any])?["accepted"] as? Bool, true, id)
+        }
     }
 
     /// SEC-M1-SHADOW: a base table row has to declare its own name, the
@@ -745,6 +753,45 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(sourceMap.store.tileData(z: 0, x: 0, y: 0), Data([0x01]))
         XCTAssertEqual(sourceMap.store.tileData(z: 1, x: 0, y: 0), Data([0x02, 0x03]))
         XCTAssertNil(sourceMap.store.tileData(z: 1, x: 1, y: 1))
+    }
+
+    /// SHADOW-PARITY-2: gdal2mbtiles, a raster PNG producer, stores tiles as a
+    /// comma join (FROM map, images WHERE map.tile_id = images.tile_id). 3.0.1
+    /// opened those packs and the first 3.0.2 grammar refused them, so an
+    /// upgrade lost the offline basemap. through the real import and the
+    /// prevalidated source the map draws from
+    func testGdal2mbtilesCommaJoinPackImportsAndDrawsTiles() async throws {
+        let vector = try relationCase("gdal2mbtilesCommaJoin")
+        let expect = try XCTUnwrap(vector["expect"] as? [String: Any])
+        XCTAssertEqual(expect["accepted"] as? Bool, true)
+        let source = try makeRelationPack(vector, "gdal2mbtilesCommaJoin")
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let original = ImportedMapStorage.applicationSupportProvider
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mbtiles-gdal-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        ImportedMapStorage.applicationSupportProvider = { root }
+        defer {
+            ImportedMapStorage.applicationSupportProvider = original
+            try? FileManager.default.removeItem(at: root)
+        }
+        let payload = try await MapImportPipeline.prepareMBTiles(url: source, entryCount: 0, libraryLoaded: true,
+                                                                 isCancelled: { false }, progress: { _ in })
+        XCTAssertEqual(payload.metadata.name, expect["name"] as? String)
+        XCTAssertEqual(payload.metadata.format, expect["format"] as? String)
+        XCTAssertEqual(payload.metadata.minZoom, expect["minZoom"] as? Int)
+        XCTAssertEqual(payload.metadata.maxZoom, expect["maxZoom"] as? Int)
+        XCTAssertEqual(payload.entry()?.kind, .mbtiles)
+
+        let sourceMap = OfflineTileMapSource(prevalidatedURL: payload.copy.url, metadata: payload.metadata)
+        let probes = try XCTUnwrap(expect["tiles"] as? [[String: Any]])
+        // a hit, a deduplicated hit and a miss, so the join really ran
+        XCTAssertEqual(probes.compactMap { $0["hex"] as? String }.count, 3)
+        for probe in probes {
+            let z = try XCTUnwrap(probe["z"] as? Int), x = try XCTUnwrap(probe["x"] as? Int)
+            let y = try XCTUnwrap(probe["y"] as? Int)
+            XCTAssertEqual(hex(sourceMap.store.tileData(z: z, x: x, y: y)), probe["hex"] as? String, "\(z)/\(x)/\(y)")
+        }
     }
 
     func testViewReadsAfterAdmissionAreBudgetedPerStatement() throws {
