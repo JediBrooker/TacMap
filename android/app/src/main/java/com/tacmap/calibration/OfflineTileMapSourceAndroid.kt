@@ -7,6 +7,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * A basemap backed by a local MBTiles raster pyramid (offline). The Android
@@ -115,4 +119,41 @@ internal object AdmittedMbtiles {
     }
 
     fun clearForTesting() = admitted.clear()
+}
+
+/**
+ * Packs whose off main open came back refused this process (s15.1 rule 1), keyed like
+ * [AdmittedMbtiles] but off the library entry. Memory only, never persisted. An admitted
+ * open of the key or deleting the entry drops it, a relink is a new key anyway. [refused]
+ * is a flow so the Layers rows pick it up. Also remembers which keys already got the
+ * restore notice, that one's once per process
+ */
+internal object RefusedMbtiles {
+    data class Key(val entryId: String, val contentKey: String?, val size: Long, val modifiedAtMs: Long)
+
+    fun keyOf(e: ImportedMapEntry): Key = Key(e.id, e.contentKey, e.byteCount, e.fileModifiedAtMs)
+
+    private val _refused = MutableStateFlow<Set<Key>>(emptySet())
+    val refused: StateFlow<Set<Key>> = _refused.asStateFlow()
+    private val noticed = ConcurrentHashMap.newKeySet<Key>()
+
+    fun record(e: ImportedMapEntry) = _refused.update { it + keyOf(e) }
+
+    fun admitted(e: ImportedMapEntry) = _refused.update { it - keyOf(e) }
+
+    fun isRefused(e: ImportedMapEntry): Boolean = e.isMbtiles && keyOf(e) in _refused.value
+
+    /** the entry's gone, so are its keys */
+    fun forget(entryId: String) {
+        _refused.update { s -> s.filterTo(HashSet()) { it.entryId != entryId } }
+        noticed.removeIf { it.entryId == entryId }
+    }
+
+    /** true the first time for this key this process, the restore notice only shows then */
+    fun firstNotice(e: ImportedMapEntry): Boolean = noticed.add(keyOf(e))
+
+    fun clearForTesting() {
+        _refused.value = emptySet()
+        noticed.clear()
+    }
 }

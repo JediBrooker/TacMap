@@ -240,6 +240,8 @@ internal fun MapScreen(
     val draftCounts by vm.draftCounts.collectAsState()
     val hashMismatch by vm.hashMismatch.collectAsState()
     val launchAlert by vm.launchAlert.collectAsState()
+    val packOpenAlert by vm.packOpenAlert.collectAsState()
+    val refusedPacks by vm.refusedPacks.collectAsState()
     val importProgress by vm.importProgress.collectAsState()
     val pagePicker by vm.pagePicker.collectAsState()
     val rejectedPrompt by vm.rejectedPrompt.collectAsState()
@@ -262,12 +264,14 @@ internal fun MapScreen(
     val pdfPreparingShown by vm.pdfRuntime.showPreparingLabel.collectAsState()
     val pdfShown = mapSource is com.tacmap.calibration.PdfMapSource
     val pdfRenderFailed = pdfShown && pdfRenderStatus is com.tacmap.map.render.pdf.PdfRenderStatus.Failed
+    // s15.1: the saved pack's blank when it couldn't be shown reads like a PDF that couldn't draw
+    val packUnavailable = mapSource is com.tacmap.calibration.MbtilesUnavailableSource
     val pdfDrawing = pdfShown && pdfPreparingShown &&
         pdfRenderStatus == com.tacmap.map.render.pdf.PdfRenderStatus.Preparing
     val basemapLabel: String? = when {
         // calibration owns the header (s7.8), the failure alert still comes up over it
         calibrating -> Messages.calibrationHeaderLabel()
-        pdfRenderFailed -> Messages.pdfRenderFailedLabel()
+        pdfRenderFailed || packUnavailable -> Messages.pdfRenderFailedLabel()
         pdfDrawing -> Messages.pdfRenderDrawingLabel()
         uncalibratedPdf -> Messages.pdfMapUncalibratedLabel()
         importedMapLoaded -> L10n.text("Offline basemap")
@@ -276,7 +280,7 @@ internal fun MapScreen(
     }
     val basemapColor = when {
         calibrating -> Color(0xFFFFB300)
-        pdfRenderFailed -> Color(com.tacmap.map.render.pdf.PdfRenderRules.FAILED_COLOR)
+        pdfRenderFailed || packUnavailable -> Color(com.tacmap.map.render.pdf.PdfRenderRules.FAILED_COLOR)
         pdfDrawing -> Color(com.tacmap.map.render.pdf.PdfRenderRules.PREPARING_COLOR)
         uncalibratedPdf -> Color(0xFFFFB300)
         importedMapLoaded -> Color(com.tacmap.map.render.pdf.PdfRenderRules.READY_COLOR)
@@ -1158,7 +1162,8 @@ internal fun MapScreen(
             val file = if (e.id in hashMismatch) com.tacmap.calibration.EntryFileStatus.MISMATCH else vm.fileStatus(e)
             val drafts = e.contentKey?.let { key -> e.pdf?.let { draftCounts[com.tacmap.calibration.fiducial.CalibrationTarget.draftKey(key, it.pageIndex)] } }
             val facts = LibraryEntryRules.facts(e, e.derivedFromId?.let { byId[it]?.displayName })
-            val pres = LibraryEntryRules.present(facts, file, drafts)
+            val refused = e.isMbtiles && com.tacmap.calibration.RefusedMbtiles.keyOf(e) in refusedPacks
+            val pres = LibraryEntryRules.present(facts, file, drafts, packRefused = refused)
             ImportedMapRowUi(
                 id = e.id,
                 name = e.displayName,
@@ -2274,6 +2279,17 @@ internal fun MapScreen(
                 )
             },
             confirmButton = { TextButton(onClick = { vm.dismissLaunchAlert() }) { Text(Messages.acknowledge()) } },
+        )
+    }
+
+    // s15.1 U1: a pack that couldn't be opened. the vm only hands one over once the crash
+    // alert and the launch notices are gone, and the Layers sheet's already shut by then
+    packOpenAlert?.let { alert ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissPackOpenAlert() },
+            title = { Text(Messages.mapPackOpenFailedTitle(alert.name)) },
+            text = { Text(if (alert.restore) Messages.mapPackRestoreFailedMessage() else Messages.mapPackOpenFailedMessage()) },
+            confirmButton = { TextButton(onClick = { vm.dismissPackOpenAlert() }) { Text(Messages.acknowledge()) } },
         )
     }
 

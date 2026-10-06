@@ -76,6 +76,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -137,6 +138,13 @@ internal sealed class MapLaunchAlert {
     data object ImportInterrupted : MapLaunchAlert()
     data object ActiveFileChanged : MapLaunchAlert()
 }
+
+/**
+ * s15.1 U1: [restore] = the saved pack couldn't be shown at a restore (the blank stays, once
+ * per process per key), else a pack the user picked got refused (one per attempt, the map
+ * didn't change). Just the name, the text's resolved when it's shown
+ */
+internal data class PackOpenAlert(val name: String, val restore: Boolean)
 
 /**
  * What a crash guard held back at launch and is asking about: a PDF, or an MBTiles pack
@@ -302,6 +310,24 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     internal val launchAlert: StateFlow<MapLaunchAlert?> = _launchAlert.asStateFlow()
     internal fun dismissLaunchAlert() { _launchAlert.value = null }
     internal fun showLaunchAlert(alert: MapLaunchAlert) { _launchAlert.value = alert }
+
+    /**
+     * U1 pack alerts, in order. their own queue so they never knock a launch notice out of
+     * the single [_launchAlert] slot, and [packOpenAlert] only shows the head once the crash
+     * alert and the launch notices are out of the way
+     */
+    private val _packOpenAlerts = MutableStateFlow<List<PackOpenAlert>>(emptyList())
+    internal val packOpenAlerts: StateFlow<List<PackOpenAlert>> = _packOpenAlerts.asStateFlow()
+    internal val packOpenAlert: StateFlow<PackOpenAlert?> =
+        combine(_packOpenAlerts, _launchAlert, _pdfRecovery, _pdfLaunchNotices) { queue, launch, crash, notices ->
+            queue.firstOrNull()?.takeIf { launch == null && crash == null && notices.isEmpty() }
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+    internal fun dismissPackOpenAlert() { _packOpenAlerts.value = _packOpenAlerts.value.drop(1) }
+
+    /** the Layers rows read this, a refusal or an admitted retry redraws them */
+    internal val refusedPacks: StateFlow<Set<com.tacmap.calibration.RefusedMbtiles.Key>> =
+        com.tacmap.calibration.RefusedMbtiles.refused
+    internal fun packRefused(entry: ImportedMapEntry): Boolean = com.tacmap.calibration.RefusedMbtiles.isRefused(entry)
 
     private val _mapSelectionPersistenceIssue = MutableStateFlow<MapSelectionPersistenceIssue?>(null)
     val mapSelectionPersistenceIssue: StateFlow<MapSelectionPersistenceIssue?> =
@@ -605,8 +631,9 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
         // a pack the open guard blamed for the last crash isn't opened again on its own
         if (entry.isMbtiles && holdBackSuspectMbtiles(entry)) return
-        if (entry.isMbtiles && canBeActive(entry)) {
-            openMbtiles(entry, PackOpen.Restore(frameActive, reframe))
+        if (entry.isMbtiles) {
+            // file gone or changed: still the selection, blank + the notice, never online (s15.1)
+            if (canBeActive(entry)) openMbtiles(entry, PackOpen.Restore(frameActive, reframe)) else showPackUnavailable(entry)
             return
         }
         // OD-F4 (M8): a PDF whose stored file is missing or changed keeps the selection and
@@ -669,12 +696,27 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val generation = _libraryState.value?.generation
         if (file == null || generation == null) {
             releaseOpenGuard(entry.id)
-            if (placeholder != null) publish(onlineBasemap(), frame = false)
+            if (placeholder != null) showPackUnavailable(entry)
             return false
         }
         val ticket = mbtilesOpens.begin(entry.id, generation)
-        admitOffMain(entry, file) { pack -> onAdmitted(entry.id, ticket, pack, how, placeholder) }
+        admitOffMain(entry, file) { pack -> onAdmitted(entry, ticket, pack, how, placeholder) }
         return true
+    }
+
+    /**
+     * s15.1 rule 4: the durable pack can't be shown. Its own blank goes up (nothing written,
+     * no tiles, nothing online) and the notice, once per process for this key. Already up
+     * for this entry = just the notice check, no flicker
+     */
+    private fun showPackUnavailable(entry: ImportedMapEntry) {
+        val up = _mapSource.value as? com.tacmap.calibration.MbtilesUnavailableSource
+        if (up?.entryId != entry.id) {
+            publish(com.tacmap.calibration.MbtilesUnavailableSource(entry.id, entry.displayName), frame = false)
+        }
+        if (com.tacmap.calibration.RefusedMbtiles.firstNotice(entry)) {
+            _packOpenAlerts.value = _packOpenAlerts.value + PackOpenAlert(entry.displayName, restore = true)
+        }
     }
 
     /** the admission on IO. a screen that goes meanwhile closes whatever it opened */
@@ -701,12 +743,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /** back on main with what the admission gave (null = refused) */
     private fun onAdmitted(
-        id: String,
+        entry: ImportedMapEntry,
         ticket: MbtilesOpenRequests.Ticket,
         pack: OfflineTileMapSourceAndroid?,
         how: PackOpen,
         placeholder: MapSource?,
     ) {
+        val id = entry.id
         val generation = when {
             cleared || _libraryStatus.value != LibraryStatus.LOADED -> null
             // the activation writes, so it wants the key and the library as it is on disk now
@@ -722,11 +765,18 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 releaseOpenGuard(id)
             }
             pack == null -> {
-                // refused, nothing written. a restore goes online in memory, the rest keep what's up
+                // refused, nothing written (s15.1). a restore keeps the selection behind its own
+                // blank, an activation or Open Anyway keeps what's up and says so
                 releaseOpenGuard(id)
-                if (how is PackOpen.Restore) publish(onlineBasemap(), frame = false)
+                com.tacmap.calibration.RefusedMbtiles.record(entry)
+                if (how is PackOpen.Restore) {
+                    showPackUnavailable(entry)
+                } else {
+                    _packOpenAlerts.value = _packOpenAlerts.value + PackOpenAlert(entry.displayName, restore = false)
+                }
             }
             else -> {
+                com.tacmap.calibration.RefusedMbtiles.admitted(entry)
                 offlineSources.put(id, pack)?.let { old -> closeSupersededOfflineSources(listOf(old), listOf(_mapSource.value, pack)) }
                 putUp(id, pack, how)
             }
@@ -1212,6 +1262,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         is PdfMapSource -> source.entryId
         is OfflineTileMapSourceAndroid -> offlineSources.entries.firstOrNull { it.value === source }?.key
         is com.tacmap.calibration.MbtilesPlaceholderSource -> source.entryId
+        is com.tacmap.calibration.MbtilesUnavailableSource -> source.entryId
         else -> null
     }
 
@@ -1432,6 +1483,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (held?.entryId in goneIds) _pdfRecovery.value = null
         gone.forEach { e ->
+            com.tacmap.calibration.RefusedMbtiles.forget(e.id)
             offlineSources.remove(e.id)?.close()
             e.contentKey?.let { key -> e.pdf?.let { draftStore.delete(CalibrationTarget.draftKey(key, it.pageIndex)) } }
             library.fileOf(e)?.let { f ->

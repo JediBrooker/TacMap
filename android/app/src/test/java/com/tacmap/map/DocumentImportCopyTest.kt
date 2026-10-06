@@ -178,10 +178,60 @@ class DocumentImportCopyTest {
         assertFalse(copy.exists())
     }
 
+    @Test
+    fun aMarkerThisProcessCouldntClearBehindTheLockIsntSweptAsACrash() {
+        // DL-1: the parse came back but its clear hit the relocked key. same process, nothing died
+        InspectionMarks.forgetForTesting()
+        val dir = Files.createTempDirectory("document-copy-relock").toFile()
+        val copy = File(dir, "import-3.mbtiles").apply { writeText("x") }
+        val journal = MemoryJournal()
+        val op = "mbtiles:relock-${System.nanoTime()}"
+        journal.persist(DocumentImportCopyState(op, DocumentImportCopyPhase.COPYING, copy.absolutePath))
+        InspectionMarks.mark(journal, op, 7L, 8L)
+        assertEquals(7L, journal.state(op)!!.inspectStartedAtEpochMs)
+        journal.locked = true
+        InspectionMarks.mark(journal, op, null, 9L)
+        assertEquals("clear written behind the lock", 7L, journal.state(op)!!.inspectStartedAtEpochMs)
+        // still locked: no alert, nothing deleted, the pick can still replay
+        assertFalse(MapImportPipeline.sweepInterrupted(journal, inFlight = emptySet()))
+        assertTrue(copy.isFile)
+        assertFalse(journal.state(op)!!.interrupted)
+        // unlocked: the owed clear lands on the next look
+        journal.locked = false
+        assertFalse(MapImportPipeline.sweepInterrupted(journal, inFlight = emptySet()))
+        assertNull(journal.state(op)!!.inspectStartedAtEpochMs)
+        assertTrue(copy.isFile)
+
+        // a new process never set it: a marker for that op is the crash case again (s9.8)
+        journal.persist(journal.state(op)!!.copy(inspectStartedAtEpochMs = 10L))
+        InspectionMarks.forgetForTesting()
+        assertTrue(MapImportPipeline.sweepInterrupted(journal, inFlight = emptySet()))
+        assertFalse(copy.exists())
+        assertTrue(journal.state(op)!!.interrupted)
+    }
+
+    @Test
+    fun aSweepNeverClearsTheMarkerOfAParseStillRunningHere() {
+        // the running parse keeps its crash protection even with its copy not in flight any more
+        InspectionMarks.forgetForTesting()
+        val journal = MemoryJournal()
+        val op = "pdf:running-${System.nanoTime()}"
+        journal.persist(DocumentImportCopyState(op, DocumentImportCopyPhase.READY, "/nowhere/import-4.pdf"))
+        InspectionMarks.mark(journal, op, 11L, 12L)
+        assertFalse(MapImportPipeline.sweepInterrupted(journal, inFlight = emptySet()))
+        assertEquals(11L, journal.state(op)!!.inspectStartedAtEpochMs)
+        InspectionMarks.mark(journal, op, null, 13L)
+        assertNull(journal.state(op)!!.inspectStartedAtEpochMs)
+        InspectionMarks.forgetForTesting()
+    }
+
     private class MemoryJournal : DocumentImportCopyStateStore {
         private val states = mutableMapOf<String, DocumentImportCopyState>()
+        /** like the sealed journal once DataKey relocks: reads work, writes throw */
+        var locked = false
         override fun state(operationKey: String): DocumentImportCopyState? = states[operationKey]
         override fun persist(state: DocumentImportCopyState) {
+            check(!locked) { "locked" }
             states[state.operationKey] = state
         }
         override fun all(): List<DocumentImportCopyState> = states.values.toList()

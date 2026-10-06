@@ -829,7 +829,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   parse is abandoned rather than stopped, and pdfium (Android rendering) runs in-process
   and could still crash natively on a hostile file. A marker written before parsing
   starts stops an import crash loop: if it is still there at the next launch the copy is
-  removed, the import is not retried and the user is told. Before the map is added, a
+  removed, the import is not retried and the user is told. On Android the marker sits in
+  the sealed import journal, so when mission data locks while a file is being checked
+  (leaving the app) its clear can't be written; the app remembers in memory that it set
+  that marker and the check came back, so while it keeps running that marker isn't taken
+  for a crash and the import is tried again when the map comes back. Before the map is added, a
   probe draws it once under the render crash guard; a sheet that can't be drawn is
   refused and nothing is saved. Drawing (calibration previews included) is covered by
   the same guard, so a sheet that crashes the renderer is not reopened automatically.

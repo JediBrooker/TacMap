@@ -15,6 +15,8 @@ import com.tacmap.map.render.TileIndex
 import com.tacmap.map.render.pdf.PdfBakeReader
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.util.MissionKeyUnlockRule
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -252,8 +254,10 @@ class MBTilesLifecycleInstrumentedTest {
         assertNotNull("no marker while the pack was admitted", during?.inspectStartedAtEpochMs)
         assertNull(journal.state(op)!!.inspectStartedAtEpochMs)
 
-        // the process died in there: what the journal held at that point is what the next launch finds
+        // the process died in there: what the journal held at that point is what the next launch
+        // finds, and the new process has no memory of setting it
         journal.persist(during!!)
+        InspectionMarks.forgetForTesting()
         InFlightImportFiles.release(prepared.file)
         assertTrue(MapImportPipeline.sweepInterrupted(journal))
         assertFalse("the copy goes", prepared.file.exists())
@@ -262,6 +266,94 @@ class MBTilesLifecycleInstrumentedTest {
         val again = runBlocking { replay.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
         assertEquals(ImportError.INTERRUPTED, (again as PreparedOutcome.Failed).failure.error)
         assertFalse("the replay opened it again", admitted)
+    }
+
+    @Test
+    fun anImportPausedDuringItsAdmissionIsRetriedNotRefusedAsInterrupted() {
+        // DL-1: Home locks the key while the pack's admitted, the screen's job goes. the admission
+        // can't be stopped, comes back behind the lock and can't clear its marker. that's not a
+        // crash, so the replay on resume imports it instead of saying it was interrupted
+        val file = makeMBTiles("paused")
+        val dir = File(context.cacheDir, "paused-journal-${System.nanoTime()}").apply { mkdirs() }
+        val op = "mbtiles:paused-${System.nanoTime()}"
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val admitting = java.util.concurrent.CountDownLatch(1)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val first = MapImportPipeline(context, DocumentImportCopyJournal.forTests(dir), validateMbtiles = { f ->
+            admitting.countDown()
+            gate.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            MBTilesStore.open(f.path)?.use { it.metadata }
+        })
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job())
+        val job = scope.launch {
+            // the screen's import job catches whatever the dead run throws, so does this
+            runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { first.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
+            }
+        }
+        assertTrue(admitting.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        try {
+            com.tacmap.util.DataKey.lock()
+            job.cancel()
+            gate.countDown()
+            runBlocking { job.join() }
+        } finally {
+            com.tacmap.util.DataKey.unlock()
+        }
+        // what the rebuilt screen reads: the marker's still on disk
+        val replayJournal = DocumentImportCopyJournal.forTests(dir)
+        assertNotNull("the clear landed after all", replayJournal.state(op)?.inspectStartedAtEpochMs)
+        // the view model's sweep on the way back doesn't call it a crash either
+        assertFalse("swept as interrupted", MapImportPipeline.sweepInterrupted(DocumentImportCopyJournal.forTests(dir)))
+
+        val again = runBlocking { MapImportPipeline(context, replayJournal).runMbtiles(Uri.fromFile(file), op, snapshot) { } }
+        assertTrue("not retried: $again", again is PreparedOutcome.Mbtiles)
+        val prepared = (again as PreparedOutcome.Mbtiles).prepared
+        assertNotNull("admitted without metadata", prepared.metadata)
+        assertNull(DocumentImportCopyJournal.forTests(dir).state(op)!!.inspectStartedAtEpochMs)
+        InFlightImportFiles.release(prepared.file)
+        prepared.file.delete()
+    }
+
+    @Test
+    fun aReplayWhileThePausedAdmissionStillRunsWaitsForItAndLeavesItsCopyAlone() {
+        // DL-1 too: back before the admission's done. the replay used to read the live marker as a
+        // crash, delete the copy under the admission and say interrupted
+        val file = makeMBTiles("paused-live")
+        val dir = File(context.cacheDir, "paused-live-journal-${System.nanoTime()}").apply { mkdirs() }
+        val op = "mbtiles:paused-live-${System.nanoTime()}"
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val admitting = java.util.concurrent.CountDownLatch(1)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        var copy: File? = null
+        val first = MapImportPipeline(context, DocumentImportCopyJournal.forTests(dir), validateMbtiles = { f ->
+            copy = f
+            admitting.countDown()
+            gate.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            MBTilesStore.open(f.path)?.use { it.metadata }
+        })
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job())
+        val job = scope.launch {
+            // the screen's import job catches whatever the dead run throws, so does this
+            runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { first.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
+            }
+        }
+        assertTrue(admitting.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        job.cancel()
+        val replay = scope.async(kotlinx.coroutines.Dispatchers.IO) {
+            MapImportPipeline(context, DocumentImportCopyJournal.forTests(dir)).runMbtiles(Uri.fromFile(file), op, snapshot) { }
+        }
+        Thread.sleep(300)
+        assertFalse("replay didn't wait", replay.isCompleted)
+        assertTrue("copy deleted under the admission", copy!!.isFile)
+        gate.countDown()
+        val again = runBlocking { replay.await() }
+        assertTrue("not retried: $again", again is PreparedOutcome.Mbtiles)
+        val prepared = (again as PreparedOutcome.Mbtiles).prepared
+        assertTrue(prepared.file.isFile)
+        InFlightImportFiles.release(prepared.file)
+        prepared.file.delete()
     }
 
     @Test
