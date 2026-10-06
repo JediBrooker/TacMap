@@ -139,6 +139,8 @@ enum ImportedMapFileStatus: Equatable, Sendable {
 
 enum ImportedMapState: String, Sendable {
     case geoPDF, calibrated, rejected, needsCalibration, offlineTiles, derived, unavailable
+    /// 3.0.3 U1: the pack's open got refused this process, tap retries
+    case openFailed
 }
 
 enum ImportedMapRowTap: String, Sendable { case activate, calibrate, none }
@@ -162,9 +164,14 @@ struct ImportedMapPresentation: Sendable {
 
 enum ImportedMapStates {
 
-    static func state(_ e: ImportedMapEntry, file: ImportedMapFileStatus) -> ImportedMapState {
+    /// packRefused: the in memory refusal record (U1), PDFs ignore it
+    static func state(_ e: ImportedMapEntry, file: ImportedMapFileStatus,
+                      packRefused: Bool = false) -> ImportedMapState {
         if file != .ok { return .unavailable }
-        if e.kind == .mbtiles { return e.derivedFromId == nil ? .offlineTiles : .derived }
+        if e.kind == .mbtiles {
+            if packRefused { return .openFailed }
+            return e.derivedFromId == nil ? .offlineTiles : .derived
+        }
         guard let pdf = e.pdf else { return .needsCalibration }
         // S2: a rebuild adopted it but couldnt read it, pageCount 0. Delete only
         if pdf.pageCount <= 0 { return .unavailable }
@@ -175,12 +182,13 @@ enum ImportedMapStates {
     }
 
     static func canBeDurableActive(_ s: ImportedMapState) -> Bool {
-        [.geoPDF, .calibrated, .offlineTiles, .derived].contains(s)
+        // openFailed stays a valid selection, a restore keeps it and nothing gets written
+        [.geoPDF, .calibrated, .offlineTiles, .derived, .openFailed].contains(s)
     }
 
     static func present(_ e: ImportedMapEntry, file: ImportedMapFileStatus, draftPoints: Int?,
-                        parentName: String?) -> ImportedMapPresentation {
-        let s = state(e, file: file)
+                        parentName: String?, packRefused: Bool = false) -> ImportedMapPresentation {
+        let s = state(e, file: file, packRefused: packRefused)
         let pdf = e.pdf
         let effective: String? = pdf.flatMap { $0.manual != nil ? "manual" : ($0.embedded != nil ? "embedded" : nil) }
         let can = canBeDurableActive(s)
@@ -204,6 +212,7 @@ enum ImportedMapStates {
             case .offlineTiles: subtitle = CalibrationMessage(key: "map_state_offline_tiles")
             case .derived: subtitle = CalibrationMessage(key: "map_state_derived", args: ["name": .text(parentName ?? "")])
             case .unavailable: subtitle = CalibrationMessage(key: "map_state_unavailable")
+            case .openFailed: subtitle = CalibrationMessage(key: "map_state_open_failed")
             }
         }
         let tap: ImportedMapRowTap = s == .unavailable ? .none : (can ? .activate : .calibrate)

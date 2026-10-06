@@ -166,6 +166,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Calibration/MBTilesRecordProbe.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/MBTilesStore.swift",
     "platform": "ios",
     "area": "maps-calibration",

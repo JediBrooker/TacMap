@@ -84,3 +84,21 @@ final class MBTilesOpeningSource: MapSource {
         self.displayName = displayName
     }
 }
+
+/// 3.0.3 U1: the saved pack couldn't be shown at a restore (file missing or
+/// changed, or its open got refused). Blank like the opening placeholder, no
+/// tile requests, no coverage, but nothing is pending for it so the orphaned
+/// placeholder handling leaves it alone. Never swapped for online on its own
+final class MBTilesUnavailableSource: MapSource {
+    let id = UUID()
+    let displayName: String
+    let kind: MapSourceKind = .offlineTiles
+    let coverage: MKCoordinateRegion? = nil
+    let calibration: Calibration? = nil
+    let entryID: UUID
+
+    init(entryID: UUID, displayName: String) {
+        self.entryID = entryID
+        self.displayName = displayName
+    }
+}

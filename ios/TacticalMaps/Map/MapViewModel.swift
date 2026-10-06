@@ -178,7 +178,9 @@ final class MapViewModel: ObservableObject {
     /// one shot launch notices from the crash guard. An interrupted import and
     /// an interrupted bake can both fire on one launch (K1), they queue and show
     /// one after the other, after the crash suspect alert if there is one
-    enum PDFLaunchNotice: Equatable { case importInterrupted, bakeInterrupted }
+    /// packRestoreFailed (3.0.3 U1): the saved pack couldn't be shown at a
+    /// restore, the name gets resolved into the copy at display
+    enum PDFLaunchNotice: Equatable { case importInterrupted, bakeInterrupted, packRestoreFailed(name: String) }
     @Published private(set) var pdfLaunchNotice: PDFLaunchNotice?
     private(set) var queuedLaunchNotices: [PDFLaunchNotice] = []
 
@@ -223,6 +225,30 @@ final class MapViewModel: ObservableObject {
         }
     }
     private var admittedPacks: [AdmittedPackKey: MBTilesStore.Metadata] = [:]
+
+    /// 3.0.3 U1: packs whose off main open came back refused, this process
+    /// only (no schema change). An admitted open or a delete takes it off, a
+    /// relink is a new key anyway
+    @Published private var refusedPacks: Set<AdmittedPackKey> = []
+    /// keys whose restore notice already went up this process
+    private var restoreNoticeShown: Set<AdmittedPackKey> = []
+
+    /// one alert per refused activation. Hosted by Layers while it's up, else
+    /// the root once nothing's on top (same as "Map change not saved")
+    struct PackOpenFailedAlert: Identifiable, Equatable {
+        let id = UUID()
+        let name: String
+        var title: String { Messages.mapPackOpenFailedTitle(name) }
+        var message: String { Messages.mapPackOpenFailedMessage() }
+    }
+    @Published private(set) var packOpenFailedAlert: PackOpenFailedAlert?
+
+    func dismissPackOpenFailedAlert() { packOpenFailedAlert = nil }
+
+    /// the Layers row reads this for openFailed
+    func packRefused(_ e: ImportedMapEntry) -> Bool {
+        e.kind == .mbtiles && refusedPacks.contains(AdmittedPackKey(e))
+    }
 
     /// what a pack open does once it lands
     private struct PackOpenPlan {
@@ -328,6 +354,10 @@ final class MapViewModel: ObservableObject {
     /// S7: an import copy whose library write failed, kept (in flight) for Retry.
     /// Not Now drops it
     private var pendingImportCopy: URL?
+    /// K1 (3.0.3 DL-4): Retries of writes that hit the relock gate, oldest first.
+    /// the unlock's own restore wipes pendingRetry, so these get run again once a
+    /// restore has the library back. Not Now drops them with the copy
+    private var relockedRetries: [() -> Bool] = []
     private var rebuildInFlight = false
 
     /// F3: Retry on a locked library re-runs the migration + restore, which
@@ -444,25 +474,36 @@ final class MapViewModel: ObservableObject {
         guard pendingPackOpen?.ticket == ticket, libraryStatus == .loaded,
               let e = library?.entry(asked.id), AdmittedPackKey(e) == AdmittedPackKey(asked) else {
             // still the newest ask but the library moved: nothing's coming for it now
-            if pendingPackOpen?.ticket == ticket { pendingPackOpen = nil }
+            let wasNewest = pendingPackOpen?.ticket == ticket
+            if wasNewest { pendingPackOpen = nil }
             src?.closeForDeletion()
             if armed { guardStore.complete(token: token) }
+            // DL-3: if this was a tap over a restore's placeholder (say the tapped
+            // entry got deleted meanwhile) the restore's result is already gone,
+            // so put something real up. Locked library = leave it, the unlock's
+            // restore reopens it
+            if wasNewest, libraryStatus == .loaded { replaceOrphanedPlaceholder() }
             return
         }
         pendingPackOpen = nil
         guard let src else {
-            // refused: nothing written. A restore goes online in memory like it
-            // always did, an activation leaves the old map up. Unless the old map
-            // is a restore's blank placeholder this tap took over from
+            // refused: nothing written, the refusal gets remembered for the row.
+            // A restore (or calibration return) shows the blank unavailable
+            // placeholder + a one time notice, never online (U1). An activation
+            // leaves the old map up and says so, unless the old map is a
+            // restore's blank placeholder this tap took over from
             if armed { guardStore.complete(token: token) }
+            refusedPacks.insert(AdmittedPackKey(e))
             if plan.placeholder {
-                publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+                showUnavailablePack(e)
             } else {
+                packOpenFailedAlert = PackOpenFailedAlert(name: e.displayName)
                 replaceOrphanedPlaceholder(refused: e.id)
             }
             return
         }
         admittedPacks[AdmittedPackKey(e)] = src.store.metadata
+        refusedPacks.remove(AdmittedPackKey(e))
         if armed { src.firstDraw = MBTilesFirstDrawWatch { guardStore.complete(token: token) } }
         landPack(src, e, plan: plan)
     }
@@ -484,27 +525,65 @@ final class MapViewModel: ObservableObject {
     }
 
     /// an activation took over from a restore that was still opening, then
-    /// didnt land (pack refused, or its write failed). The restore's result got
-    /// dropped, so nothing is coming for the blank placeholder: open the restored
-    /// pack again, online in memory when that can't happen or it's the very pack
-    /// that just got refused. Never leave the blank up with nothing pending
+    /// didnt land (pack refused, its write failed, or its entry went or changed
+    /// while it opened). The restore's result got dropped, so nothing is coming
+    /// for the blank placeholder: back to the durable selection. Its pack opens
+    /// again, its online style goes up, or the unavailable placeholder when it's
+    /// the very pack that just got refused (or its file is gone). Never leave the
+    /// opening blank up with nothing pending, never online for a pack (U1 rule 4)
     private func replaceOrphanedPlaceholder(refused: UUID? = nil) {
-        guard pendingPackOpen == nil, let held = mapSource as? MBTilesOpeningSource else { return }
-        if held.entryID != refused, let restored = library?.entry(held.entryID), openPack(restored, plan: .restore) {
+        guard pendingPackOpen == nil, mapSource is MBTilesOpeningSource else { return }
+        switch library?.active {
+        case .entry(let id)?:
+            guard let e = library?.entry(id) else { break }
+            if e.kind == .mbtiles {
+                // the tap's own alert already said this pack can't open, no second notice
+                if id == refused {
+                    restoreNoticeShown.insert(AdmittedPackKey(e))
+                    showUnavailablePack(e)
+                } else if !openPack(e, plan: .restore) {
+                    showUnavailablePack(e)
+                }
+                return
+            }
+        case .online(let style)?:
+            publishMapSource(OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable
+                                                       ? OnlineRasterBasemapSource.defaultStyle : style))
             return
+        case nil:
+            break
         }
         publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
     }
 
-    private static func entryID(of s: MapSource) -> UUID? {
-        (s as? PDFMapSource)?.entryID ?? (s as? OfflineTileMapSource)?.entryID ?? (s as? MBTilesOpeningSource)?.entryID
+    /// U1 rule 4: the durable pack can't be shown. Blank, nothing written, no
+    /// reframe, the guard isn't armed for it. The notice goes up once per
+    /// process per key, after the crash alert and the other launch notices
+    private func showUnavailablePack(_ e: ImportedMapEntry) {
+        if !((mapSource as? MBTilesUnavailableSource)?.entryID == e.id) {
+            publishMapSource(MBTilesUnavailableSource(entryID: e.id, displayName: e.displayName), reframe: false)
+        }
+        guard restoreNoticeShown.insert(AdmittedPackKey(e)).inserted else { return }
+        queuedLaunchNotices.append(.packRestoreFailed(name: e.displayName))
+        showNextLaunchNotice()
     }
 
-    /// the placeholder counts, it's that entry being shown (just not drawn yet)
+    private static func entryID(of s: MapSource) -> UUID? {
+        (s as? PDFMapSource)?.entryID ?? (s as? OfflineTileMapSource)?.entryID
+            ?? (s as? MBTilesOpeningSource)?.entryID ?? (s as? MBTilesUnavailableSource)?.entryID
+    }
+
+    /// the placeholders count, it's that entry being shown (just not drawn)
     var activeEntryID: UUID? { Self.entryID(of: mapSource) }
 
-    /// an offline pack is up, or about to be (no online tiles either way)
-    var showsOfflinePack: Bool { mapSource is OfflineTileMapSource || mapSource is MBTilesOpeningSource }
+    /// an offline pack is up, or about to be, or can't be (no online tiles any way)
+    var showsOfflinePack: Bool {
+        mapSource is OfflineTileMapSource || mapSource is MBTilesOpeningSource || mapSource is MBTilesUnavailableSource
+    }
+
+    /// the header badge reads couldn't be drawn in red over this one, never a
+    /// green offline basemap over a blank map
+    var showsUnavailablePack: Bool { mapSource is MBTilesUnavailableSource }
 
     @discardableResult
     func selectOnlineBasemap(_ style: BasemapStyle) -> Bool {
@@ -726,6 +805,7 @@ final class MapViewModel: ObservableObject {
             // R3-2: anything a failed unlink left behind goes too (same as Android)
             if next.permitsCleanup { _ = self.libraryDependencies.sweepBakes(ImportedMapLibrary.bakeFileNames(next)) }
             self.tamperedEntryIDs.subtract(ids)
+            self.refusedPacks = self.refusedPacks.filter { !ids.contains($0.id) }
             self.draftsEpoch &+= 1
         }
     }
@@ -753,8 +833,12 @@ final class MapViewModel: ObservableObject {
         clearCalibrationReturn()
         // the durable entry may have been re-activated, rebuild it from the library
         if let id = Self.entryID(of: back), let e = library?.entry(id) {
-            // a pack reopens off main (its old store closed when the display went up)
-            if e.kind == .mbtiles, openPack(e, plan: .calibrationReturn) { return }
+            // a pack reopens off main (its old store closed when the display went up).
+            // its file gone meanwhile: the unavailable placeholder, like a restore
+            if e.kind == .mbtiles {
+                if !openPack(e, plan: .calibrationReturn) { showUnavailablePack(e) }
+                return
+            }
             if let fresh = source(for: e) {
                 publishMapSource(fresh, reframe: false)
                 return
@@ -839,6 +923,7 @@ final class MapViewModel: ObservableObject {
             _ = decideMBTilesLaunchGuard(restoredToken: nil)
             afterRestore(LibraryState())
             showNextLaunchNotice()
+            resumeWorkParkedBehindRelock()
             return .nothing
         case .loaded(let s):
             library = s
@@ -893,9 +978,15 @@ final class MapViewModel: ObservableObject {
                     // a placeholder whose open went away (library locked under
                     // it, say) isnt showing anything, this restore reopens it
                     let opening = mapSource is MBTilesOpeningSource && pendingPackOpen?.entryID == id
-                    if activeEntryID != id || (mapSource is MBTilesOpeningSource && !opening) {
-                        if let e = s.entry(id), e.kind == .mbtiles, openPack(e, plan: .restore) {
-                            // M2: blank placeholder now, the pack once it's admitted off main
+                    // U1: a later restore gives an unavailable pack another go,
+                    // unless a tap's retry of it is already out
+                    let retryUnavailable = mapSource is MBTilesUnavailableSource && pendingPackOpen?.entryID != id
+                    if activeEntryID != id || (mapSource is MBTilesOpeningSource && !opening) || retryUnavailable {
+                        if let e = s.entry(id), e.kind == .mbtiles {
+                            // M2: blank placeholder now, the pack once it's admitted off main.
+                            // no file to open (missing, size or mtime changed): the
+                            // unavailable placeholder, never online (U1 rule 4)
+                            if !openPack(e, plan: .restore) { showUnavailablePack(e) }
                         } else if let e = s.entry(id), let src = source(for: e) {
                             publishMapSource(src)
                             verifyInBackground(e)
@@ -909,6 +1000,7 @@ final class MapViewModel: ObservableObject {
             }
             afterRestore(s)
             showNextLaunchNotice()
+            resumeWorkParkedBehindRelock()
             return .restored
         case .locked:
             libraryStatus = .locked
@@ -971,6 +1063,17 @@ final class MapViewModel: ObservableObject {
                 completion?(restored)
             }
         }
+    }
+
+    /// K1: the library is back (the unlock's restore, or a Retry after it). what
+    /// the relock cut off goes in now, after the restored map is up so an import
+    /// that activates still wins. Still relocked = each one just parks again, the
+    /// gate throws before any Keychain read
+    private func resumeWorkParkedBehindRelock() {
+        let parked = relockedRetries
+        relockedRetries = []
+        for retry in parked { _ = retry() }
+        bakeController.publishParkedBake()
     }
 
     private func afterRestore(_ s: LibraryState) {
@@ -1158,6 +1261,8 @@ final class MapViewModel: ObservableObject {
 
     func dismissMapSelectionPersistenceIssue() {
         pendingRetry = nil
+        // a parked commit would write an entry for the copy unlinked below
+        relockedRetries = []
         mapSelectionPersistenceIssue = nil
         // S7: Not Now on a failed import commit, its copy isn't coming back
         if let copy = pendingImportCopy {
@@ -1189,9 +1294,12 @@ final class MapViewModel: ObservableObject {
             try libraryDependencies.write(next)
         } catch {
             guard reportFailure else { return false }
-            reportIssue(Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage()) { [weak self] in
-                self?.execute(t, publish: publish) ?? false
-            }
+            let retry: () -> Bool = { [weak self] in self?.execute(t, publish: publish) ?? false }
+            // the auth-bound key relocked under this (app left the front). the
+            // unlock's restore clears the Retry below, park it so it runs after
+            // that restore instead. an import commit vanished otherwise (DL-4)
+            if DataKey.failedBehindRelock(error) { relockedRetries.append(retry) }
+            reportIssue(Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage(), retry: retry)
             return false
         }
         removeKnownSupersededBakes(from: current, to: next)

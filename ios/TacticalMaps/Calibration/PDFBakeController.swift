@@ -199,6 +199,28 @@ final class PDFBakeController: ObservableObject {
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var guardToken: String?
     var guardStore: PDFRenderGuard = .shared
+
+    /// a finished bake that came back while the key was relocked (auth-bound,
+    /// app out of the front). its record write could only fail behind the lock
+    /// and bin the lot, so the .partial waits in the work dir (no sweep looks
+    /// there) till the user's unlock. Android parks the same way since 3.0.1
+    private struct ParkedBake {
+        let out: (url: URL, bytes: Int64)
+        let pdf: PDFMapSource
+        let ctx: PDFRenderContext
+        let maxZoom: Int
+        let neededBytes: Int64
+    }
+    private var parked: ParkedBake?
+    /// the relock gate (3.0.2 K1), tests stub it. read on main, where lockKey()
+    /// runs too, so nothing can relock between this and the attach
+    var keyRelocked: () -> Bool = { DataKey.isRelocked }
+
+    /// done baking, waiting on the unlock to record it (state stays running)
+    var waitingForUnlock: Bool { parked != nil }
+    /// does the bake hold the idle timer off. a parked one is done working, so
+    /// no: otherwise the device never auto locks while it waits on the unlock
+    var keepsScreenAwake: Bool { isRunning && parked == nil }
     /// tests point this somewhere private
     var finalDirectory: URL = PDFBakeReader.directoryURL()
     // The three below go through the sealed imported-map library (the one
@@ -513,8 +535,8 @@ final class PDFBakeController: ObservableObject {
                            pdf: PDFMapSource, ctx: PDFRenderContext, maxZoom: Int, neededBytes: Int64) {
         self.worker = nil
         defer {
-            if let t = guardToken { guardStore.complete(kind: .bake, token: t) }
-            guardToken = nil
+            // parked keeps its guard slot, a kill before the unlock is an unfinished bake
+            if parked == nil { endGuard() }
             endBackgroundWork()
             releaseResources()
         }
@@ -546,14 +568,49 @@ final class PDFBakeController: ObservableObject {
                 state = .failed(.sourceChanged)
                 return
             }
-            let name = "tacmap-bake-\(UUID().uuidString).mbtiles"
-            let final = finalDirectory.appendingPathComponent(name)
-            // the move and the record land together under the managed files lock,
-            // a reconcile in between would reap a file nothing points at yet
-            ManagedImportedMapFileLifecycle.withManagedFilesLock {
-                publish(out, final: final, name: name, pdf: pdf, ctx: ctx, maxZoom: maxZoom, neededBytes: neededBytes)
+            // relocked (3.0.2 K1): no record write behind it, wait for the user's unlock
+            if keyRelocked() {
+                parked = ParkedBake(out: out, pdf: pdf, ctx: ctx, maxZoom: maxZoom, neededBytes: neededBytes)
+                return
             }
+            publishFinished(out, pdf: pdf, ctx: ctx, maxZoom: maxZoom, neededBytes: neededBytes)
         }
+    }
+
+    private func publishFinished(_ out: (url: URL, bytes: Int64), pdf: PDFMapSource, ctx: PDFRenderContext,
+                                 maxZoom: Int, neededBytes: Int64) {
+        let name = "tacmap-bake-\(UUID().uuidString).mbtiles"
+        let final = finalDirectory.appendingPathComponent(name)
+        // the move and the record land together under the managed files lock,
+        // a reconcile in between would reap a file nothing points at yet
+        ManagedImportedMapFileLifecycle.withManagedFilesLock {
+            publish(out, final: final, name: name, pdf: pdf, ctx: ctx, maxZoom: maxZoom, neededBytes: neededBytes)
+        }
+    }
+
+    /// the unlock's restore has the library back: a bake parked behind the
+    /// relock gets its record now, same publish as always (sourceChanged etc
+    /// still apply). nothing parked or still relocked = no-op. main
+    func publishParkedBake() {
+        guard let p = parked, !keyRelocked() else { return }
+        parked = nil
+        // the scenePhase pass may have put the timer back on for us, give it back
+        defer { endGuard(); endBackgroundWork() }
+        publishFinished(p.out, pdf: p.pdf, ctx: p.ctx, maxZoom: p.maxZoom, neededBytes: p.neededBytes)
+    }
+
+    /// cancelled or its PDF deleted while parked: the finished file goes
+    private func dropParked() {
+        guard let p = parked else { return }
+        parked = nil
+        try? FileManager.default.removeItem(at: p.out.url)
+        endGuard()
+        endBackgroundWork()
+    }
+
+    private func endGuard() {
+        if let t = guardToken { guardStore.complete(kind: .bake, token: t) }
+        guardToken = nil
     }
 
     private func publish(_ out: (url: URL, bytes: Int64), final: URL, name: String, pdf: PDFMapSource,
@@ -611,6 +668,12 @@ final class PDFBakeController: ObservableObject {
 
     func cancel() {
         if let w = worker { return w.cancel() }
+        if parked != nil {
+            dropParked()
+            state = .idle
+            setSubject(nil)
+            return
+        }
         switch state {
         case .confirming:
             dismiss()
@@ -632,10 +695,10 @@ final class PDFBakeController: ObservableObject {
         if let w = worker {
             w.cancel()
             worker = nil
-            if let t = guardToken { guardStore.complete(kind: .bake, token: t) }
-            guardToken = nil
+            endGuard()
             endBackgroundWork()
         }
+        dropParked()
         estimateGeneration &+= 1
         state = .idle
         setSubject(nil)

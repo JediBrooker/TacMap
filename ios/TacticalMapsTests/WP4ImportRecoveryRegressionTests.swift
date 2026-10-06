@@ -202,6 +202,96 @@ final class WP4ImportRecoveryRegressionTests: XCTestCase {
         XCTAssertEqual(durable.entries.map(\.id), [entry.id])
     }
 
+    /// the relock gate DataKey runs, over the test key, counting Keychain reads
+    private final class GatedKey {
+        let cache = DataKeyCache()
+        private let key: Data
+        private(set) var reads = 0
+        init(_ key: Data) { self.key = key }
+        private func read() throws -> Data { reads += 1; return key }
+        /// unlocked and wired to SafeStore like production
+        func install() throws {
+            try cache.unlock(read)
+            SafeStore.keyProvider = { [self] in try cache.get(read) }
+        }
+        /// RootGate when the scene leaves active (auth-bound key)
+        func relock() { cache.lock() }
+        /// the Unlock button
+        func unlock() throws { try cache.unlock(read) }
+    }
+
+    /// 3.0.3 DL-4: auth-bound key, the user left the app mid import so the key
+    /// relocked, and the import's commit hit the gate. The unlock's own restore
+    /// cleared its Retry, so the map never landed and nothing said so. Now it
+    /// goes in right after that restore, and nothing read the key before it
+    @MainActor
+    func testAnImportCommitBehindTheRelockLandsAfterTheUnlock() async throws {
+        let gate = GatedKey(key)
+        try gate.install()
+        try ImportedMapLibrary.write(LibraryState())
+        let vm = viewModel()
+        XCTAssertEqual(vm.libraryStatus, .loaded)
+        let controller = MapImportController()
+        controller.mapVM = vm
+        installRealProbe(on: controller)
+        let reads = gate.reads
+
+        gate.relock()
+        let completed = expectation(description: "import finished behind the lock")
+        controller.importPDF(url: try fixture()) { completed.fulfill() }
+        await fulfillment(of: [completed], timeout: 15)
+        XCTAssertEqual(vm.library?.entries.count, 0, "the commit hit the gate")
+        let copy = try XCTUnwrap(ownedCopies.first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+        // a restore that still can't read the library leaves it waiting
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .locked)
+        XCTAssertTrue(ownedCopies.contains(copy))
+        XCTAssertEqual(gate.reads, reads, "nothing behind the lock read the key")
+
+        // Unlock: DataKey.unlock(), then ContentView's restore
+        try gate.unlock()
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        let entry = try XCTUnwrap(vm.library?.entries.first, "the import landed after the unlock")
+        XCTAssertEqual(ImportedMapLibrary.fileURL(entry), copy)
+        XCTAssertEqual(vm.activeEntryID, entry.id)
+        XCTAssertNil(vm.mapSelectionPersistenceIssue)
+        XCTAssertFalse(ownedCopies.contains(copy), "the library owns the copy now")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+        guard case .loaded(let durable) = ImportedMapLibrary.load() else { return XCTFail("the commit must be durable") }
+        XCTAssertEqual(durable.entries.map(\.id), [entry.id])
+        // and only the once
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        XCTAssertEqual(vm.library?.entries.map(\.id), [entry.id])
+    }
+
+    /// Not Now while a relocked commit waits (say the restore after the unlock
+    /// came back locked): the copy goes and the commit with it, so no entry ever
+    /// points at the deleted file
+    @MainActor
+    func testNotNowDropsAnImportCommitParkedBehindTheRelock() async throws {
+        let gate = GatedKey(key)
+        try gate.install()
+        try ImportedMapLibrary.write(LibraryState())
+        let vm = viewModel()
+        let controller = MapImportController()
+        controller.mapVM = vm
+        installRealProbe(on: controller)
+        gate.relock()
+        let completed = expectation(description: "import finished behind the lock")
+        controller.importPDF(url: try fixture()) { completed.fulfill() }
+        await fulfillment(of: [completed], timeout: 15)
+        let copy = try XCTUnwrap(ownedCopies.first)
+
+        vm.dismissMapSelectionPersistenceIssue()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy.path))
+        XCTAssertFalse(ownedCopies.contains(copy))
+        try gate.unlock()
+        let before = writeAttempts
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        XCTAssertEqual(writeAttempts, before, "nothing left to commit")
+        XCTAssertEqual(vm.library?.entries.count, 0)
+    }
+
     @MainActor
     func testDismissingFailedImportUnlinksItsCopyAndInvalidatesRetry() async throws {
         let vm = viewModel()
