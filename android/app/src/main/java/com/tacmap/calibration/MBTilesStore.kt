@@ -3,6 +3,7 @@ package com.tacmap.calibration
 import com.tacmap.localization.L10n
 
 import android.database.Cursor
+import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
 import android.os.CancellationSignal
 import androidx.annotation.VisibleForTesting
@@ -426,6 +427,13 @@ class MBTilesStore private constructor(
         @VisibleForTesting
         internal fun heapLimitCheckedForTesting(): Boolean = heapLimitChecked.get()
 
+        // DL-A1: left out, the framework puts DefaultDatabaseErrorHandler on the connection, and on
+        // SQLITE_CORRUPT that closes it and deletes the file + sidecars, read only or not. that took the
+        // user's pack with it (admission, restore, rebuild, migration, or just the tile read that hit the bad
+        // page). the statement still throws without it, so a damaged pack is refused or misses that tile
+        // and stays on disk till they delete it (s13 L9)
+        private val KEEP_CORRUPT_PACK = DatabaseErrorHandler { }
+
         // one daemon thread fires the budget cancels, cancelled timers drop out right away
         private val WATCHDOG by lazy {
             ScheduledThreadPoolExecutor(1) { r -> Thread(r, "mbtiles-budget").apply { isDaemon = true } }
@@ -461,7 +469,7 @@ class MBTilesStore private constructor(
             }
             if (!schemaOk) return null
             val db = try {
-                SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
+                SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY, KEEP_CORRUPT_PACK)
             } catch (_: Throwable) {
                 return null
             }

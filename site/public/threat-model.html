@@ -850,9 +850,13 @@ be opened (its file is missing or changed, or the check refuses it) the map
 stays blank and a notice says so: TacMap doesn&#39;t swap a chosen offline pack
 for the online map on its own. Layers lists the pack as unavailable (delete
 it or import it again) or as couldn&#39;t be opened (tap to retry, or delete
-it). A pack the user picks that can&#39;t be
-opened leaves the map on screen as it was, and an alert says so. Opening a
-pack is covered by a crash guard (<code>mbtiles_open_guard.json</code>, entry ids
+it). A pack SQLite finds damaged isn&#39;t deleted for it: by default Android
+deletes a database file SQLite reports as corrupt, even one opened read
+only, so every Android MBTiles connection swaps that handler for one that
+keeps the file. The check then refuses the pack, or a damaged tile just
+doesn&#39;t draw, and the file stays until the user deletes it. A pack the
+user picks that can&#39;t be opened leaves the map on screen as it was, and an
+alert says so. Opening a pack is covered by a crash guard (<code>mbtiles_open_guard.json</code>, entry ids
 only): if the app dies while the saved pack is being opened, or while any
 pack is drawing its first screen, the next launch doesn&#39;t reopen it
 automatically, shows the online map in memory and asks (Open Anyway, Delete

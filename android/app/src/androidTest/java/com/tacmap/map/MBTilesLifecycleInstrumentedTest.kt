@@ -557,6 +557,129 @@ class MBTilesLifecycleInstrumentedTest {
     }
 
     @Test
+    fun aPackSqliteFindsCorruptIsNeverDeleted() {
+        // DL-A1: the 3 arg openDatabase got every pack the framework's DefaultDatabaseErrorHandler, and on
+        // SQLITE_CORRUPT that deletes the file, read only or not. so one bad page took the user's pack with
+        // it, at the restore's admission or later on the tile read that hit it, while U1's notice said nothing
+        // was deleted. the record probe never walks tiles or tile_index so all three of these reach sqlite
+
+        // a bad tile_index leaf: the admission aggregate scans that index, so it's refused
+        val index = pagedPack("index-leaf", tileBytes = 200, side = 45)
+        smash(index) { bytes, pageSize, roots -> (leafPages(bytes, pageSize, roots.getValue("tile_index")).first() - 1) * pageSize }
+        assertNull("admission", MBTilesStore.open(index.path))
+        assertTrue("admission deleted the pack", index.exists())
+        assertNull("source open", OfflineTileMapSourceAndroid.open(index.path))
+        assertTrue("restore open deleted the pack", index.exists())
+
+        // a bad tiles leaf: the aggregate never reads table leaves, so it's admitted and the first tile on
+        // that leaf, rowid 1 = (8, 0, tms 0), is where sqlite trips. no tile, and the pack stays
+        val leaf = pagedPack("tiles-leaf", tileBytes = 200, side = 45)
+        smash(leaf) { bytes, pageSize, roots -> (leafPages(bytes, pageSize, roots.getValue("tiles")).first() - 1) * pageSize }
+        requireNotNull(OfflineTileMapSourceAndroid.open(leaf.path)) { "a bad tiles leaf got refused, the test needs a new page" }.use {
+            assertNull(it.tileData(8, 0, 255))
+        }
+        assertTrue("a tile read deleted the pack", leaf.exists())
+        val lazy = OfflineTileMapSourceAndroid.prevalidated(leaf.path, "Damaged", MBTilesStore.Metadata(minZoom = 8, maxZoom = 8))
+        assertNull(lazy.tileData(8, 0, 255))
+        lazy.close()
+        assertTrue("a lazy tile read deleted the pack", leaf.exists())
+
+        // a tile whose overflow chain points past the end of the file, only read when that tile's drawn
+        val overflow = pagedPack("overflow", tileBytes = 9_000, side = 10)
+        smash(overflow) { bytes, pageSize, roots ->
+            val page = firstOverflowPage(bytes, pageSize, leafPages(bytes, pageSize, roots.getValue("tiles")).first())
+            val at = (page - 1) * pageSize
+            val past = bytes.size / pageSize + 1_000
+            for (i in 0 until 4) bytes[at + i] = (past ushr (24 - 8 * i)).toByte()
+            -1
+        }
+        requireNotNull(OfflineTileMapSourceAndroid.open(overflow.path)) { "a bad overflow pointer got refused" }.use {
+            assertNull(it.tileData(8, 0, 255))
+            assertNotNull("the rest still draws", it.tileData(8, 1, 255))
+        }
+        assertTrue("a tile read deleted the pack", overflow.exists())
+        listOf(index, leaf, overflow).forEach { it.delete() }
+    }
+
+    /** an mbutil style pack with a real tile_index, big enough that tiles and the index span several pages */
+    private fun pagedPack(name: String, tileBytes: Int, side: Int): File {
+        val file = File(context.cacheDir, "${System.nanoTime()}-$name.mbtiles")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            // everything in the main file, the smash below edits it directly
+            db.rawQuery("PRAGMA journal_mode=DELETE", null).use { it.moveToFirst() }
+            db.execSQL("CREATE TABLE metadata (name text, value text)")
+            db.execSQL("INSERT INTO metadata VALUES ('name', 'Damaged'), ('format', 'png'), ('minzoom', '8'), ('maxzoom', '8')")
+            db.execSQL("CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)")
+            db.execSQL("CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)")
+            db.execSQL("WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ${side * side - 1}) " +
+                "INSERT INTO tiles SELECT 8, i / $side, i % $side, randomblob($tileBytes) FROM n")
+        }
+        return file
+    }
+
+    /** [at] gives the byte to zero (the page type when it's a page start), or -1 when it edited the bytes itself */
+    private fun smash(file: File, at: (ByteArray, Int, Map<String, Int>) -> Int) {
+        val roots = SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            db.rawQuery("SELECT name, rootpage FROM sqlite_master", null).use { c ->
+                buildMap { while (c.moveToNext()) put(c.getString(0), c.getInt(1)) }
+            }
+        }
+        val bytes = file.readBytes()
+        val pageSize = u16(bytes, 16).let { if (it == 1) 65_536 else it }
+        assertEquals("no reserved bytes", 0, bytes[20].toInt())
+        val offset = at(bytes, pageSize, roots)
+        if (offset >= 0) bytes[offset] = 0
+        file.writeBytes(bytes)
+    }
+
+    /** leaf pages under [root], left to right */
+    private fun leafPages(bytes: ByteArray, pageSize: Int, root: Int): List<Int> {
+        val leaves = mutableListOf<Int>()
+        fun walk(page: Int) {
+            val base = (page - 1) * pageSize
+            val header = base + if (page == 1) 100 else 0
+            when (bytes[header].toInt() and 0xff) {
+                0x0d, 0x0a -> leaves += page
+                0x05, 0x02 -> {
+                    for (k in 0 until u16(bytes, header + 3)) walk(u32(bytes, base + u16(bytes, header + 12 + 2 * k)))
+                    walk(u32(bytes, header + 8))
+                }
+                else -> error("page $page isn't a b-tree page")
+            }
+        }
+        walk(root)
+        assertTrue("the b-tree at $root is one page, nothing to pick", leaves.size > 1)
+        return leaves
+    }
+
+    /** the first overflow page of the first cell on a table leaf, sqlite's local payload rule */
+    private fun firstOverflowPage(bytes: ByteArray, pageSize: Int, leaf: Int): Int {
+        val base = (leaf - 1) * pageSize
+        var i = base + u16(bytes, base + 8)
+        fun varint(): Long {
+            var v = 0L
+            repeat(8) {
+                val b = bytes[i++].toInt() and 0xff
+                v = (v shl 7) or (b and 0x7f).toLong()
+                if (b < 0x80) return v
+            }
+            return (v shl 8) or (bytes[i++].toLong() and 0xff)
+        }
+        val payload = varint()
+        varint() // rowid
+        val usable = pageSize
+        val maxLocal = usable - 35
+        assertTrue("the tile has to overflow", payload > maxLocal)
+        val minLocal = (usable - 12) * 32 / 255 - 23
+        val k = minLocal + ((payload - minLocal) % (usable - 4)).toInt()
+        return u32(bytes, i + if (k <= maxLocal) k else minLocal)
+    }
+
+    private fun u16(bytes: ByteArray, at: Int): Int = ((bytes[at].toInt() and 0xff) shl 8) or (bytes[at + 1].toInt() and 0xff)
+
+    private fun u32(bytes: ByteArray, at: Int): Int = (u16(bytes, at) shl 16) or u16(bytes, at + 2)
+
+    @Test
     fun twoTablesGetNoAdmissionBudget() {
         // s14.2: a table pack's aggregate is one scan the file bounds, a spent budget doesn't refuse it.
         // a view still gets one

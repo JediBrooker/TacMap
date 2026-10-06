@@ -809,9 +809,13 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   stays blank and a notice says so: TacMap doesn't swap a chosen offline pack
   for the online map on its own. Layers lists the pack as unavailable (delete
   it or import it again) or as couldn't be opened (tap to retry, or delete
-  it). A pack the user picks that can't be
-  opened leaves the map on screen as it was, and an alert says so. Opening a
-  pack is covered by a crash guard (`mbtiles_open_guard.json`, entry ids
+  it). A pack SQLite finds damaged isn't deleted for it: by default Android
+  deletes a database file SQLite reports as corrupt, even one opened read
+  only, so every Android MBTiles connection swaps that handler for one that
+  keeps the file. The check then refuses the pack, or a damaged tile just
+  doesn't draw, and the file stays until the user deletes it. A pack the
+  user picks that can't be opened leaves the map on screen as it was, and an
+  alert says so. Opening a pack is covered by a crash guard (`mbtiles_open_guard.json`, entry ids
   only): if the app dies while the saved pack is being opened, or while any
   pack is drawing its first screen, the next launch doesn't reopen it
   automatically, shows the online map in memory and asks (Open Anyway, Delete
