@@ -771,13 +771,23 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   length, so before SQLite reads anything TacMap also reads the file's own
   b-tree page headers (never a value) and refuses a pack whose schema has more
   than 1,000 entries or 1 MiB in all, or whose metadata tables hold more than
-  64 rows or a row over 8 MiB + 128 KiB. Neither the schema load nor a metadata
-  read can then make SQLite load more than that, on any Android or iOS version,
-  and a tile stored as text instead of a blob is never read. What remains: on a
-  pack whose tiles are a view, rows of the underlying tables the view never
-  shows, and the columns it joins on, are compared while tiles are read, so on
-  that older SQLite such a value can still be loaded whole (bounded by the
-  4 GiB file); the crash guard below stops a repeat at the next launch. A view
+  64 rows or a row over 8 MiB + 128 KiB. That bounds the schema load and every
+  value SQLite takes from a metadata table's rows, and a tile stored as text
+  instead of a blob is never read. What remains: indexes aren't checked, and
+  when SQLite looks a key up in an index (a metadata read by name, a view's
+  join, a tile read) it loads each index entry it compares whole, whatever the
+  length cap. So a pack carrying an index on a metadata or tiles table with a
+  huge entry (built that way on purpose, or a hand-edited index that points at
+  other data) can still make SQLite load that much, bounded by the 4 GiB file:
+  while the pack is checked (import, launch or a pick in Layers) for a
+  metadata index, while tiles are drawn for a tiles index. From Android 12 the 128 MiB heap cap
+  bounds that; Android before 12 and iOS have no such cap. Likewise, on a pack
+  whose tiles are a view, rows of the underlying tables the view never shows,
+  and the columns it joins on, are compared while tiles are read, so on older
+  SQLite (Android before 12, iOS before 3.45) such a value can still be loaded
+  whole (bounded by the 4 GiB file). A pack that kills its import is removed at
+  the next launch, and one that kills the app while it is opened or draws its
+  first screen is held back by the crash guard below. A view
   has no rowid for incremental reads, so it is read with key-addressed
   queries under the same bounds. A view's join isn't bounded by the file size
   alone, so when either relation is a view the admission queries share a 30 s

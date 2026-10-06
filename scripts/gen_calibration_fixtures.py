@@ -4223,7 +4223,9 @@ def mbtiles_record_probe():
             "ship SQLite older than 3.45, and the schema load at the first statement reads every schema row before "
             "any check of ours. A cell's first varint is its whole record size, so nothing SQLite reads from that "
             "row can be bigger. Reading only page headers, cell pointers and that varint bounds what SQLite can be "
-            "made to load, on every platform and SQLite version, without reading a value"),
+            "made to load from a schema or metadata table row, on every platform and SQLite version, without "
+            "reading a value. Index b-trees aren't walked, and an index seek still loads each key it compares "
+            "whole (contract s15.2 rule 7, a documented residual)"),
         "header": (
             "the file is at least 100 bytes and starts with 'SQLite format 3' and a NUL. Page size = big endian "
             "16 bit at offset 16, 1 meaning 65536, a power of two from 512 to 65536. Usable size U = page size - "
