@@ -38,6 +38,7 @@ class MBTilesRecordProbeTest {
         assertEquals(probe.l("maxMetadataRecordBytes"), MBTilesRecordProbe.MAX_METADATA_RECORD_BYTES)
         assertEquals(probe.i("maxDepth"), MBTilesRecordProbe.MAX_DEPTH)
         assertEquals(probe.i("maxPages"), MBTilesRecordProbe.MAX_PAGES)
+        assertEquals(probe.l("maxIndexKeyBytes"), MBTilesRecordProbe.MAX_INDEX_KEY_BYTES)
         // the admission's own 64 row cap, and a record that holds two values at the value cap
         assertEquals(admission.i("maxRows"), MBTilesRecordProbe.MAX_METADATA_ROWS)
         assertEquals(2 * admission["connection"]!!.jsonObject.l("maxValueBytes"), MBTilesRecordProbe.MAX_METADATA_RECORD_BYTES)
@@ -47,13 +48,18 @@ class MBTilesRecordProbeTest {
     fun everyHandMadePageImageGetsTheSharedVerdict() {
         val cases = probe["cases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} cases", cases.size >= 51)
+        assertTrue("only ${cases.size} cases", cases.size >= 92)
         val images = cases.filter { it["packBase64"] != null }
-        assertTrue("only ${images.size} page images", images.size >= 40)
+        assertTrue("only ${images.size} page images", images.size >= 70)
         // the 9 byte varint is 2^64 - 1, a signed compare would let it through as -1
-        assertTrue(images.any { it["id"]!!.jsonPrimitive.content == "nineByteVarint" })
-        // PROBE-RT-1: the ANALYZE tables, one of them only findable on its overflow page
-        assertTrue(images.any { it["id"]!!.jsonPrimitive.content == "statisticsMarkOnOverflowPage" })
+        // PROBE-RT-1: the ANALYZE tables, one of them only findable on its overflow page.
+        // s16.1 index keys (interior ones too, the page decides not the type column), whole schema rows;
+        // s16.2 the mark only as a whole name, decoys still caught
+        for (id in listOf("nineByteVarint", "statisticsMarkOnOverflowPage", "indexKeyNineByteVarint",
+                "indexInteriorKeyOverCap", "indexPageKeysBeforeChildren", "indexTypeColumnLies", "indexRootSharedByTwoRows",
+                "schemaRecordTextRootpage", "schemaRecordBlobSql", "statisticsMarkInsideWords", "statisticsWordAsColumnName",
+                "statisticsCommentBeforeName"))
+            assertTrue(id, images.any { it["id"]!!.jsonPrimitive.content == id })
         val reasons = HashSet<String>()
         for (case in images) {
             val id = case["id"]!!.jsonPrimitive.content
@@ -69,7 +75,8 @@ class MBTilesRecordProbeTest {
                 want?.let { reasons += it }
             }
         }
-        assertEquals(setOf("header", "structure", "pageType", "rows", "recordBytes", "totalBytes", "statistics"), reasons)
+        assertEquals(setOf("header", "structure", "pageType", "rows", "recordBytes", "totalBytes", "statistics",
+            "keyBytes", "schemaRecord"), reasons)
     }
 
     @Test
@@ -78,9 +85,11 @@ class MBTilesRecordProbeTest {
         // that long (sparse, nothing's written past page 2) and the probe only ever reads two pages
         val size = 4096
         val file = tmp.newFile("huge.mbtiles")
+        val metadata = schemaRecord("table", "metadata", "metadata", 2L, "CREATE TABLE metadata (name text, value text)")
         RandomAccessFile(file, "rw").use { f ->
-            // page 1: the file header, then sqlite_master's leaf header at 100 with one small schema row
-            f.write(leafPage(size, listOf(60L), headerAt = 100, withRecords = true).also { sqliteHeader(size).copyInto(it) })
+            // page 1: the file header, then sqlite_master's leaf header at 100 with one real schema row
+            // (every row gets read whole since s16.1, zero bytes aren't one)
+            f.write(cellPage(size, listOf(metadata), headerAt = 100).also { sqliteHeader(size).copyInto(it) })
             f.write(leafPage(size, listOf(300_000_000L)))
             f.setLength(2L * size + 300_000_000L)
         }
@@ -121,6 +130,68 @@ class MBTilesRecordProbeTest {
         assertEquals("statistics", MBTilesRecordProbe.schema(file))
     }
 
+    @Test
+    fun aHugeIndexKeyIsJudgedOffItsPayloadSizeWithoutReadingIt() {
+        // s16.1: a tiles index with one 300 MB key. a seek mallocs all of an overflowing key to compare it,
+        // whatever the length limit says, so the key's payload size decides. sparse again, the probe reads
+        // page 1, page 2's type byte and page 2, never the overflow
+        val size = 4096
+        val file = tmp.newFile("index.mbtiles")
+        val index = schemaRecord("index", "tiles_note", "tiles", 2L, "CREATE INDEX tiles_note ON tiles (note)")
+        RandomAccessFile(file, "rw").use { f ->
+            f.write(cellPage(size, listOf(index), headerAt = 100).also { sqliteHeader(size).copyInto(it) })
+            f.write(indexLeafPage(size, listOf(12L, 300_000_000L)))
+            f.setLength(2L * size + 300_000_000L)
+        }
+        assertEquals("keyBytes", MBTilesRecordProbe.schema(file))
+        // right at the cap is fine, it's the size alone
+        RandomAccessFile(file, "rw").use { f ->
+            f.seek(size.toLong())
+            f.write(indexLeafPage(size, listOf(12L, MBTilesRecordProbe.MAX_INDEX_KEY_BYTES)))
+        }
+        assertNull(MBTilesRecordProbe.schema(file))
+        // and the row's type column has no say: called a table it's still the index b-tree its page says
+        val lie = schemaRecord("table", "tiles_note", "tiles", 2L, "CREATE INDEX tiles_note ON tiles (note)")
+        RandomAccessFile(file, "rw").use { f ->
+            f.write(cellPage(size, listOf(lie), headerAt = 100).also { sqliteHeader(size).copyInto(it) })
+            f.write(indexLeafPage(size, listOf(12L, MBTilesRecordProbe.MAX_INDEX_KEY_BYTES + 1)))
+        }
+        assertEquals("keyBytes", MBTilesRecordProbe.schema(file))
+    }
+
+    @Test
+    fun theIndexWalkHasNoPageCapAndReachesTheLastLeaf() {
+        // a tiles index has a key per tile, so unlike the table walks there's no maxPages: 1 KiB pages, a root
+        // over 64 interior pages over 64 leaves each, 4,161 index pages. the one bad key is in the very last
+        // leaf, so a walk that stops early says fine (or structure, with the table walk's page cap)
+        val size = 1024
+        val fanout = 64
+        val interiors = 3L until 3L + fanout
+        val firstLeaf = 3L + fanout
+        val leaves = fanout * fanout
+        val file = tmp.newFile("wide.mbtiles")
+        val index = schemaRecord("index", "tile_index", "tiles", 2L,
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)")
+        RandomAccessFile(file, "rw").use { f ->
+            f.write(cellPage(size, listOf(index), headerAt = 100).also { sqliteHeader(size).copyInto(it) })
+            f.write(indexInteriorPage(size, interiors.toList().dropLast(1), interiors.last))
+            for (i in 0 until fanout) {
+                val kids = (0 until fanout).map { firstLeaf + i * fanout + it }
+                f.write(indexInteriorPage(size, kids.dropLast(1), kids.last()))
+            }
+            for (i in 0 until leaves)
+                f.write(indexLeafPage(size, listOf(12L, if (i == leaves - 1) MBTilesRecordProbe.MAX_INDEX_KEY_BYTES + 1 else 12L)))
+        }
+        assertTrue(1 + fanout + leaves > MBTilesRecordProbe.MAX_PAGES)
+        assertEquals("keyBytes", MBTilesRecordProbe.schema(file))
+        // the same key at the cap: every page read once and nothing found
+        RandomAccessFile(file, "rw").use { f ->
+            f.seek((firstLeaf + leaves - 2) * size)
+            f.write(indexLeafPage(size, listOf(12L, MBTilesRecordProbe.MAX_INDEX_KEY_BYTES)))
+        }
+        assertNull(MBTilesRecordProbe.schema(file))
+    }
+
     @Test(expected = java.io.IOException::class)
     fun aFileThatCantBeReadThrowsSoTheOpenRefusesIt() {
         MBTilesRecordProbe.schema(File(tmp.root, "gone.mbtiles"))
@@ -141,12 +212,8 @@ class MBTilesRecordProbeTest {
         h[19] = 1
     }
 
-    /**
-     * a table leaf page, b-tree header at [headerAt], one cell per record size packed at the end. offsets from
-     * the page start. [withRecords] puts that many zero bytes in too, the schema's rows get read whole
-     */
-    private fun leafPage(size: Int, records: List<Long>, headerAt: Int = 0, withRecords: Boolean = false): ByteArray =
-        cellPage(size, records.map { if (withRecords) ByteArray(it.toInt()) else null }, headerAt, records)
+    /** a table leaf page, one cell per record size packed at the end, offsets from the page start. sizes only */
+    private fun leafPage(size: Int, records: List<Long>): ByteArray = cellPage(size, records.map { null }, 0, records)
 
     /** the same with real records (the sizes come from them), or with sizes only where a record's null */
     private fun cellPage(size: Int, bodies: List<ByteArray?>, headerAt: Int = 0, sizes: List<Long>? = null): ByteArray {
@@ -164,6 +231,43 @@ class MBTilesRecordProbeTest {
         }
         return page
     }
+
+    /** an index leaf page (0x0A), one cell per key payload size, nothing behind the size. sizes only matter here */
+    private fun indexLeafPage(size: Int, keys: List<Long>): ByteArray {
+        val page = ByteArray(size)
+        page[0] = 0x0A
+        page[3] = (keys.size shr 8).toByte()
+        page[4] = keys.size.toByte()
+        var at = size
+        keys.forEachIndexed { i, key ->
+            val cell = varint(key)
+            at -= cell.size + 3
+            cell.copyInto(page, at)
+            page[8 + 2 * i] = (at shr 8).toByte()
+            page[9 + 2 * i] = at.toByte()
+        }
+        return page
+    }
+
+    /** an index interior page (0x02): a cell per left child with a 3 byte key after it, then the right most child */
+    private fun indexInteriorPage(size: Int, children: List<Long>, right: Long): ByteArray {
+        val page = ByteArray(size)
+        page[0] = 0x02
+        page[3] = (children.size shr 8).toByte()
+        page[4] = children.size.toByte()
+        be32(right).copyInto(page, 8)
+        var at = size
+        children.forEachIndexed { i, child ->
+            val cell = be32(child) + varint(3L) + ByteArray(3)
+            at -= cell.size
+            cell.copyInto(page, at)
+            page[12 + 2 * i] = (at shr 8).toByte()
+            page[13 + 2 * i] = at.toByte()
+        }
+        return page
+    }
+
+    private fun be32(v: Long): ByteArray = ByteArray(4) { i -> (v shr (24 - 8 * i)).toByte() }
 
     /** a real record: header (its own size, a serial type per column) then the bodies. Long or String columns */
     private fun schemaRecord(vararg columns: Any): ByteArray {

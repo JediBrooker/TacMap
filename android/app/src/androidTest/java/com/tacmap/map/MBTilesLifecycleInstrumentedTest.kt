@@ -557,6 +557,45 @@ class MBTilesLifecycleInstrumentedTest {
     }
 
     @Test
+    fun aHugeIndexKeyIsRefusedBeforeSqliteComparesIt() {
+        // s16.1: a seek mallocs every overflowing index key it compares whole, no length limit applies there
+        // (seen at 200 MB on 3.51), and 3.0.3's probe never walked an index. one key just over the cap, well
+        // under the 12+ heap cap, so only the probe stands in its way. a zeroblob, cheap to build
+        val cap = admissionFixture()["recordProbe"]!!.jsonObject["maxIndexKeyBytes"]!!.jsonPrimitive.long
+        val file = File(context.cacheDir, "${System.nanoTime()}-huge-key.mbtiles")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            db.execSQL("CREATE TABLE metadata (name text, value text)")
+            db.execSQL("INSERT INTO metadata VALUES ('name', 'Indexed'), ('format', 'png')")
+            db.execSQL("CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note blob)")
+            db.execSQL("CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)")
+            db.execSQL("CREATE INDEX tiles_note ON tiles (zoom_level, tile_column, tile_row, note)")
+            db.execSQL("INSERT INTO tiles VALUES (8, 0, 0, X'010203', X'00')")
+        }
+        // small keys are what every real pack has, that keeps opening
+        requireNotNull(MBTilesStore.open(file.path)) { "an indexed pack was refused" }.close()
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("UPDATE tiles SET note = zeroblob(${cap + 500_000})")
+        }
+        assertTrue(file.length() > cap)
+        assertEquals("keyBytes", MBTilesRecordProbe.schema(file))
+        assertNull("admission", MBTilesStore.open(file.path))
+        assertNull("source open", OfflineTileMapSourceAndroid.open(file.path))
+        assertNull("bake reader", PdfBakeReader.open(file, "a".repeat(64), 256))
+        // the lazy open runs no aggregate, its first tile read is a seek on one of those indexes
+        val lazy = OfflineTileMapSourceAndroid.prevalidated(file.path, "Indexed", MBTilesStore.Metadata(minZoom = 8, maxZoom = 8))
+        assertNull(lazy.tileData(8, 0, 255))
+        assertTrue("lazy open didn't refuse it", lazy.refusedForTesting())
+        lazy.close()
+        val journalDir = File(context.cacheDir, "key-journal-${System.nanoTime()}").apply { mkdirs() }
+        val pipeline = MapImportPipeline(context, DocumentImportCopyJournal.forTests(journalDir))
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val outcome = runBlocking { pipeline.runMbtiles(Uri.fromFile(file), "key-${System.nanoTime()}", snapshot) { } }
+        assertEquals("import: $outcome", ImportError.INVALID_MBTILES, (outcome as? PreparedOutcome.Failed)?.failure?.error)
+        assertTrue(file.exists())
+        file.delete()
+    }
+
+    @Test
     fun aPackSqliteFindsCorruptIsNeverDeleted() {
         // DL-A1: the 3 arg openDatabase got every pack the framework's DefaultDatabaseErrorHandler, and on
         // SQLITE_CORRUPT that deletes the file, read only or not. so one bad page took the user's pack with
@@ -767,7 +806,7 @@ class MBTilesLifecycleInstrumentedTest {
         val fixture = admissionFixture()
         val cases = fixture["relationCases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} relation cases", cases.size >= 50)
+        assertTrue("only ${cases.size} relation cases", cases.size >= 57)
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "nodeMbtilesDedup" })
         // 3.0.3 U2: the record probe's rows (3.0.2 opened the three refused ones) and the TEXT tile that's no tile
         for (id in listOf("metadataLargeRecordUnderProbeCap", "metadataRecordOverProbeCap", "metadataViewJoinBaseRows",
@@ -775,6 +814,10 @@ class MBTilesLifecycleInstrumentedTest {
         // PROBE-RT-1: an ANALYZE'd pack opens, one with a stat row over the schema caps doesn't
         for (id in listOf("analyzedPack", "statisticsOverProbeCap"))
             assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
+        // s16.1 index keys (3.0.3 opened the four refused ones), s16.2 names merely like a statistics table
+        for (id in listOf("tilesIndexKeyUnderProbeCap", "tilesIndexKeyOverProbeCap", "metadataExpressionIndexOverProbeCap",
+                "dedupOrphanImageKeyOverProbeCap", "planetilerShallowRowOverProbeCap", "tilesColumnLikeStatistics",
+                "indexNamedLikeStatistics")) assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
         // SEC-M1-SHADOW: case variant and name lie rows, they come as packBase64 (sql[] needs writable_schema)
         for (id in listOf("tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant", "tableRowKeepsIfNotExists",
                 "baseRowNameLie")) assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
@@ -829,8 +872,8 @@ class MBTilesLifecycleInstrumentedTest {
         // s15.2 recordProbe.cases: the sql[] rows get built by this device's sqlite and their table's root
         // looked up like the reader does, the hand made page images are the exact files (the JVM runs those too)
         val cases = admissionFixture()["recordProbe"]!!.jsonObject["cases"]!!.jsonArray.map { it.jsonObject }
-        assertTrue("only ${cases.size} cases", cases.size >= 51)
-        assertTrue(cases.count { it["sql"] != null } >= 11)
+        assertTrue("only ${cases.size} cases", cases.size >= 92)
+        assertTrue(cases.count { it["sql"] != null } >= 22)
         cases.forEach { case ->
             val id = case["id"]!!.jsonPrimitive.content
             val file = File(context.cacheDir, "${System.nanoTime()}-probe-$id.mbtiles")
