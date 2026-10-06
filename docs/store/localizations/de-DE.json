@@ -15,7 +15,7 @@
       "Optionale App-Sperre mit Face ID oder Touch ID. Für iPhone und iPad.": "Optionale App-Sperre mit PIN oder Biometrie. Für Android-Smartphones und -Tablets.",
       "Den für dich gültigen Preis zeigt der App Store.": "Den für dich gültigen Preis zeigt Google Play."
     },
-    "releaseNotes": "TacMap 3.0.2\n• „Öffnen“ in Google Play öffnet keinen zweiten Kartenbildschirm mehr.\n• Geht bei einem Update von 2.x der Speicher aus, bleiben Kartennamen und Kalibrierungen erhalten.\n• MBTiles werden robuster gelesen: Ein Kartensatz, der TacMap beendet, wird beim nächsten Start zurückgehalten. Große Kartensätze öffnen im Hintergrund.\n• Räume im alten Format (2:): Deine Objekte bleiben für Teammitglieder mit TacMap 2 für Android sichtbar, ein Hinweis erklärt gemischte Versionen."
+    "releaseNotes": "TacMap 3.0.2\n• „Öffnen“ in Google Play öffnet keinen zweiten Kartenbildschirm mehr.\n• Geht bei einem Update von 2.x der Speicher aus, bleiben Kartennamen und Kalibrierungen erhalten.\n• MBTiles werden robuster gelesen: Ein Kartensatz, der TacMap beendet, wird beim nächsten Start zurückgehalten. Große Kartensätze öffnen im Hintergrund.\n• Räume im alten Format (2:): Änderungen an deinen Objekten erreichen Teammitglieder mit TacMap 2 für Android wieder, ein Hinweis erklärt gemischte Versionen."
   },
   "purchase": {
     "iosProductId": "com.tacticalmaps.app.unlock",

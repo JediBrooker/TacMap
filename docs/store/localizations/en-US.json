@@ -15,7 +15,7 @@
       "Optional Face ID or Touch ID app lock. For iPhone and iPad.": "Optional PIN or biometric app lock. For Android phones and tablets.",
       "The App Store shows your local price.": "Google Play shows your local price."
     },
-    "releaseNotes": "TacMap 3.0.2\n• The Open button in Google Play no longer opens a second map screen.\n• If an update from 2.x runs out of storage, your map names and calibrations are kept.\n• Sturdier MBTiles reading: a pack that makes TacMap close is held back at the next start. Large packs open in the background.\n• Older-style Unit Sync rooms (2: codes): your own objects stay visible to teammates still on TacMap 2 for Android, and a note explains mixed versions."
+    "releaseNotes": "TacMap 3.0.2\n• The Open button in Google Play no longer opens a second map screen.\n• If storage runs out while updating from 2.x, your map names and calibrations are kept.\n• Sturdier MBTiles reading: a pack that makes TacMap close is held back at the next start. Large packs open in the background.\n• Older-style Unit Sync rooms (2: codes): your changes to objects you create reach teammates still on TacMap 2 for Android again, and a note explains mixed versions."
   },
   "purchase": {
     "iosProductId": "com.tacticalmaps.app.unlock",

@@ -46,6 +46,17 @@ class StoreCopyTests(unittest.TestCase):
             self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.2'), path.name)
             self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.2'), path.name)
 
+    def test_play_room_note_is_about_edits_not_visibility(self):
+        # 3.0.1 never hid an android-made object from 2.x android, it was the later edits and deletes
+        # that stopped arriving once an iOS edit flipped the id casing. so the note promises those, not visibility
+        words = {'en-US.json': ('changes', 'visible'), 'de-DE.json': ('Änderungen', 'sichtbar')}
+        for name, (must, mustnt) in words.items():
+            notes = json.loads((ROOT / 'docs/store/localizations' / name).read_text())['googlePlay']['releaseNotes']
+            room = [line for line in notes.split('\n') if '(2:' in line]
+            self.assertEqual(len(room), 1, name)
+            self.assertIn(must, room[0], name)
+            self.assertNotIn(mustnt, room[0], name)
+
 
 class PrivacyPolicyTests(unittest.TestCase):
     def test_offline_tile_bakes_are_disclosed(self):
