@@ -11,8 +11,9 @@ import java.io.RandomAccessFile
  * killed. So before sqlite gets to those rows we read the file's own b-tree pages: page headers,
  * cell pointers and each leaf cell's first varint, which is that row's whole record size. Nothing
  * sqlite loads from the row can be bigger. Never a value, an overflow page or a record header,
- * except for the schema's own rows (statistics below), which the walk has already capped.
- * Straight port of the generator's probe_header() / probe_walk() / probe_schema()
+ * except for the schema's own rows (read whole since 3.0.4), which the walk has already capped.
+ * 3.0.4 (s16.1) adds every index b-tree's key sizes, same idea: a seek mallocs a whole key.
+ * Straight port of the generator's probe_header() / probe_walk() / probe_schema() / probe_index_walk()
  * (scripts/gen_calibration_fixtures.py), pinned by import_limits.json recordProbe.cases. Pure, no SQLite in here
  */
 internal object MBTilesRecordProbe {
@@ -23,6 +24,8 @@ internal object MBTilesRecordProbe {
     const val MAX_METADATA_RECORD_BYTES = 2L * MBTilesStore.MAX_VALUE_BYTES
     const val MAX_DEPTH = 20
     const val MAX_PAGES = 4_096
+    // s16.1: the most sqlite can be made to load from one key it compares, same as from one metadata row
+    const val MAX_INDEX_KEY_BYTES = MAX_METADATA_RECORD_BYTES
 
     private val MAGIC = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
     // what ANALYZE names its tables (sqlite_stat1, and 2/3/4 on builds that had them)
@@ -33,14 +36,12 @@ internal object MBTilesRecordProbe {
 
     /**
      * sqlite_master from page 1, before sqlite opens the file. null = fine, else the fixture's reason.
-     * PROBE-RT-1: the schema load at the first statement also reads every row of the ANALYZE tables
-     * whole (sqlite_stat1, sqlite_stat4), and nothing else bounded those. so each schema row's record
-     * gets read, and every row that mentions sqlite_stat has to be a plain table whose b-tree stays
-     * under the schema's own caps, all of them walked as one
+     * then every schema row read whole (schemaRows below): the statistics tables and every index b-tree
+     * hang off those rows' rootpages
      */
     fun schema(file: File): String? = RandomAccessFile(file, "r").use { f ->
         val cells = ArrayList<Long>()
-        walk(f, longArrayOf(1L), MAX_SCHEMA_ROWS, MAX_SCHEMA_BYTES, MAX_SCHEMA_BYTES, cells) ?: statistics(f, cells)
+        walk(f, longArrayOf(1L), MAX_SCHEMA_ROWS, MAX_SCHEMA_BYTES, MAX_SCHEMA_BYTES, cells) ?: schemaRows(f, cells)
     }
 
     /** one table the metadata relation reads, from its sqlite_master rootpage. null = fine */
@@ -134,15 +135,18 @@ internal object MBTilesRecordProbe {
     }
 
     /**
-     * the statistics step over the schema's leaf cells, in walk order: structure if a record can't be
-     * read whole, statistics if one that mentions sqlite_stat isn't sqlite's own kind of statistics
-     * table, then their b-trees walked as one under the schema caps
+     * every schema leaf cell in walk order, read whole (s16.1 schemaRecords): structure if it can't be,
+     * schemaRecord if it doesn't split the way sqlite writes a row, statistics if it names a statistics
+     * table (s16.2) and isn't sqlite's own kind, schemaRecord if it isn't five columns with an integer
+     * rootpage and NULL or text sql, structure if that rootpage is past the end. then the statistics
+     * tables walked as one under the schema caps, then every index b-tree under the key cap
      */
-    private fun statistics(f: RandomAccessFile, cells: List<Long>): String? {
+    private fun schemaRows(f: RandomAccessFile, cells: List<Long>): String? {
         val g = geometry(f) ?: return "header"
         val page = ByteArray(g.size)
         var loaded = 0L
-        val roots = ArrayList<Long>()
+        val statistics = ArrayList<Long>()
+        val roots = ArrayList<Long>(cells.size)
         for (cell in cells) {
             val p = cell ushr 16
             if (p != loaded) {
@@ -151,10 +155,18 @@ internal object MBTilesRecordProbe {
                 loaded = p
             }
             val record = record(f, g, page, (cell and 0xFFFF).toInt()) ?: return "structure"
-            if (mentionsStatistics(record)) roots += statisticsRoot(record) ?: return "statistics"
+            val row = split(record) ?: return "schemaRecord"
+            val root = rootpage(record, row) ?: return if (row.statistics) "statistics" else "schemaRecord"
+            if (root < 0 || root > g.pageCount) return "structure"
+            if (row.statistics) statistics += root
+            roots += root
         }
-        if (roots.isEmpty()) return null
-        return walk(f, roots.toLongArray(), MAX_SCHEMA_ROWS, MAX_SCHEMA_BYTES, MAX_SCHEMA_BYTES, null)
+        if (statistics.isNotEmpty())
+            walk(f, statistics.toLongArray(), MAX_SCHEMA_ROWS, MAX_SCHEMA_BYTES, MAX_SCHEMA_BYTES, null)?.let { return it }
+        // the page decides, never the type or tbl_name column: sqlite builds each object from its sql and
+        // checks neither, and a WITHOUT ROWID table is an index b-tree with no row of its own for that
+        val indexes = roots.filter { it >= 1 && indexPage(f, g, it) }
+        return if (indexes.isEmpty()) null else indexWalk(f, g, indexes.toLongArray(), MAX_INDEX_KEY_BYTES)
     }
 
     /**
@@ -195,69 +207,166 @@ internal object MBTilesRecordProbe {
         return out
     }
 
-    /** sqlite_stat anywhere in the record, ASCII case folded like sqlite compares names */
-    private fun mentionsStatistics(r: ByteArray): Boolean {
-        outer@ for (i in 0..r.size - STATISTICS_MARK.size) {
-            for (j in STATISTICS_MARK.indices) {
-                val b = r[i + j].toInt()
-                if ((if (b in 'A'.code..'Z'.code) b + 32 else b) != STATISTICS_MARK[j].toInt()) continue@outer
-            }
-            return true
-        }
-        return false
-    }
+    /**
+     * what rootpage() needs from a split record: how many columns, columns 3 and 4 (rootpage and sql)
+     * as serial type + where their bytes are, and whether any column names a statistics table
+     */
+    private class Row(
+        val columns: Int, val rootType: Long, val rootAt: Int, val sqlType: Long, val sqlAt: Int, val sqlEnd: Int,
+        val statistics: Boolean,
+    )
 
     /**
-     * rootpage of a schema record that mentions sqlite_stat, or null (statistics) unless it's what sqlite
-     * itself writes for those: exactly five columns filling the record exactly (no serial type 10 or 11),
-     * rootpage an integer and sql text starting CREATE TABLE. a view or virtual table by that name would
-     * run SQL from the file when sqlite reads it
+     * a schema record split the way sqlite writes one, null = schemaRecord: the header size varint h with
+     * its own length <= h <= the record size, serial type varints each ending by h and filling the header,
+     * no 10 or 11, the bodies filling the record exactly. one pass, no list of columns kept: a 1 MiB
+     * record can claim a million of them
      */
-    private fun statisticsRoot(r: ByteArray): Long? {
+    private fun split(r: ByteArray): Row? {
         val header = varint(r, 0, r.size) ?: return null
         var at = varintLength(r, 0)
         if (java.lang.Long.compareUnsigned(header, at.toLong()) < 0 ||
             java.lang.Long.compareUnsigned(header, r.size.toLong()) > 0) return null
         val end = header.toInt()
-        val types = ArrayList<Long>()
+        var body = end
+        var columns = 0
+        var rootType = 0L
+        var rootAt = 0
+        var sqlType = 0L
+        var sqlAt = 0
+        var sqlEnd = 0
+        var statistics = false
         while (at < end) {
-            types += varint(r, at, end) ?: return null
+            val t = varint(r, at, end) ?: return null
             at += varintLength(r, at)
-            if (types.size > 5) return null
-        }
-        if (types.size != 5) return null
-        val starts = IntArray(5)
-        var body = end.toLong()
-        for (i in 0 until 5) {
-            val t = types[i]
             val n = when {
                 t == 10L || t == 11L -> return null
                 java.lang.Long.compareUnsigned(t, 12L) < 0 -> SERIAL_SIZES[t.toInt()].toLong()
                 else -> (t - 12) ushr 1
             }
-            // too big for the record is too big, however it'd add up
-            if (java.lang.Long.compareUnsigned(n, r.size.toLong()) > 0) return null
-            starts[i] = body.toInt()
-            body += n
-            if (body > r.size) return null
+            // a body past the record never adds back up to it, so that's the end of it
+            if (n > r.size - body) return null
+            val start = body
+            body += n.toInt()
+            if (columns == 3) { rootType = t; rootAt = start }
+            if (columns == 4) { sqlType = t; sqlAt = start; sqlEnd = body }
+            // text or blob, any of the columns
+            if (!statistics && java.lang.Long.compareUnsigned(t, 12L) >= 0) statistics = namesStatistics(r, start, body)
+            columns++
         }
-        if (body != r.size.toLong()) return null
-        val rootType = types[3]
-        val sqlType = types[4]
-        if (java.lang.Long.compareUnsigned(sqlType, 13L) < 0 || sqlType and 1L == 0L) return null
-        val sqlAt = starts[4]
-        if (r.size - sqlAt < CREATE_TABLE.size) return null
-        for (j in CREATE_TABLE.indices) if (r[sqlAt + j] != CREATE_TABLE[j]) return null
-        return when (rootType) {
+        if (body != r.size) return null
+        return Row(columns, rootType, rootAt, sqlType, sqlAt, sqlEnd, statistics)
+    }
+
+    /**
+     * s16.2: r[from until to] holds sqlite_stat (ASCII case folded) and one or more digits as a whole word,
+     * no letter, digit or _ right before it or right after the digits. that's every name sqlite parses as
+     * one of its statistics tables (unquoted, or between quote marks) plus a bit more, never part of a
+     * longer name like sqlite_stat_note or app_sqlite_stats
+     */
+    private fun namesStatistics(r: ByteArray, from: Int, to: Int): Boolean {
+        val mark = STATISTICS_MARK.size
+        outer@ for (i in from..to - mark) {
+            for (j in 0 until mark) if (fold(r[i + j]) != STATISTICS_MARK[j].toInt()) continue@outer
+            var k = i + mark
+            while (k < to && r[k] in '0'.code.toByte()..'9'.code.toByte()) k++
+            if (k > i + mark && (i == from || !word(r[i - 1])) && (k == to || !word(r[k]))) return true
+        }
+        return false
+    }
+
+    /** A-Z folded to a-z, like sqlite compares names. everything else as is (unsigned) */
+    private fun fold(b: Byte): Int = (b.toInt() and 0xFF).let { if (it in 'A'.code..'Z'.code) it + 32 else it }
+
+    /** ASCII letter, digit or _. sqlite's own identifier bytes are more ($, >= 0x80), so this only matches more */
+    private fun word(b: Byte): Boolean = fold(b).let { it in 'a'.code..'z'.code || it in '0'.code..'9'.code || it == '_'.code }
+
+    /**
+     * the row's rootpage, or null unless it's a row sqlite writes: five columns, rootpage an integer
+     * (serial type 1-6 big endian two's complement, 8 = 0, 9 = 1), sql NULL or text. a statistics row
+     * also needs text sql starting CREATE TABLE, a view or virtual table by that name would run SQL from
+     * the file when sqlite reads it. the caller says statistics or schemaRecord off row.statistics
+     */
+    private fun rootpage(r: ByteArray, row: Row): Long? {
+        if (row.columns != 5) return null
+        val t = row.rootType
+        if (t !in 1L..6L && t != 8L && t != 9L) return null
+        val text = java.lang.Long.compareUnsigned(row.sqlType, 13L) >= 0 && row.sqlType and 1L == 1L
+        if (row.statistics) {
+            if (!text || row.sqlEnd - row.sqlAt < CREATE_TABLE.size) return null
+            for (j in CREATE_TABLE.indices) if (r[row.sqlAt + j] != CREATE_TABLE[j]) return null
+        }
+        if (row.sqlType != 0L && !text) return null
+        return when (t) {
             8L -> 0L
             9L -> 1L
-            in 1L..6L -> {
-                var v = if (r[starts[3]] < 0) -1L else 0L
-                for (k in 0 until SERIAL_SIZES[rootType.toInt()]) v = (v shl 8) or (r[starts[3] + k].toLong() and 0xFF)
+            else -> {
+                var v = if (r[row.rootAt] < 0) -1L else 0L
+                for (k in 0 until SERIAL_SIZES[t.toInt()]) v = (v shl 8) or (r[row.rootAt + k].toLong() and 0xFF)
                 v
             }
-            else -> null
         }
+    }
+
+    /** b-tree type byte of page [p] (at 100 on page 1) is an index one, 0x02 or 0x0A. p is 1..pageCount */
+    private fun indexPage(f: RandomAccessFile, g: Geometry, p: Long): Boolean {
+        f.seek((p - 1) * g.size + if (p == 1L) 100 else 0)
+        val type = f.read()
+        return type == 0x02 || type == 0x0A
+    }
+
+    /**
+     * s16.1 indexWalk: index b-trees (0x02 interior, 0x0A leaf) from [roots] walked as one, the table walk's
+     * pre-order, depth rule and visited-once rule, every key's payload size at most [maxKey]: a leaf cell's
+     * first varint, or the one after an interior cell's 4 byte child (a seek compares those too). a page's
+     * keys all get checked when it's visited, before its children. no page or row cap, a tiles index has a
+     * key per tile and each page is read once, so the file bounds it. never a key's bytes or an overflow
+     * page, the payload size counts the overflow and it's what sqlite mallocs.
+     * header, structure, pageType or keyBytes, null = fine
+     */
+    private fun indexWalk(f: RandomAccessFile, g: Geometry, roots: LongArray, maxKey: Long): String? {
+        val size = g.size
+        val usable = g.usable
+        val page = ByteArray(size)
+        val seen = PageSet()
+        val stack = PageStack()
+        for (i in roots.indices.reversed()) stack.push(roots[i], 0)
+        while (stack.isNotEmpty()) {
+            val depth = stack.topDepth()
+            val p = stack.pop()
+            if (p < 1 || p > g.pageCount || depth >= MAX_DEPTH || !seen.add(p)) return "structure"
+            f.seek((p - 1) * size)
+            f.readFully(page)
+            val h = if (p == 1L) 100 else 0
+            val n = be16(page, h + 3)
+            when (page[h].toInt() and 0xFF) {
+                0x02 -> {
+                    val first = h + 12 + 2 * n
+                    if (first > usable) return "structure"
+                    for (i in 0 until n) {
+                        val o = be16(page, h + 12 + 2 * i)
+                        if (o < first || o + 4 > usable) return "structure"
+                        val key = varint(page, o + 4, usable) ?: return "structure"
+                        if (java.lang.Long.compareUnsigned(key, maxKey) > 0) return "keyBytes"
+                    }
+                    // all fine, so the children go on backwards (right most first) and the left most comes off first
+                    stack.push(be32(page, h + 8), depth + 1)
+                    for (i in n - 1 downTo 0) stack.push(be32(page, be16(page, h + 12 + 2 * i)), depth + 1)
+                }
+                0x0A -> {
+                    val first = h + 8 + 2 * n
+                    if (first > usable) return "structure"
+                    for (i in 0 until n) {
+                        val o = be16(page, h + 8 + 2 * i)
+                        if (o < first || o >= usable) return "structure"
+                        val key = varint(page, o, usable) ?: return "structure"
+                        if (java.lang.Long.compareUnsigned(key, maxKey) > 0) return "keyBytes"
+                    }
+                }
+                else -> return "pageType"
+            }
+        }
+        return null
     }
 
     /** sqlite's varint: up to 8 bytes of 7 bits (high bit = more), a 9th gives all 8. null if it runs into [end] */
@@ -309,5 +418,24 @@ internal object MBTilesRecordProbe {
         fun topDepth(): Int = depths[size - 1].toInt()
 
         fun pop(): Long = pages[--size]
+    }
+
+    /**
+     * pages the index walk has seen, a bit each, grown to the highest one so far. an index can run to
+     * millions of pages, a HashSet of boxed Longs would be ~50 bytes a page, this is 1 MiB for a 4 GiB
+     * pack of 512 byte pages. page numbers are already 1..pageCount here
+     */
+    private class PageSet {
+        private var words = LongArray(64)
+
+        /** false if [p] was there already */
+        fun add(p: Long): Boolean {
+            val w = (p ushr 6).toInt()
+            if (w >= words.size) words = words.copyOf(maxOf(w + 1, words.size * 2))
+            val bit = 1L shl (p and 63).toInt()
+            if (words[w] and bit != 0L) return false
+            words[w] = words[w] or bit
+            return true
+        }
     }
 }

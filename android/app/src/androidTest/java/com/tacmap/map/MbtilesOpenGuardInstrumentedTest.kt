@@ -730,6 +730,50 @@ class MbtilesOpenGuardInstrumentedTest {
     }
 
     @Test
+    fun aRefusedTapOnTheSavedPackOverItsOwnBlankSaysSoOnceAndDoesntOpenItAgain() {
+        // s16.5 (DL-N1): while the restore's still checking A they tap A in Layers. that took
+        // over the restore's blank, and once it was refused restoreIfLeftBlank admitted A a third
+        // time and put up the restore notice on top: two dialogs for one refusal
+        val pack = packEntry()
+        seed(pack)
+        val guard = relaunch()
+        val restoreGate = CountDownLatch(1).also { gates += it }
+        val admissions = java.util.concurrent.atomic.AtomicInteger()
+        val finished = java.util.concurrent.atomic.AtomicInteger()
+        admitMbtilesPack = { _, _ ->
+            if (admissions.getAndIncrement() == 0) restoreGate.await(5, TimeUnit.SECONDS)
+            finished.incrementAndGet()
+            null
+        }
+        val vm = viewModel()
+        assertTrue(vm.mapSource.value is MbtilesPlaceholderSource)
+        var ok = false
+        onMain { ok = vm.activateImportedMap(pack.id) }
+        assertTrue(ok)
+        waitUntil(what = "tap refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        // now the superseded restore comes back too
+        restoreGate.countDown()
+        waitUntil(what = "restore back") { finished.get() >= 2 }
+        onMain { }
+        waitUntil(what = "unavailable blank") { vm.mapSource.value is MbtilesUnavailableSource }
+        // anything a third open would have done has had its chance by now
+        Thread.sleep(500)
+        onMain { }
+        assertEquals("admissions", 2, admissions.get())
+        assertEquals(listOf(PackOpenAlert("Guarded pack", restore = false)), vm.packOpenAlerts.value)
+        assertEquals(pack.id, (vm.mapSource.value as MbtilesUnavailableSource).entryId)
+        assertEquals("durable selection untouched", pack.id, activeId())
+        assertTrue(vm.packRefused(pack))
+        assertEquals(emptyList<String>(), armed(guard))
+
+        // the notice counted as shown: another restore this process lands on the blank quietly
+        val second = viewModel()
+        waitUntil(what = "second blank") { second.mapSource.value is MbtilesUnavailableSource }
+        onMain { }
+        assertEquals(emptyList<PackOpenAlert>(), second.packOpenAlerts.value)
+    }
+
+    @Test
     fun aScreenThatGoesMidCheckClosesThePackAndDropsItsMarker() {
         val pack = packEntry()
         seed(pack)

@@ -717,7 +717,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   migration it was and salvages (below:
   what converts keeps its name and calibration, every other map file is adopted, nothing is cleaned up or
   deleted) rather than as a damaged library. If Android finds the library gone that way while it is running,
-  it shows the damaged-library message, and its Retry runs that same salvage instead of the rebuild. On iOS, if saving the record fails after the bytes went down, the
+  its damaged-library alert says the library is missing and that Retry brings back the names and calibrations
+  that still read, and its Retry runs that same salvage instead of the rebuild. On iOS, if saving the record fails after the bytes went down, the
   library is already written. The migration then keeps the opaque links that library names, clears and
   deletes nothing, and the restore uses that library as if the app had been killed right after the write.
   If a legacy store is damaged

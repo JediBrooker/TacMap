@@ -555,8 +555,16 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun reportCorruptLibrary() {
         libraryIssueShown = true
-        // the quarantined copy stays put; Retry rebuilds from the files, it never deletes one (S2)
-        reportMapSelectionIssue(retry = { rebuildCorruptLibrary() }, text = { Messages.mapLibraryCorruptMessage() })
+        // the quarantined copy stays put; Retry rebuilds from the files, it never deletes one (S2).
+        // s16.4: only promise a copy when there is one, picked now and worded when it's shown
+        val says = com.tacmap.calibration.CorruptLibraryText.of(library, migrator)
+        reportMapSelectionIssue(retry = { rebuildCorruptLibrary() }, text = {
+            when (says) {
+                com.tacmap.calibration.CorruptLibraryText.COPY_KEPT -> Messages.mapLibraryCorruptMessage()
+                com.tacmap.calibration.CorruptLibraryText.MISSING -> Messages.mapLibraryMissingMessage()
+                com.tacmap.calibration.CorruptLibraryText.UNFINISHED -> Messages.mapLibraryUnfinishedMessage()
+            }
+        })
     }
 
     /**
@@ -778,6 +786,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                     showPackUnavailable(entry)
                 } else {
                     _packOpenAlerts.value = _packOpenAlerts.value + PackOpenAlert(entry.displayName, restore = false)
+                    // s16.5 (DL-N1): a tap on the saved pack that took over its own restore's blank.
+                    // this alert already said it, so its blank goes up and its restore notice counts
+                    // as shown. restoreIfLeftBlank would admit the pack we just refused again
+                    if ((_mapSource.value as? com.tacmap.calibration.MbtilesPlaceholderSource)?.entryId == id) {
+                        publish(com.tacmap.calibration.MbtilesUnavailableSource(id, entry.displayName), frame = false)
+                        com.tacmap.calibration.RefusedMbtiles.firstNotice(entry)
+                    }
                 }
             }
             else -> {
