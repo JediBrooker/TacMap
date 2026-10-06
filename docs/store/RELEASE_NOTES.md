@@ -13,12 +13,12 @@ both take the `en-US` text. Releases before 3.0.1 are in
 
 Text on `release/3.0.3` (`docs/store/localizations/*.json`), not released yet: put the release commit and dates here when it ships. Both stores get 3.0.3 changes only: the App Store notes list the iOS fixes (iOS 3.0.2 was still in App Review when these were written, so if 3.0.3 replaces it there, its notes need the 3.0.2 list back), the Google Play notes the Android ones.
 
-### 3.0.3: App Store, English (944 / 4,000)
+### 3.0.3: App Store, English (965 / 4,000)
 
 ```
 TacMap 3.0.3: fixes and hardening
 
-• TacMap now tells you when an MBTiles map pack can't be opened. If your saved pack is missing, has changed or won't open, the map stays blank with a notice instead of loading an online map in its place, and Layers lets you try again or delete it.
+• TacMap now tells you when an MBTiles map pack can't be opened. If your saved pack is missing, has changed or won't open, the map stays blank with a notice instead of loading an online map in its place. In Layers you can delete it, or try again if it just won't open.
 • Sturdier MBTiles reading: a pack built to use too much memory is now refused before it is opened.
 • With mission data protected by Face ID or your passcode, map imports and offline tiles that finish while TacMap is locked are now saved once you unlock, and unlocking while a map is still importing no longer removes it.
 • Choosing a map in Layers and deleting it before it opened no longer leaves the map blank.
@@ -26,23 +26,23 @@ TacMap 3.0.3: fixes and hardening
 • After the privacy screen briefly covers the app, for example when you open Control Center, the keyboard and VoiceOver come back where you were.
 ```
 
-### 3.0.3: Google Play, English (408 / 500)
+### 3.0.3: Google Play, English (378 / 500)
 
 ```
 TacMap 3.0.3
-• TacMap now tells you when an MBTiles pack can't be opened, and no longer loads an online map in its place. Retry or delete it in Layers.
+• TacMap now tells you when an MBTiles pack can't be opened, and no longer loads an online map in its place.
 • MBTiles packs built to use too much memory are refused.
 • An MBTiles import interrupted by leaving the app now carries on.
 • Recovering the map library works in more cases.
 • Unit Sync: reconnecting no longer deletes an object a teammate has just edited.
 ```
 
-### 3.0.3: App Store, German (1,153 / 4,000)
+### 3.0.3: App Store, German (1,190 / 4,000)
 
 ```
 TacMap 3.0.3: Korrekturen und mehr Sicherheit
 
-• TacMap sagt dir jetzt, wenn sich ein MBTiles-Kartensatz nicht öffnen lässt. Fehlt dein gespeicherter Kartensatz, wurde er geändert oder öffnet er sich nicht, bleibt die Karte mit einem Hinweis leer, statt dass an seiner Stelle eine Onlinekarte geladen wird. Unter „Ebenen“ kannst du es erneut versuchen oder ihn löschen.
+• TacMap sagt dir jetzt, wenn sich ein MBTiles-Kartensatz nicht öffnen lässt. Fehlt dein gespeicherter Kartensatz, wurde er geändert oder öffnet er sich nicht, bleibt die Karte mit einem Hinweis leer, statt dass an seiner Stelle eine Onlinekarte geladen wird. Unter „Ebenen“ kannst du ihn löschen oder es erneut versuchen, wenn er sich nur nicht öffnen lässt.
 • MBTiles werden robuster gelesen: Ein Kartensatz, der zu viel Speicher belegen würde, wird jetzt abgelehnt, bevor er geöffnet wird.
 • Sind Einsatzdaten mit Face ID oder deinem Code geschützt, speichert TacMap Kartenimporte und Offline-Kacheln, die fertig werden, während die App gesperrt ist, jetzt nach dem Entsperren. Entsperrst du, während eine Karte noch importiert wird, wird sie nicht mehr entfernt.
 • Wählst du unter „Ebenen“ eine Karte und löschst sie, bevor sie geöffnet ist, bleibt die Karte nicht mehr leer.
@@ -50,11 +50,11 @@ TacMap 3.0.3: Korrekturen und mehr Sicherheit
 • Hat der Sichtschutz die App kurz verdeckt, etwa beim Öffnen des Kontrollzentrums, kehren Tastatur und VoiceOver an die alte Stelle zurück.
 ```
 
-### 3.0.3: Google Play, German (495 / 500)
+### 3.0.3: Google Play, German (441 / 500)
 
 ```
 TacMap 3.0.3
-• TacMap meldet jetzt, wenn sich ein MBTiles-Kartensatz nicht öffnen lässt, und lädt an seiner Stelle keine Onlinekarte mehr. In „Ebenen“ kannst du ihn erneut öffnen oder löschen.
+• TacMap meldet jetzt, wenn sich ein MBTiles-Kartensatz nicht öffnen lässt, und lädt an seiner Stelle keine Onlinekarte mehr.
 • MBTiles-Kartensätze, die zu viel Speicher bräuchten, werden abgelehnt.
 • Beim Verlassen der App unterbrochene MBTiles-Importe laufen weiter.
 • Die Kartenbibliothek lässt sich in mehr Fällen wiederherstellen.

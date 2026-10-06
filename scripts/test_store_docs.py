@@ -58,6 +58,24 @@ class StoreCopyTests(unittest.TestCase):
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
                 self.assertIn(f'```\n{text}\n```', history, path.name)
 
+    def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):
+        # F2: a missing or changed pack is unavailable, Delete only, and just a refused one (openFailed) has
+        # the tap to retry. so a notes sentence that offers a retry has to say it's for one that won't open
+        rows = json.loads((ROOT / 'testdata/import_limits.json').read_text())['entryStates']
+        taps = {'unavailable': 'none', 'openFailed': 'activate'}
+        for row in rows:
+            state = row['expect']['state']
+            if row['entry']['kind'] == 'mbtiles' and state in taps:
+                self.assertEqual(row['expect']['rowTap'], taps[state], row['id'])
+        words = {'en-US.json': (r'\b(try again|retry)\b', "if it just won't open"),
+                 'de-DE.json': (r'\berneut\b', 'wenn er sich nur nicht öffnen lässt')}
+        for name, (retry, only_refused) in words.items():
+            data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
+            for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
+                for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
+                    if re.search(retry, sentence, re.I):
+                        self.assertIn(only_refused, sentence, name)
+
     def test_play_room_note_is_about_edits_not_visibility(self):
         # 3.0.1 never hid an android-made object from 2.x android, it was the later edits and deletes
         # that stopped arriving once an iOS edit flipped the id casing. so a note about those rooms
