@@ -187,7 +187,8 @@ internal object ManagedImportedMapFileLifecycle {
     fun isManagedCandidateName(name: String): Boolean =
         isAuthoritativeMapName(name) || isCrashResidueName(name)
 
-    private fun isAuthoritativeMapName(name: String): Boolean {
+    /** a .pdf or .mbtiles (a bake too), never the .partial / sidecar residue a killed write leaves */
+    fun isAuthoritativeMapName(name: String): Boolean {
         val lower = name.lowercase()
         return lower.endsWith(".pdf") || lower.endsWith(".mbtiles")
     }

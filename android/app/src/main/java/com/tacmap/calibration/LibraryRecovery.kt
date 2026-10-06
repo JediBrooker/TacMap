@@ -213,15 +213,17 @@ internal object LibraryRebuild {
     }
 
     /**
-     * s13.1 managedFiles: a regular file in the map dirs the reconcile or the bake sweep would
-     * delete (map file, sidecar, .partial, bake) that isn't in [skip] (in flight, or a stuck
-     * s9.8 copy the launch sweep deletes anyway). With one there an Empty library adopts
+     * s13.1 managedFiles: a map file (pdf, mbtiles, bake) in the map dirs that isn't in [skip]
+     * (in flight, or a stuck s9.8 copy the launch sweep deletes anyway). With one there an
+     * Empty library adopts. A killed import's .partial or a lone sqlite sidecar isn't a map
+     * (3.0.3 F4): on its own it used to flag an empty library for good, now the first
+     * launch's reconcile just clears it
      */
     fun hasManagedFiles(filesDir: File, skip: Set<File>): Boolean {
         val skipped = skip.mapNotNull { runCatching { it.canonicalFile }.getOrNull() }.toSet()
         return ImportedMapLibraryStore.MANAGED_DIRECTORIES.any { dirName ->
             File(filesDir, dirName).listFiles().orEmpty().any { f ->
-                ManagedImportedMapFileLifecycle.isManagedCandidateName(f.name) &&
+                ManagedImportedMapFileLifecycle.isAuthoritativeMapName(f.name) &&
                     Files.isRegularFile(f.toPath(), LinkOption.NOFOLLOW_LINKS) &&
                     runCatching { f.canonicalFile }.getOrNull()?.let { it !in skipped } == true
             }

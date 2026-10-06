@@ -84,7 +84,8 @@ internal class LegacyMapReader(
         else -> LegacyLibraryState.NONE
     }
 
-    private fun keyAvailable(): Boolean = runCatching { SafeStore.keyProvider.key().fill(0) }.isSuccess
+    /** the mission key comes out right now. the migrator asks again after a throw (L3) */
+    fun keyAvailable(): Boolean = runCatching { SafeStore.keyProvider.key().fill(0) }.isSuccess
 
     @WorkerThread
     fun read(defaultStyle: String): Read {

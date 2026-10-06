@@ -80,12 +80,17 @@ class LibraryRecoveryTest {
         var activeStored = false
         /** pdf_calibrations: null none, true opens, false won't */
         var calibrations: Boolean? = null
+        /** runs inside the legacy read, a test throws from here */
+        var onCalibrations: () -> Unit = {}
         var clears = 0
         override fun hasLegacyState() = activeStored || calibrations != null
         override fun hasActivePdf() = activeStored
         override fun legacySession() = record?.takeIf { activeStored }
         override fun activeFile() = record?.file?.takeIf { activeStored }
-        override fun calibrationsReadable() = calibrations
+        override fun calibrationsReadable(): Boolean? {
+            onCalibrations()
+            return calibrations
+        }
         override fun clearAfterLibraryMigration(): Boolean {
             clears++
             activeStored = false
@@ -457,7 +462,7 @@ class LibraryRecoveryTest {
     }
 
     @Test
-    fun managedFilesAreWhatACleanupWouldDeleteThatNobodysWriting() {
+    fun managedFilesAreMapFilesNobodysWritingNotTheirLeftovers() {
         val dir = tempDir()
         assertFalse(LibraryRebuild.hasManagedFiles(dir, emptySet()))
         File(dir, "pdf_maps").mkdirs()
@@ -465,13 +470,113 @@ class LibraryRecoveryTest {
         // a directory named like a map isn't a file the reconcile would touch
         File(dir, "offline_tiles/nested.mbtiles").mkdirs()
         assertFalse(LibraryRebuild.hasManagedFiles(dir, emptySet()))
-        for (rel in listOf("pdf_maps/import-1.pdf", "pdf_maps/import-2.pdf.partial", "mbtiles/import-3.mbtiles-wal", "offline_tiles/tacmap-bake-4.mbtiles", "mbtiles/import-5.mbtiles")) {
+        for (rel in listOf("pdf_maps/import-1.pdf", "offline_tiles/tacmap-bake-4.mbtiles", "mbtiles/import-5.mbtiles")) {
             val f = File(dir, rel).apply { parentFile!!.mkdirs(); writeText("x") }
             assertTrue(rel, LibraryRebuild.hasManagedFiles(dir, emptySet()))
             // in flight, or the copy a stuck s9.8 marker names: not counted
             assertFalse(rel, LibraryRebuild.hasManagedFiles(dir, setOf(f)))
             f.delete()
         }
+        // F4: what a killed copy or sqlite leaves isn't a map, the reconcile clears it
+        for (rel in listOf("pdf_maps/import-2.pdf.partial", "mbtiles/import-3.mbtiles-wal", "mbtiles/import-6.mbtiles.partial", "mbtiles/import-6.mbtiles.partial-journal")) {
+            File(dir, rel).apply { parentFile!!.mkdirs(); writeText("x") }
+        }
+        assertFalse(LibraryRebuild.hasManagedFiles(dir, emptySet()))
+    }
+
+    @Test
+    fun aFreshInstallWithOnlyAKilledImportsLeftoversIsAFirstLaunchNotARecovery() {
+        // F4 (3.0.1 gate): the user's first ever import is killed mid copy, only its .partial is
+        // left (plus a sqlite sidecar). that adopted nothing into a flagged empty library, said
+        // "Some saved map details couldn't be read" and switched cleanup off on the install for good
+        val device = RowDevice(given("none", files = false))
+        val residue = listOf(
+            "pdf_maps/import-dddddddddddddddd.pdf.partial",
+            "mbtiles/import-eeeeeeeeeeeeeeee.mbtiles.partial",
+            "mbtiles/import-eeeeeeeeeeeeeeee.mbtiles.partial-journal",
+            "mbtiles/import-ffffffffffffffff.mbtiles-wal",
+        ).map { rel -> File(device.dir, rel).apply { parentFile!!.mkdirs(); writeBytes(ByteArray(64) { 9 }) } }
+
+        val first = device.pass()
+        assertEquals(RestoreStatus.EMPTY, first.plan.status)
+        assertEquals(RestoreMigration.NONE, first.plan.migration)
+        assertTrue(first.plan.authoritative)
+        assertNull(first.plan.notice)
+        assertEquals(false, first.plan.recoveryPreservesOrphans)
+        // nothing written, and the first launch's reconcile took the leftovers
+        assertEquals(LibraryLoad.Empty, device.store.load())
+        residue.forEach { assertFalse("${it.parentFile!!.name}/${it.name} left", it.exists()) }
+
+        // still an ordinary first launch after
+        val next = device.pass()
+        assertEquals(RestoreStatus.EMPTY, next.plan.status)
+        assertNull(next.plan.notice)
+    }
+
+    @Test
+    fun aMigrationThatThrowsWithTheKeyThereSalvagesInsteadOfWaitingOnAnUnlock() {
+        // A2 (3.0.1 deferral): every exception in the hop came back Blocked(LOCKED), so one that
+        // throws the same way every time left the restore pending with "unlock mission data"
+        // on every launch and the maps unreachable. with the key there it's an uncertain read
+        val device = RowDevice(given("readable"))
+        device.session.onCalibrations = { throw IllegalStateException("a record this build can't take") }
+        val seen = device.pass()
+        assertEquals(RestoreStatus.LOADED, seen.plan.status)
+        assertEquals(RestoreMigration.SALVAGE, seen.plan.migration)
+        assertEquals(RestoreNotice.RECOVERED, seen.plan.notice)
+        assertFalse(seen.plan.authoritative)
+        assertFalse(seen.cleared)
+        val library = (device.store.load() as LibraryLoad.Loaded).state
+        assertEquals(true, library.recoveryPreservesOrphans)
+        // nothing converted off a read that blew up, every map file is adopted the S2 way
+        assertEquals(
+            listOf(
+                "pdf_maps/import-0123456789abcdef.pdf", "mbtiles/import-aaaaaaaaaaaaaaaa.mbtiles",
+                "pdf_maps/import-bbbbbbbbbbbbbbbb.pdf", "pdf_maps/import-cccccccccccccccc.pdf",
+            ),
+            library.entries.map { it.fileName },
+        )
+        assertEquals((1..4).map { "Recovered map $it" }, library.entries.map { it.displayName })
+        assertEquals(ActiveRef.online("OSM_TOPO"), library.active)
+        // the old stores stay frozen
+        assertTrue(device.session.activeStored)
+        assertTrue(device.selection.hasClearableLegacyState())
+
+        val next = device.pass()
+        assertEquals(RestoreMigration.NONE, next.plan.migration)
+        assertFalse(next.plan.authoritative)
+        assertNull(next.plan.notice)
+    }
+
+    @Test
+    fun aMigrationThatThrowsBecauseTheKeyWentStaysLockedAndWritesNothing() {
+        val device = RowDevice(given("readable", files = false))
+        // the keystore goes in the middle of the read and what comes out is some other throw,
+        // not Read.Locked. asking for the key again after it says locked (L3)
+        device.session.onCalibrations = {
+            locked = true
+            throw IllegalStateException("keystore said no")
+        }
+        val gone = device.pass()
+        assertEquals(RestoreStatus.LOCKED, gone.plan.status)
+        assertEquals(RestoreIssue.LOCKED_RETRY, gone.plan.issue)
+        assertFalse(gone.cleared)
+        locked = false
+        assertEquals(LibraryLoad.Empty, device.store.load())
+
+        // a LockedException with the key back by the time it's caught still counts as locked
+        device.session.onCalibrations = { throw com.tacmap.util.DataKey.LockedException() }
+        val blocked = device.pass()
+        assertEquals(RestoreStatus.MIGRATION_PENDING, blocked.plan.status)
+        assertEquals(RestoreIssue.LOCKED_RETRY, blocked.plan.issue)
+        assertFalse(blocked.cleared)
+        assertEquals(LibraryLoad.Empty, device.store.load())
+
+        // unlocked and reading again: the migration it was
+        device.session.onCalibrations = {}
+        val retried = device.pass()
+        assertEquals(RestoreMigration.RUN, retried.plan.migration)
+        assertTrue(retried.cleared)
     }
 
     @Test

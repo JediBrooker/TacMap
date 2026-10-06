@@ -947,6 +947,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     private fun rebuildCorruptLibrary(): Boolean {
         if (_libraryStatus.value != LibraryStatus.CORRUPT) return true
         if (rebuilding || restoring) return false
+        // ledger only with old stores waiting (s14.3), e.g. the file went missing under this
+        // screen: a restore salvages that and keeps the names and calibrations that convert.
+        // the S2 rebuild below would make them all Recovered map n and freeze the old ones for good
+        if (migrator.isDue(library.load())) {
+            restoreLibrary()
+            return true
+        }
         rebuilding = true
         viewModelScope.launch {
             val rebuilt = try {
@@ -1036,7 +1043,8 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             // it went bad under us: same as finding it corrupt at launch, nothing's written or deleted from here
             LibraryLoad.Corrupt -> onLibraryCorrupt()
             // ledger only under a loaded copy (file and marker gone, or a first write died at its
-            // rename): corrupt like in 3.0.1, only a restore pass salvages that one
+            // rename): the corrupt issue, nothing runs on its own. its Retry does what a restore
+            // would, salvage when old stores are waiting, else the rebuild
             LibraryLoad.Unfinished -> onLibraryCorrupt()
             LibraryLoad.Locked, LibraryLoad.Empty -> Unit
         }
