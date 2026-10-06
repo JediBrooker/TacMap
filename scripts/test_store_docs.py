@@ -40,22 +40,36 @@ class StoreCopyTests(unittest.TestCase):
             if re.search(r'photo', line, re.I):
                 self.assertRegex(line, SAVED_AS_PDF)
 
-    def test_release_notes_are_for_3_0_2(self):
+    def test_release_notes_are_for_3_0_3(self):
         for path in LOCALES:
             data = json.loads(path.read_text())
-            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.2'), path.name)
-            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.2'), path.name)
+            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.3: '), path.name)
+            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.3\n'), path.name)
+            # the notes for the release before go to RELEASE_NOTES.md, not in here
+            for field, value in text_fields(data):
+                self.assertNotIn('3.0.2', value, f'{path.name} {field}')
+
+    def test_release_notes_history_has_3_0_3(self):
+        # RELEASE_NOTES.md carries the text that ships, so it can't drift from the json
+        history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
+        self.assertIn('## 3.0.3 (build 76)', history)
+        for path in LOCALES:
+            data = json.loads(path.read_text())
+            for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
+                self.assertIn(f'```\n{text}\n```', history, path.name)
 
     def test_play_room_note_is_about_edits_not_visibility(self):
         # 3.0.1 never hid an android-made object from 2.x android, it was the later edits and deletes
-        # that stopped arriving once an iOS edit flipped the id casing. so the note promises those, not visibility
+        # that stopped arriving once an iOS edit flipped the id casing. so a note about those rooms
+        # promises edits, not visibility. 3.0.3 has none, the check stays for the next one that does
         words = {'en-US.json': ('changes', 'visible'), 'de-DE.json': ('Änderungen', 'sichtbar')}
         for name, (must, mustnt) in words.items():
             notes = json.loads((ROOT / 'docs/store/localizations' / name).read_text())['googlePlay']['releaseNotes']
             room = [line for line in notes.split('\n') if '(2:' in line]
-            self.assertEqual(len(room), 1, name)
-            self.assertIn(must, room[0], name)
-            self.assertNotIn(mustnt, room[0], name)
+            self.assertLessEqual(len(room), 1, name)
+            for line in room:
+                self.assertIn(must, line, name)
+                self.assertNotIn(mustnt, line, name)
 
 
 class PrivacyPolicyTests(unittest.TestCase):
