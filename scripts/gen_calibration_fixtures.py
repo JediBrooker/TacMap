@@ -3124,8 +3124,11 @@ def probe_metadata_table(data, root):
 
 def _mbt_base_table(conn, name):
     """what every relation a read touches has to be: one ordinary table, no generated column"""
-    rows = conn.execute("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", (name,)).fetchall()
-    if len(rows) != 1 or rows[0][0] != "table" or not table_declares(rows[0][1], name):
+    rows = conn.execute("SELECT type, sql, typeof(rootpage) FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
+                        (name,)).fetchall()
+    # 3.0.3 (U2-IOS-3): an integer rootpage for every base table, tiles too, which Android always required. SQLite
+    # only writes integers there, and it loads a text one by parsing it, so only a hand edit can tell them apart
+    if len(rows) != 1 or rows[0][0] != "table" or rows[0][2] != "integer" or not table_declares(rows[0][1], name):
         raise _MbtReject("base")
     # needs SQLite >= 3.26 for table_xinfo; generated columns need 3.31, older readers can't even parse them
     if any(h in (2, 3) for (h,) in conn.execute("SELECT hidden FROM pragma_table_xinfo(?)", (name,))):
@@ -4098,7 +4101,8 @@ def mbtiles_connection():
             "row (name compared NOCASE, the way SQLite resolves it) of type table or view. A view's "
             "sqlite_master.sql must pass viewShape (reserved words, grammar, maxSchemaSqlBytes) and gives the base "
             "tables. Every table a read touches (tiles or metadata when a table, each view's base tables) must be "
-            "exactly one sqlite_master row (name compared NOCASE) of type table whose sql passes baseTableShape "
+            "exactly one sqlite_master row (name compared NOCASE) of type table with an integer rootpage (3.0.3: "
+            "SQLite only ever writes one, so anything else is a hand edit) whose sql passes baseTableShape "
             "(the words CREATE TABLE, so not CREATE VIRTUAL TABLE, then exactly that table's name) and, where "
             "SQLite >= 3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not "
             "admitted, and a lazy open serves no tile. Because every row checked must declare its own name with no "

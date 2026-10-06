@@ -1113,6 +1113,77 @@ final class MBTilesStoreTests: XCTestCase {
         }
     }
 
+    /// rewrites table's sqlite_master rootpage from the one byte integer sqlite
+    /// wrote to that digit as one byte of text. same record size, sqlite still
+    /// loads the schema off it (it parses the text) and reads the table fine,
+    /// only typeof(rootpage) changes. no writable_schema here (DEFENSIVE)
+    private func storeRootpageAsText(_ table: String, in url: URL) throws {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT rootpage, sql FROM sqlite_master WHERE name = ?", -1,
+                                          &statement, nil), SQLITE_OK)
+        sqlite3_bind_text(statement, 1, table, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW, table)
+        let root = Int(sqlite3_column_int64(statement, 0))
+        let sql = String(cString: try XCTUnwrap(sqlite3_column_text(statement, 1)))
+        sqlite3_finalize(statement)
+        sqlite3_close(db)
+        XCTAssertTrue((1...9).contains(root), table)
+
+        var bytes = [UInt8](try Data(contentsOf: url))
+        let body = Array("table\(table)\(table)".utf8) + [UInt8(root)] + Array(sql.utf8)
+        let at = try XCTUnwrap((0...(bytes.count - body.count)).first {
+            bytes[$0] == body[0] && bytes[$0..<$0 + body.count].elementsEqual(body)
+        }, table)
+        // header: size, type, name, tbl_name, rootpage, then sql's serial type
+        let typeAt = at - sqliteVarint(UInt64(13 + 2 * sql.utf8.count)).count - 1
+        XCTAssertEqual(bytes[typeAt], 1, "\(table): a one byte integer")
+        bytes[typeAt] = 15
+        bytes[at + 5 + 2 * table.utf8.count] = UInt8(ascii: "0") + UInt8(root)
+        try Data(bytes).write(to: url)
+
+        XCTAssertEqual(sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT typeof(rootpage) FROM sqlite_master WHERE name = ?", -1,
+                                          &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, table, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW, table)
+        XCTAssertEqual(String(cString: try XCTUnwrap(sqlite3_column_text(statement, 0))), "text", table)
+    }
+
+    /// U2-IOS-3: sqlite only ever writes an integer rootpage, anything else
+    /// in a base table's row is a hand edit. android refused that for every
+    /// base table, iOS only for the metadata ones (the probe needs the page),
+    /// so a tiles table or a tiles view's table with a text rootpage still
+    /// opened here. both platforms refuse it now, every open
+    func testABaseTableWhoseRootpageIsntAnIntegerIsRefused() throws {
+        let table = [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01')"
+        ]
+        let dedup = try XCTUnwrap(try relationCase("nodeMbtilesDedup")["sql"] as? [String])
+        for (sql, base) in [(table, "tiles"), (dedup, "map"), (dedup, "images"), (table, "metadata")] {
+            let url = try makePack(sql)
+            defer { try? FileManager.default.removeItem(at: url) }
+            // untouched it opens and draws, so the refusal below is the rootpage
+            let admitted = try XCTUnwrap(MBTilesStore(url: url), base)
+            XCTAssertEqual(hex(admitted.tileData(z: 0, x: 0, y: 0)), "01", base)
+            admitted.closeForDeletion()
+            try storeRootpageAsText(base, in: url)
+            XCTAssertNil(try MBTilesRecordProbe.schema(url), "\(base): nothing the probe minds")
+            XCTAssertNil(MBTilesStore(url: url), "\(base): admission")
+            let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
+                name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+            XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), "\(base) lazy")
+            XCTAssertNil(lazy.connectionHardeningForTesting(), "\(base): the lazy open refuses, not just the read")
+            lazy.closeForDeletion()
+        }
+    }
+
     /// F3 / 3.0.2: two tables get no admission budget, their aggregate is one
     /// scan the file bounds. 3.0.1 interrupted this one at the first check
     func testATablePackIsAdmittedWithoutTheBudget() throws {

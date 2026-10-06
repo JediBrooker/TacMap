@@ -208,7 +208,7 @@ final class MBTilesStore: @unchecked Sendable {
     /// before anything reads metadata. the lazy open comes through here too
     private func loadRelationTypes() -> Bool {
         var found: [Relation] = []
-        var metadataRoots: [Int64?] = []
+        var metadataRoots: [Int64] = []
         for name in ["tiles", "metadata"] {
             guard let row = relationType(name) else { return false }
             let relation = row.relation
@@ -222,7 +222,7 @@ final class MBTilesStore: @unchecked Sendable {
             } else {
                 bases = [name]
             }
-            var roots: [Int64?] = []
+            var roots: [Int64] = []
             for base in bases {
                 guard let table = ordinaryTable(base) else { return false }
                 roots.append(table.rootPage)
@@ -234,10 +234,9 @@ final class MBTilesStore: @unchecked Sendable {
         // gets to cut it, and iOS 16-18 ship sqlite older than 3.45, which only
         // checks SQLITE_LIMIT_LENGTH after that load. so each table the metadata
         // reads touch (metadata, or its view's base tables) gets its rows and
-        // record sizes read off the file first. a rootpage that isn't an
-        // integer fails closed
+        // record sizes read off the file first
         for root in metadataRoots {
-            guard let root, Self.probeAllows({ try MBTilesRecordProbe.metadataTable(url, root: root) }) else {
+            guard Self.probeAllows({ try MBTilesRecordProbe.metadataTable(url, root: root) }) else {
                 return false
             }
         }
@@ -275,17 +274,18 @@ final class MBTilesStore: @unchecked Sendable {
     }
 
     private struct OrdinaryTable {
-        /// that row's rootpage for the record probe, nil when it isn't an
-        /// integer (only the metadata probe cares, it fails closed on that)
-        let rootPage: Int64?
+        /// that row's rootpage, for the metadata record probe
+        let rootPage: Int64
     }
 
     /// a table a read touches: one sqlite_master row (NOCASE, like SQLite
     /// resolves it), a real table not CREATE VIRTUAL TABLE (module code on
     /// every read), and no generated column (an expression on every read).
     /// its sql has to declare that very name too, no IF NOT EXISTS, so the
-    /// row we checked is the table sqlite loaded (SEC-M1-SHADOW). nil if it
-    /// isn't one
+    /// row we checked is the table sqlite loaded (SEC-M1-SHADOW). and its
+    /// rootpage has to be an integer, tiles and a tiles view's tables too
+    /// (U2-IOS-3, android always refused that). sqlite only writes integers
+    /// there, anything else is a hand edit. nil if it isn't one
     private func ordinaryTable(_ name: String) -> OrdinaryTable? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
@@ -299,8 +299,9 @@ final class MBTilesStore: @unchecked Sendable {
               String(cString: typePointer) == "table",
               sqlite3_column_type(stmt, 1) == SQLITE_TEXT,
               let sqlPointer = sqlite3_column_text(stmt, 1),
-              MBTilesViewShape.tableDeclares(sql: String(cString: sqlPointer), name: name) else { return nil }
-        let rootPage = sqlite3_column_type(stmt, 2) == SQLITE_INTEGER ? sqlite3_column_int64(stmt, 2) : nil
+              MBTilesViewShape.tableDeclares(sql: String(cString: sqlPointer), name: name),
+              sqlite3_column_type(stmt, 2) == SQLITE_INTEGER else { return nil }
+        let rootPage = sqlite3_column_int64(stmt, 2)
         guard sqlite3_step(stmt) == SQLITE_DONE else { return nil }
         // below 3.31 a generated column can't exist, the schema wouldnt parse
         guard sqlite3_libversion_number() >= Self.generatedColumnsMinimumSQLite else {
