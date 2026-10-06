@@ -474,7 +474,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
         XCTAssertEqual(fixture["admissionBudgetAppliesTo"] as? String, "views")
         let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 48)
+        XCTAssertEqual(cases.count, 50)
         var seen: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
@@ -528,7 +528,9 @@ final class MBTilesStoreTests: XCTestCase {
                                            "commaJoinWhereCallsFunction",
                                            // 3.0.3 U2 record probe, 3.0.2 opened the three refused ones
                                            "metadataLargeRecordUnderProbeCap", "metadataRecordOverProbeCap",
-                                           "metadataViewJoinBaseRows", "schemaTooManyObjects", "textTileData"]))
+                                           "metadataViewJoinBaseRows", "schemaTooManyObjects", "textTileData",
+                                           // PROBE-RT-1: ANALYZE'd opens, a stat row over the schema caps doesn't
+                                           "analyzedPack", "statisticsOverProbeCap"]))
     }
 
     /// "3.31.0" -> 3031000, what sqlite3_libversion_number gives
@@ -679,10 +681,16 @@ final class MBTilesStoreTests: XCTestCase {
     /// root looked up like the reader does, packBase64 rows are the exact files
     func testSharedRecordProbeCasesGiveTheSharedVerdicts() throws {
         let cases = try XCTUnwrap(try recordProbeFixture()["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 34)
-        XCTAssertEqual(cases.filter { $0["sql"] != nil }.count, 8)
+        XCTAssertEqual(cases.count, 51)
+        XCTAssertEqual(cases.filter { $0["sql"] != nil }.count, 11)
         // the 9 byte varint is 2^64 - 1, a signed compare would let it through as -1
         XCTAssertTrue(cases.contains { $0["id"] as? String == "nineByteVarint" })
+        // PROBE-RT-1: the ANALYZE tables, built by this sqlite and by hand, one
+        // only findable on its schema row's overflow page
+        for id in ["analyzedPack", "analyzedStatisticsOverCap", "analyzedStatisticsTooManyRows",
+                   "statisticsMarkOnOverflowPage", "statisticsView"] {
+            XCTAssertTrue(cases.contains { $0["id"] as? String == id }, id)
+        }
         var reasons: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
@@ -709,7 +717,8 @@ final class MBTilesStoreTests: XCTestCase {
                 if let want { reasons.insert(want) }
             }
         }
-        XCTAssertEqual(reasons, ["header", "structure", "pageType", "rows", "recordBytes", "totalBytes"])
+        XCTAssertEqual(reasons, ["header", "structure", "pageType", "rows", "recordBytes", "totalBytes",
+                                 "statistics"])
     }
 
     /// every door a pack comes through refuses what the probe refuses: the
@@ -731,7 +740,8 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertNil(PDFBakeReader(url: huge, expectedKey: String(repeating: "a", count: 64), tilePx: 256), "bake reader")
 
         var packs: [(String, URL)] = [("hugeName", huge)]
-        for id in ["metadataRecordOverProbeCap", "metadataViewJoinBaseRows", "schemaTooManyObjects"] {
+        for id in ["metadataRecordOverProbeCap", "metadataViewJoinBaseRows", "schemaTooManyObjects",
+                   "statisticsOverProbeCap"] {
             let vector = try relationCase(id)
             XCTAssertEqual((vector["expect"] as? [String: Any])?["rejectedAt"] as? String, "probe", id)
             packs.append((id, try makeRelationPack(vector, id)))
@@ -778,21 +788,48 @@ final class MBTilesStoreTests: XCTestCase {
     }
 
     /// a table leaf page, b-tree header at headerAt, one cell per record size
-    /// packed at the end. offsets count from the page start
-    private func leafPage(size: Int, records: [UInt64], headerAt: Int = 0) -> [UInt8] {
+    /// packed at the end. offsets count from the page start. withRecords puts
+    /// that many zero bytes in as well, the schema's rows get read whole now
+    private func leafPage(size: Int, records: [UInt64], headerAt: Int = 0, withRecords: Bool = false) -> [UInt8] {
+        cellPage(size: size, cells: records.map {
+            (size: $0, body: withRecords ? [UInt8](repeating: 0, count: Int($0)) : [])
+        }, headerAt: headerAt)
+    }
+
+    /// the same with what goes after each cell's size and rowid varints
+    private func cellPage(size: Int, cells: [(size: UInt64, body: [UInt8])], headerAt: Int = 0) -> [UInt8] {
         var page = [UInt8](repeating: 0, count: size)
         page[headerAt] = 0x0D
-        page[headerAt + 3] = UInt8(records.count >> 8 & 0xFF)
-        page[headerAt + 4] = UInt8(records.count & 0xFF)
+        page[headerAt + 3] = UInt8(cells.count >> 8 & 0xFF)
+        page[headerAt + 4] = UInt8(cells.count & 0xFF)
         var at = size
-        for (i, record) in records.enumerated() {
-            let cell = sqliteVarint(record) + sqliteVarint(UInt64(i + 1))
+        for (i, record) in cells.enumerated() {
+            let cell = sqliteVarint(record.size) + sqliteVarint(UInt64(i + 1)) + record.body
             at -= cell.count
             page.replaceSubrange(at..<at + cell.count, with: cell)
             page[headerAt + 8 + 2 * i] = UInt8(at >> 8 & 0xFF)
             page[headerAt + 9 + 2 * i] = UInt8(at & 0xFF)
         }
         return page
+    }
+
+    /// a real record as a cell: header (its own size, a serial type per
+    /// column) then the bodies. Int64 columns go in as 4 bytes, the rest as text
+    private func recordCell(_ columns: Any...) -> (size: UInt64, body: [UInt8]) {
+        var types: [UInt8] = []
+        var body: [UInt8] = []
+        for column in columns {
+            if let int = column as? Int64 {
+                types += sqliteVarint(4)
+                body += (0..<4).map { UInt8(truncatingIfNeeded: int >> (24 - 8 * $0)) }
+            } else {
+                let text = Array("\(column)".utf8)
+                types += sqliteVarint(UInt64(13 + 2 * text.count))
+                body += text
+            }
+        }
+        let record = sqliteVarint(UInt64(types.count + 1)) + types + body
+        return (UInt64(record.count), record)
     }
 
     /// sqlite's varint for anything under 2^56
@@ -813,7 +850,7 @@ final class MBTilesStoreTests: XCTestCase {
         let size = 4096
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-huge-\(UUID().uuidString).mbtiles")
         defer { try? FileManager.default.removeItem(at: url) }
-        var first = leafPage(size: size, records: [60], headerAt: 100)
+        var first = leafPage(size: size, records: [60], headerAt: 100, withRecords: true)
         first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
         func write(_ record: UInt64) throws {
             try Data(first + leafPage(size: size, records: [record])).write(to: url)
@@ -829,6 +866,45 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertNil(try MBTilesRecordProbe.metadataTable(url, root: 2))
         try write(MBTilesRecordProbe.maximumMetadataRecordBytes + 1)
         XCTAssertEqual(try MBTilesRecordProbe.metadataTable(url, root: 2), .recordBytes)
+    }
+
+    /// PROBE-RT-1: the red team's pack, a sane schema plus sqlite_stat1 with
+    /// one 150 MB row. sqlite reads that whole along with the schema at the
+    /// first statement, and the first probe only walked sqlite_master so it
+    /// said fine. the file really is that long (sparse), the probe reads 2 pages
+    func testAHugeStatisticsRowIsJudgedOffItsRecordSizeBeforeSQLiteOpensTheFile() throws {
+        let size = 4096
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-stat-\(UUID().uuidString).mbtiles")
+        defer { try? FileManager.default.removeItem(at: url) }
+        func schemaPage(_ row: (size: UInt64, body: [UInt8])) -> [UInt8] {
+            var page = cellPage(size: size, cells: [row], headerAt: 100)
+            page.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
+            return page
+        }
+        let table = schemaPage(recordCell("table", "sqlite_stat1", "sqlite_stat1", Int64(2),
+                                          "CREATE TABLE sqlite_stat1(tbl,idx,stat)"))
+        try Data(table + leafPage(size: size, records: [20, 150_000_000])).write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(2 * size) + 150_000_000)
+        try handle.close()
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "recordBytes")
+        XCTAssertNil(MBTilesStore(url: url))
+
+        // ANALYZE's usual few bytes a row are fine
+        try Data(table + leafPage(size: size, records: [20, 40])).write(to: url)
+        XCTAssertNil(try MBTilesRecordProbe.schema(url))
+
+        // the same name as a view would run sql from the file when sqlite reads it
+        let view = schemaPage(recordCell("view", "sqlite_stat1", "sqlite_stat1", Int64(0),
+                                         "CREATE VIEW sqlite_stat1(tbl,idx,stat) AS SELECT 'tiles', NULL, " +
+                                         "hex(zeroblob(400000000))"))
+        try Data(view + leafPage(size: size, records: [20])).write(to: url)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "statistics")
+        // and the name only in the sql in another case still counts, older sqlite goes by the sql
+        let hidden = schemaPage(recordCell("table", "harmless", "harmless", Int64(2),
+                                           "CREATE TABLE SQLITE_STAT1(tbl,idx,stat)"))
+        try Data(hidden + leafPage(size: size, records: [20, 2_000_000])).write(to: url)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "recordBytes")
     }
 
     func testAFileThatCantBeReadThrowsSoTheOpenRefusesIt() {

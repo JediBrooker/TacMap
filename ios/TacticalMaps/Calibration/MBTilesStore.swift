@@ -129,17 +129,20 @@ final class MBTilesStore: @unchecked Sendable {
     private func openConnection() -> Bool {
         // s15.2 schema probe: sqlite loads and parses every schema row at the
         // first statement, before any check of ours, and below 3.45 it loads a
-        // value whole before SQLITE_LIMIT_LENGTH gets a look. so a schema too
-        // big to load gets refused off the file before sqlite even opens it.
-        // every MBTiles open comes through here: admission, the lazy
-        // prevalidated open, import, the library rebuild/salvage and migration
+        // value whole before SQLITE_LIMIT_LENGTH gets a look. it reads every
+        // ANALYZE row (sqlite_stat1/4) whole with it too (PROBE-RT-1). so a
+        // schema or stat table too big to load gets refused off the file before
+        // sqlite even opens it. every MBTiles open comes through here:
+        // admission, the lazy prevalidated open, import, the library
+        // rebuild/salvage and migration
         guard Self.probeAllows({ try MBTilesRecordProbe.schema(url) }) else { return false }
         guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             sqlite3_close(db)
             db = nil
             return false
         }
-        // caps before the schema's even parsed: one value can't go past a tile
+        // caps before the schema's even parsed, so before the first statement
+        // (that's when the schema and stat rows load): one value can't go past a tile
         // + 64 KiB, so randomblob / zeroblob / printf in the file hit TOOBIG
         // instead of allocating, and a giant schema statement fails the load.
         // automatic indexes off or one big image gets copied into a temp index
