@@ -452,8 +452,10 @@ final class MBTilesOpenGuardTests: XCTestCase {
         let marker = try XCTUnwrap(MapImportPipeline.markerURL)
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "off again after a clean admission")
 
-        // what dying in there leaves: the marker naming the copy. The library
-        // adoption keeps away from it and the launch sweep removes it
+        // what dying in there leaves: the marker naming the copy, and a fresh
+        // process where nothing is in flight. The library adoption keeps away
+        // from it and the launch sweep removes it
+        InFlightImportFiles.unregister(payload.copy.url)
         try Data(token.utf8).write(to: marker)
         XCTAssertTrue(MapImportPipeline.interruptedImportFiles().contains(payload.copy.url))
         XCTAssertFalse(ImportedMapLibraryRecovery.candidates(inFlight: []).map(\.lastPathComponent)
@@ -471,6 +473,46 @@ final class MBTilesOpenGuardTests: XCTestCase {
             XCTFail("junk admitted")
         } catch {}
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    /// 3.0.3 DL-2: unlock and the locked library Retry run the s9.8 sweep again,
+    /// and an import can still be admitting its pack right then. That copy is a
+    /// live import's, so the sweep leaves it and the marker alone
+    func testTheSweepFromAnUnlockMidAdmissionLeavesTheLiveImportAlone() async throws {
+        let source = try makePack(name: "Ridge.mbtiles")
+        let parked = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        var admitting: URL?
+        MBTilesStore.admissionOpenHookForTesting = { url in
+            admitting = url
+            parked.signal()
+            _ = release.wait(timeout: .now() + 30)
+        }
+        let admission = Task.detached {
+            try await MapImportPipeline.prepareMBTiles(url: source, entryCount: 0, libraryLoaded: true,
+                                                       isCancelled: { false }, progress: { _ in })
+        }
+        let started = await withCheckedContinuation { c in
+            DispatchQueue.global().async { c.resume(returning: parked.wait(timeout: .now() + 10) == .success) }
+        }
+        XCTAssertTrue(started, "admission never got to the open")
+        let copy = try XCTUnwrap(admitting)
+        let marker = try XCTUnwrap(MapImportPipeline.markerURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "marker is on mid admission")
+
+        // what publishRestoredBasemap does on main after DataKey.unlock or Retry
+        let swept = await MainActor.run { MapImportPipeline.recoverInterruptedImport() }
+        XCTAssertFalse(swept, "a live import isn't an interrupted one")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path), "the live copy survives the sweep")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "marker left for the import to take off")
+
+        release.signal()
+        let payload = try await admission.value
+        defer { InFlightImportFiles.unregister(payload.copy.url) }
+        XCTAssertEqual(payload.copy.url, copy)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertFalse(MapImportPipeline.recoverInterruptedImport(), "nothing to report afterwards either")
     }
 
     func testTheRebuildNeverReopensAPackItDiedOn() throws {

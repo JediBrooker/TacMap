@@ -755,6 +755,7 @@ The page picker holds the prepared copy in memory and in-flight. If the process 
 - A marker is written durably before WP1 or PDFBox parsing starts. iOS: `ImportedMaps/.import-inspecting`, containing only a UUID. Android: `inspectStartedAtEpochMs` in the copy journal.
 - If the marker is found at launch: remove the partial and the marker, do not retry, and show `map_import_interrupted` once.
 - 3.0.2: the MBTiles admission inside an import runs under the same marker (s14.1).
+- 3.0.3: the sweep also runs after a mission-data unlock or a locked-library Retry (iOS) and a re-adopt (Android), while an import may still be parsing or admitting. A marker whose copy is still in flight in this process belongs to that live import, not a crash: the copy and the marker are left alone and nothing is reported.
 - A copy-phase interruption is retried as today (Android token replay). WP2 owns first-render D5-07.
 
 ### 9.9 Storage hygiene

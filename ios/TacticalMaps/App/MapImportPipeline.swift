@@ -188,21 +188,39 @@ enum MapImportPipeline {
         try? FileManager.default.removeItem(at: m)
     }
 
-    /// At launch: a marker means the app died inside the PDF parser or the
-    /// MBTiles admission. Remove the copy it names and the marker, don't retry.
-    /// true = tell the user once.
+    /// A marker means the app died inside the PDF parser or the MBTiles
+    /// admission. Remove the copy it names and the marker, don't retry.
+    /// true = tell the user once. Runs at launch but also after every unlock
+    /// and locked library Retry, so a marker whose copy is still in flight in
+    /// this process is a live import mid parse/admission, not a crash: leave
+    /// the copy and the marker to that import (3.0.3, Android does the same)
     @discardableResult
     static func recoverInterruptedImport() -> Bool {
-        guard let m = markerURL, (try? Data(contentsOf: m)) != nil else { return false }
-        for url in interruptedImportFiles() { try? FileManager.default.removeItem(at: url) }
+        // read the marker once, a live import can take it off under us
+        guard let m = markerURL, let data = try? Data(contentsOf: m) else { return false }
+        let files = interruptedImportFiles(marker: data)
+        // the copy is registered before the marker goes on and stays so till
+        // the import commits or drops it, so checking after the read can't
+        // miss a live one
+        let live = Set(InFlightImportFiles.snapshot.map(comparablePath))
+        if files.contains(where: { live.contains(comparablePath($0)) }) { return false }
+        for url in files { try? FileManager.default.removeItem(at: url) }
         try? FileManager.default.removeItem(at: m)
         return true
+    }
+
+    private static func comparablePath(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     /// what a pending marker names (the copy and its partial), read only. The
     /// library adoption leaves these to recoverInterruptedImport
     static func interruptedImportFiles() -> Set<URL> {
         guard let m = markerURL, let data = try? Data(contentsOf: m) else { return [] }
+        return interruptedImportFiles(marker: data)
+    }
+
+    private static func interruptedImportFiles(marker data: Data) -> Set<URL> {
         let token = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard token.hasPrefix("map-"), !token.contains("/"), let dir = try? ImportedMapStorage.importedMapsDirectory() else {
             return []

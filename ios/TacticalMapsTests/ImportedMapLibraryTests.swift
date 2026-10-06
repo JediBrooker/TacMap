@@ -457,6 +457,39 @@ final class ImportedMapLibraryTests: XCTestCase {
         XCTAssertFalse(MapImportPipeline.recoverInterruptedImport(), "said once")
     }
 
+    /// 3.0.3 DL-2, the PDF side: an unlock or Retry sweep landing mid parse
+    /// leaves the live import's copy and marker alone
+    func testTheSweepMidParseLeavesTheLiveImportAlone() async throws {
+        let src = try fixturePDF("tacmap_grid_sf_iso.pdf")
+        let parked = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let saved = PDFInspector.documentOpened
+        defer { PDFInspector.documentOpened = saved }
+        PDFInspector.documentOpened = {
+            parked.signal()
+            _ = release.wait(timeout: .now() + 20)
+        }
+        let copy = try await MapImportPipeline.copyPDF(url: src, entryCount: 0, libraryLoaded: true,
+                                                       isCancelled: { false }, progress: { _ in })
+        defer { InFlightImportFiles.unregister(copy.url) }
+        let parse = Task.detached {
+            try await MapImportPipeline.inspectCopiedPDF(copy, isCancelled: { false }, progress: { _, _ in })
+        }
+        let started = await withCheckedContinuation { c in
+            DispatchQueue.global().async { c.resume(returning: parked.wait(timeout: .now() + 10) == .success) }
+        }
+        XCTAssertTrue(started, "parse never opened the copy")
+        let swept = await MainActor.run { MapImportPipeline.recoverInterruptedImport() }
+        XCTAssertFalse(swept)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.url.path))
+        XCTAssertNotNil(MapImportPipeline.markerURL.flatMap { try? Data(contentsOf: $0) }, "marker stays with the parse")
+        release.signal()
+        let inspection = try await parse.value
+        XCTAssertGreaterThan(inspection.pageCount, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.url.path))
+        XCTAssertFalse(MapImportPipeline.recoverInterruptedImport())
+    }
+
     // MARK: - drafts (s8.1)
 
     func testDraftStoreIsSealedKeyedAndBounded() throws {
