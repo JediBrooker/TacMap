@@ -211,8 +211,10 @@
     <string name="map_library_empty">"No imported maps. Use Import to add a PDF, GeoPDF or MBTiles map."</string>
     <string name="map_library_footer">"%1$s · %2$s on this device. Imported maps stay on this device until you delete them and aren\'t included in backups."</string>
     <string name="map_library_locked">"Unlock mission data to see and change imported maps."</string>
+    <string name="map_library_missing_message">"The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can\'t be restored."</string>
     <string name="map_library_recovered_notice">"Some saved map details couldn\'t be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted."</string>
     <string name="map_library_section">"Imported maps"</string>
+    <string name="map_library_unfinished_message">"The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device. Maps from an earlier TacMap version get back the names and calibrations that can still be read; the others are listed as recovered maps."</string>
     <string name="map_migration_uncalibrated">"“%1$s” was never georeferenced, so it\'s no longer shown as a basemap. Calibrate it from Layers."</string>
     <string name="map_pack_open_failed_message">"The map pack may be damaged or built in a way TacMap can\'t open, or checking it took too long. The map on screen hasn\'t changed. You can try again or delete it under Imported maps in Layers."</string>
     <string name="map_pack_open_failed_title">"Couldn\'t open “%1$s”"</string>

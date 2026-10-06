@@ -259,7 +259,7 @@ version ships. The full store notes for the release being prepared live in
 - Sturdier MBTiles reading: a damaged or crafted pack can no longer make TacMap close at every launch (it is held back at the next start), and large packs open in the background.
 - Android: Google Play's Open button no longer opens a second map screen; if storage runs out while updating from 2.x, map names and calibrations are kept.
 - iOS: with mission data protected by Face ID or the passcode, work that finishes after you leave the app no longer asks for Face ID or stops Unit Sync. iOS went straight from 3.0.0 to 3.0.2, so it also got the 3.0.1 iOS fixes: App Lock and the privacy screen over open panels, sturdier PDF reading, MBTiles packs that store their tiles as a view, and Undo no longer overwriting a teammate's newer change.
-- Older-style Unit Sync rooms (2: codes): changes to objects you create reach teammates on TacMap 2 for Android again, and the room explains mixed versions.
+- Older-style Unit Sync rooms (2: codes): on Android, changes to objects you create reach teammates on TacMap 2 for Android again; on iOS, objects no longer disappear when a teammate on iPhone still uses TacMap 2; both explain mixed versions.
 
 ### 3.0.1 (build 74), October 2026 (Google Play only)
 - Opening TacMap from the Unit Sync notification could remove a recently imported map. Fixed.

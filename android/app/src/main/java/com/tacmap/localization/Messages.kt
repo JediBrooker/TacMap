@@ -454,12 +454,20 @@ object Messages {
         L10n.message("id.map_library_footer", "%1\$s · %2\$s on this device. Imported maps stay on this device until you delete them and aren't included in backups.", maps, size)
     fun mapLibraryLocked(): String =
         L10n.message("id.map_library_locked", "Unlock mission data to see and change imported maps.")
+    fun mapLibraryMissingMessage(): String =
+        L10n.message("id.map_library_missing_message", "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.")
+    fun mapLibraryMissingMessageMessage(): LocalizedMessage =
+        LocalizedMessage("id.map_library_missing_message", "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.", listOf())
     fun mapLibraryRecoveredNotice(): String =
         L10n.message("id.map_library_recovered_notice", "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.")
     fun mapLibraryRecoveredNoticeMessage(): LocalizedMessage =
         LocalizedMessage("id.map_library_recovered_notice", "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.", listOf())
     fun mapLibrarySection(): String =
         L10n.message("id.map_library_section", "Imported maps")
+    fun mapLibraryUnfinishedMessage(): String =
+        L10n.message("id.map_library_unfinished_message", "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device. Maps from an earlier TacMap version get back the names and calibrations that can still be read; the others are listed as recovered maps.")
+    fun mapLibraryUnfinishedMessageMessage(): LocalizedMessage =
+        LocalizedMessage("id.map_library_unfinished_message", "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device. Maps from an earlier TacMap version get back the names and calibrations that can still be read; the others are listed as recovered maps.", listOf())
     fun mapMigrationUncalibrated(name: String): String =
         L10n.message("id.map_migration_uncalibrated", "“%1\$s” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.", name)
     fun mapPackOpenFailedMessage(): String =

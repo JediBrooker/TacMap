@@ -67,10 +67,10 @@ class StoreCopyTests(unittest.TestCase):
                 self.assertIn(f'```\n{text}\n```', history, path.name)
 
     def test_memory_note_only_says_more_packs_are_refused(self):
-        # F1: THREAT_MODEL s7 keeps the index residual (a huge index key still gets loaded whole, with no cap
-        # on iOS or android before 12), so the notes can say more packs built that way are refused, never
-        # all of them. if that residual ever goes, this can go too
-        self.assertIn("What remains: indexes aren't checked", (ROOT / 'docs/THREAT_MODEL.md').read_text())
+        # F1: THREAT_MODEL s7 keeps a residual (3.0.4 closed the index one, a tiles view's join can still get a
+        # huge base table value loaded whole on older sqlite), so the notes can say more packs built that way
+        # are refused, never all of them. if that residual ever goes, this can go too
+        self.assertIn("What remains: on a pack whose tiles are a view", (ROOT / 'docs/THREAT_MODEL.md').read_text())
         words = {'en-US.json': ('too much memory', r'\b[Mm]ore\b', 'built to'),
                  'de-DE.json': ('zu viel Speicher', r'\b[Ww]eitere\b', 'so gebaut')}
         for name, (memory, partial, built) in words.items():

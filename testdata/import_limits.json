@@ -238,7 +238,7 @@
     "admissionBudgetMs": 30000,
     "admissionBudgetAppliesTo": "views",
     "viewQueryBudgetMs": 2000,
-    "relationRules": "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the view path a name or value over connection.maxValueBytes fails closed. Every other admission check is unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it now runs off the main thread. After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no per-read budget. 3.0.3 U2: recordProbe's schema probe runs on the file before SQLite opens it, and its metadata probe on each table the metadata relation reads right after the relation and base table checks, before the budget starts and before any metadata read. Either refusing means not admitted (a lazy open serves nothing). Every tile length read is CASE WHEN typeof(tile_data)='blob' THEN length(tile_data) END, so a TEXT tile_data is no tile and never loaded",
+    "relationRules": "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the view path a name or value over connection.maxValueBytes fails closed. Every other admission check is unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it now runs off the main thread. After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no per-read budget. 3.0.3 U2: recordProbe's schema probe runs on the file before SQLite opens it (from 3.0.4 it also holds every index key to maxIndexKeyBytes), and its metadata probe on each table the metadata relation reads right after the relation and base table checks, before the budget starts and before any metadata read. Either refusing means not admitted (a lazy open serves nothing). Every tile length read is CASE WHEN typeof(tile_data)='blob' THEN length(tile_data) END, so a TEXT tile_data is no tile and never loaded",
     "connection": {
       "maxTileBytes": 4194304,
       "maxValueBytes": 4259840,
@@ -1149,13 +1149,16 @@
       "maxMetadataRecordBytes": 8519680,
       "maxDepth": 20,
       "maxPages": 4096,
-      "why": "3.0.3 U2 (SEC-M1-ANDROID-OLDSQLITE-OOM). SQLite loads the whole of a TEXT value into memory before length() or substr(CAST(... AS BLOB)) sees it, and only SQLite 3.45+ checks SQLITE_LIMIT_LENGTH before that load. Android below 12 (SQLite 3.18-3.28) has neither a length limit nor a heap cap, iOS 16-18 ship SQLite older than 3.45, and the schema load at the first statement reads every schema row before any check of ours. A cell's first varint is its whole record size, so nothing SQLite reads from that row can be bigger. Reading only page headers, cell pointers and that varint bounds what SQLite can be made to load from a schema or metadata table row, on every platform and SQLite version, without reading a metadata value. The schema load also reads every row of the ANALYZE tables (sqlite_stat1, sqlite_stat4) whole, which neither walk reached (PROBE-RT-1, unbounded below Android 12), so the schema probe reads the schema's own records (already capped at maxSchemaBytes) to find them and holds them to the schema caps too (statistics). Index b-trees aren't walked, and an index seek still loads each key it compares whole (contract s15.2 rule 7, a documented residual)",
+      "maxIndexKeyBytes": 8519680,
+      "why": "3.0.3 U2 (SEC-M1-ANDROID-OLDSQLITE-OOM). SQLite loads the whole of a TEXT value into memory before length() or substr(CAST(... AS BLOB)) sees it, and only SQLite 3.45+ checks SQLITE_LIMIT_LENGTH before that load. Android below 12 (SQLite 3.18-3.28) has neither a length limit nor a heap cap, iOS 16-18 ship SQLite older than 3.45, and the schema load at the first statement reads every schema row before any check of ours. A cell's first varint is its whole record size, so nothing SQLite reads from that row can be bigger. Reading only page headers, cell pointers and that varint bounds what SQLite can be made to load from a schema or metadata table row, on every platform and SQLite version, without reading a metadata value. The schema load also reads every row of the ANALYZE tables (sqlite_stat1, sqlite_stat4) whole, which neither walk reached (PROBE-RT-1, unbounded below Android 12), so the schema probe reads the schema's own records (already capped at maxSchemaBytes) to find them and holds them to the schema caps too (statistics). 3.0.4 (s16.1, P1): an index seek loads each key it compares whole when the key doesn't fit on its page, whatever SQLITE_LIMIT_LENGTH says (a metadata read by lower(name), a view's join, a tile read; 200 MB seen on SQLite 3.51), so the schema probe also walks every index b-tree in the file and holds each key to maxIndexKeyBytes (indexWalk). Indexes are found from the schema's own rootpages and the type of the page there, never from tbl_name or the type column, so every schema row has to be one SQLite writes (schemaRecords). 3.0.4 (s16.2, P2): a statistics table is recognised by the whole name sqlite_stat<digits>, not the bare substring",
       "header": "the file is at least 100 bytes and starts with 'SQLite format 3' and a NUL. Page size = big endian 16 bit at offset 16, 1 meaning 65536, a power of two from 512 to 65536. Usable size U = page size - the byte at offset 20 (reserved), at least 480. Text encoding = big endian 32 bit at offset 56, its low two bits (SQLite's own reading, 0 meaning UTF-8) must be 0 or 1, UTF-8: the statistics step reads schema text as UTF-8, and admission refuses any other encoding anyway. Page count = file size / page size, rounded down. Any failure: reason header. Only the main file is read: packs are opened read only and nothing writes a -wal next to them, so it is what SQLite reads",
       "walk": "walk(root, maxRows, maxRecord, maxTotal?): pages in b-tree order from root (depth 0), as a stack: each interior page's children are its cells' left child pointers in cell pointer order, then its right most pointer, and they're visited in that order before the next sibling (pre-order). Visiting page p at depth d: structure unless 1 <= p <= page count, p not visited before in this walk, d < maxDepth and fewer than maxPages pages visited so far. The page's b-tree header is at byte 100 on page 1, else at 0 (cell offsets always count from the start of the page). Byte 0 of it is the type: 0x05 interior table, 0x0D leaf table, anything else pageType. n = big endian 16 bit at header + 3. Interior: the pointer array starts at header + 12, header + 12 + 2n > U is structure, each cell offset o needs header + 12 + 2n <= o and o + 4 <= U (else structure) and its first 4 bytes are the left child, the right most pointer is the 4 bytes at header + 8. Leaf: the pointer array starts at header + 8, header + 8 + 2n > U is structure, each cell offset o needs header + 8 + 2n <= o < U (else structure), and the varint at o (SQLite's: up to 8 bytes of 7 bits with the high bit meaning more, a 9th byte giving all 8, unsigned 64 bit) has to end before U (else structure). That varint is the row's record size. Per row, in order: the row count so far > maxRows is rows, the record size > maxRecord is recordBytes, the running total > maxTotal (when given) is totalBytes. The first problem in walk order is the reason. Nothing else is read: no overflow page, no record header, no value. walk([roots], ...) walks several b-trees as one: each root at depth 0, in list order, sharing the pages visited (a page reached twice is structure), the row count and the running total",
-      "schemaProbe": "walk(1, maxSchemaRows, maxSchemaBytes, maxSchemaBytes) on the file, then statistics, before SQLite opens it (the schema load is SQLite's first act on the first statement, and it reads the ANALYZE tables with it). Every MBTiles open: admission, the lazy prevalidated open, import, the library rebuild and migration name reads",
-      "statistics": "3.0.3 PROBE-RT-1, after the schema walk passed. Every schema leaf cell, in walk order, is read whole: after its record size and rowid varints (the rowid's must end before U, else structure) the local part is all of it when size <= U - 35, else M = (U - 12) * 32 / 255 - 23 (integer division) and K = M + (size - M) % (U - 4), K when K <= U - 35 else M; the local part, plus a 4 byte first overflow page number when it is short of size, must end at or before U (else structure); then each overflow page, which must be 1 to page count (else structure), gives the U - 4 bytes after its own 4 byte next pointer (the last one only what is left). A record that contains 'sqlite_stat' with ASCII A-Z folded to a-z, anywhere in it (name, tbl_name or sql: older SQLite takes the name from the sql), must be what SQLite writes for its own statistics tables, else statistics: a header size varint h with its own length <= h <= the record size, serial type varints (each ending at or before h) filling the header exactly, exactly five of them, no 10 or 11, bodies (0, 8, 9: 0 bytes; 1-4: that many; 5: 6; 6, 7: 8; even n >= 12: (n - 12) / 2; odd n >= 13: (n - 13) / 2) filling the record exactly, column 3 (rootpage) of type 1-6 (big endian two's complement), 8 (0) or 9 (1), and column 4 (sql) text (odd type >= 13) whose bytes start with 'CREATE TABLE ' exactly. Then walk([those rootpages], maxSchemaRows, maxSchemaBytes, maxSchemaBytes), when there are any. SQLite writes exactly that for sqlite_stat1 and sqlite_stat4, a view or virtual table by that name would run SQL from the file when SQLite reads it, and an analyzed real pack holds a few rows and KB there (mbutil runs ANALYZE on everything it writes)",
-      "metadataProbe": "walk(rootpage, maxMetadataRows, maxMetadataRecordBytes) for each table the metadata relation reads (metadata itself when it is a table, else its view's base tables), rootpage from the sqlite_master row the relation and base table checks already found (exactly one, type table; a rootpage that isn't an integer fails closed). Runs after those checks and before the admission budget starts and anything reads metadata; the lazy prevalidated open runs it too, before the bake extension reader's first read. The tiles relation is not walked (millions of rows): tile_data is length-checked as a BLOB before it is read (a TEXT tile_data is no tile) and zoom, column and row are type-checked by the aggregate",
-      "casesRule": "sql[] rows: build the pack with the platform SQLite (as relationCases), look each metadataTables[].table up with SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE, then run the probe on the file. packBase64 rows: hand made page images only the probe reads (no SQLite), metadataTables[].root is the page. schema is the schema probe's result (statistics included), each metadataTables[] entry the metadata probe's on that root. Compare ok and reason exactly",
+      "indexWalk": "3.0.4 P1. indexWalk([roots], maxKey): the same pre-order stack, depth rule (d < maxDepth) and visited-once rule as walk, but no maxPages and no row or total cap (a tiles index has a key per tile; each page is read once, so the file's page count bounds it; keep the visited set as a bitset). Page types: 0x02 interior index, 0x0A leaf index, anything else pageType. Interior: n = big endian 16 bit at header + 3, the pointer array at header + 12, header + 12 + 2n > U is structure; for each cell in pointer order, offset o needs header + 12 + 2n <= o and o + 4 <= U (else structure), the varint at o + 4 (the key's payload size) has to end before U (else structure), payload size > maxKey is keyBytes, and the 4 bytes at o are its left child; then the right most pointer at header + 8. All of a page's keys are checked when it is visited, before its children. Leaf: the pointer array at header + 8, header + 8 + 2n > U is structure; each offset o needs header + 8 + 2n <= o < U (else structure), the varint at o (the payload size) has to end before U (else structure), > maxKey is keyBytes. Unsigned 64 bit compare. Nothing else is read: no key bytes, no overflow page (the payload size counts the overflow part, and it is what SQLite mallocs to compare a key that doesn't fit on its page)",
+      "schemaProbe": "walk(1, maxSchemaRows, maxSchemaBytes, maxSchemaBytes) on the file, then for every schema leaf cell in walk order schemaRecords (read, split, statistics mark, shape, rootpage range), then the statistics walk, then the index step, all before SQLite opens it (the schema load is SQLite's first act on the first statement, and it reads the ANALYZE tables with it). Index step (3.0.4 P1): every rootpage r >= 1 from schemaRecords, in that order, whose page's b-tree type byte (at offset 100 on page 1, else 0) is 0x02 or 0x0A starts an index b-tree (an index, an autoindex, or a WITHOUT ROWID table, which has no row of its own for its key); indexWalk([those], maxIndexKeyBytes) when there are any. Any other page type is a table root (not walked here) or something SQLite reports as corrupt if it ever reads it. Every MBTiles open: admission, the lazy prevalidated open, import, the library rebuild and migration name reads",
+      "schemaRecords": "3.0.4 P1 (3.0.3 read only the records that mentioned sqlite_stat). Every schema leaf cell, in walk order, is read whole: after its record size and rowid varints (the rowid's must end before U, else structure) the local part is all of it when size <= U - 35, else M = (U - 12) * 32 / 255 - 23 (integer division) and K = M + (size - M) % (U - 4), K when K <= U - 35 else M; the local part, plus a 4 byte first overflow page number when it is short of size, must end at or before U (else structure); then each overflow page, which must be 1 to page count (else structure), gives the U - 4 bytes after its own 4 byte next pointer (the last one only what is left). Split: a header size varint h with its own length <= h <= the record size, serial type varints (each ending at or before h) filling the header exactly, no 10 or 11, bodies (0, 8, 9: 0 bytes; 1-4: that many; 5: 6; 6, 7: 8; even n >= 12: (n - 12) / 2; odd n >= 13: (n - 13) / 2) filling the record exactly, else schemaRecord. Then the statistics mark (statistics). Then the row has to be one SQLite writes, else schemaRecord: exactly five columns, column 3 (rootpage) of type 1-6 (big endian two's complement), 8 (0) or 9 (1), column 4 (sql) NULL (type 0) or text (odd type >= 13). Then 0 <= rootpage <= page count, else structure. SQLite writes every row that way; a text rootpage would still be read as a page number by SQLite, so the index step couldn't trust it",
+      "statistics": "3.0.3 PROBE-RT-1, narrowed by 3.0.4 P2. A schema row mentions statistics when one of its text (odd type >= 13) or blob (even type >= 12) columns, any of the five, holds 'sqlite_stat' (ASCII A-Z folded to a-z) directly followed by one or more ASCII digits, where the byte before 'sqlite_stat' (if any, in that column) and the byte after the digits (if any) are not ASCII letters, digits or '_'. SQLite finds sqlite_stat1/4 (2/3 on old builds) by the name it parses from the sql; that name is exactly those bytes between non-word bytes or quote marks, so this matches every table SQLite would load as statistics (and a little more: a column or a quoted name that is exactly sqlite_stat<digits>, which no producer writes). A row that mentions statistics must also be what SQLite writes for its own statistics tables, else statistics: the five column shape with an integer rootpage, and sql text whose bytes start with 'CREATE TABLE ' exactly (a view or virtual table by that name would run SQL from the file when SQLite reads it). This is checked before the general row shape, so such a row gets statistics, not schemaRecord. Then walk([their rootpages], maxSchemaRows, maxSchemaBytes, maxSchemaBytes), when there are any. An analyzed real pack holds a few rows and KB there (mbutil runs ANALYZE on everything it writes). 3.0.3 matched the bare substring anywhere in the record, which walked or refused tables, columns and indexes merely named like it (tilesColumnLikeStatistics, indexNamedLikeStatistics)",
+      "metadataProbe": "walk(rootpage, maxMetadataRows, maxMetadataRecordBytes) for each table the metadata relation reads (metadata itself when it is a table, else its view's base tables), rootpage from the sqlite_master row the relation and base table checks already found (exactly one, type table; a rootpage that isn't an integer fails closed). Runs after those checks and before the admission budget starts and anything reads metadata; the lazy prevalidated open runs it too, before the bake extension reader's first read. The tiles relation is not walked (millions of rows): tile_data is length-checked as a BLOB before it is read (a TEXT tile_data is no tile) and zoom, column and row are type-checked by the aggregate. Its indexes, and every other index b-tree, are walked by the schema probe's index step (3.0.4). What a tiles view's join still loads from its base tables' rows is contract s16.1's residual",
+      "casesRule": "sql[] rows: build the pack with the platform SQLite (as relationCases), look each metadataTables[].table up with SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE, then run the probe on the file. packBase64 rows: hand made page images only the probe reads (no SQLite), metadataTables[].root is the page. schema is the schema probe's result (schemaRecords, statistics and the index step included), each metadataTables[] entry the metadata probe's on that root. Compare ok and reason exactly",
       "cases": [
         {
           "id": "realPack",
@@ -1530,8 +1533,8 @@
           "id": "schemaInteriorFirstPage",
           "schema": {"ok": true},
           "metadataTables": [],
-          "note": "page 1 as an interior page: its header starts at byte 100, cell offsets from the page start. The 100 byte records are there in full (zeros), the statistics step reads them",
-          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAABAfsAAAAAAwH7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgENAAAAAQGaAAGaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAACATQAAZoBNAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          "note": "page 1 as an interior page: its header starts at byte 100, cell offsets from the page start. Its leaves hold whole view rows (rootpage 0), which the record step reads",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAABAfsAAAAAAwH7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgENAAAAAQHYAAHYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJgEGFQ8PAT92aWV3dnYAQ1JFQVRFIFZJRVcgdiBBUyBTRUxFQ1QgMQ0AAAACAbAAAdgBsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYDBhUPDwE/dmlld3Z2AENSRUFURSBWSUVXIHYgQVMgU0VMRUNUIDEmAgYVDw8BP3ZpZXd2dgBDUkVBVEUgVklFVyB2IEFTIFNFTEVDVCAx"
         },
         {
           "id": "analyzedPack",
@@ -1626,7 +1629,7 @@
           "id": "statisticsNamedOnlyInSql",
           "schema": {"ok": false, "reason": "recordBytes"},
           "metadataTables": [],
-          "note": "the name column says harmless but older SQLite goes by the sql, so the mark is looked for anywhere in the record, ASCII case folded",
+          "note": "the name column says harmless but older SQLite goes by the sql, so every column is looked at, ASCII case folded, and a quote mark is a word boundary",
           "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAbkAAbkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQEGFx0dAV90YWJsZWhhcm1sZXNzaGFybWxlc3MCQ1JFQVRFIFRBQkxFICJTUUxJVEVfU1RBVDEiKHRibCxpZHgsc3RhdCkNAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwIABAQ=="
         },
         {
@@ -1661,6 +1664,328 @@
           ],
           "note": "UTF-16le text (header 56 = 2): the statistics step reads schema text as UTF-8, admission refuses it anyway",
           "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "realPackIndexes",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "mbutil's metadata name index and tile_index, plus MOBAC's PRIMARY KEY (an autoindex row, sql NULL): every index b-tree is walked, real keys are a few bytes",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "CREATE UNIQUE INDEX name ON metadata (name)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, PRIMARY KEY (zoom_level, tile_column, tile_row))", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"]
+        },
+        {
+          "id": "withoutRowidTilesBase",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "planetiler's compact layout: a WITHOUT ROWID table is an index b-tree (no schema row of its own for the key), so its rows are walked as keys",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, tile_data_id integer, primary key(zoom_level, tile_column, tile_row)) without rowid", "CREATE TABLE tiles_data (tile_data_id integer primary key, tile_data blob)", "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1), (1, 0, 1, 1)", "INSERT INTO tiles_data VALUES (1, X'01')"]
+        },
+        {
+          "id": "indexPagesPastMaxPages",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "130,000 tiles on 512 byte pages: tile_index spans more than maxPages (4,096) pages. The index walk has no page or row cap of its own, each page is read once",
+          "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 129999) INSERT INTO tiles SELECT 17, i % 1000, i / 1000, X'01' FROM n"]
+        },
+        {
+          "id": "tilesIndexKeyUnderCap",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "an index on an extra tiles column with an 8,000,000 byte key: under maxIndexKeyBytes",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note text)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "CREATE INDEX tiles_note ON tiles (note)", "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(4000000)), '0', 'n'))"]
+        },
+        {
+          "id": "tilesIndexKeyOverCap",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "the same key at 8,600,000 bytes. Tiles aren't walked, but a seek on this index would load the key whole",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note text)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "CREATE INDEX tiles_note ON tiles (note)", "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(4300000)), '0', 'n'))"]
+        },
+        {
+          "id": "metadataExpressionIndexOverCap",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "two tiny metadata rows, but an index on lower(name) with an 8,600,000 byte expression in every key: the bake extension reader's WHERE lower(name) = ? seeks it",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE INDEX metadata_lower ON metadata (lower(name), replace(hex(zeroblob(4300000)), '0', 'x'))", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+        },
+        {
+          "id": "withoutRowidRowOverCap",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "a WITHOUT ROWID row is its key: 8,600,000 bytes",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, tile_data_id integer, note text, primary key(zoom_level, tile_column, tile_row)) without rowid", "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1, replace(hex(zeroblob(4300000)), '0', 'w'))"]
+        },
+        {
+          "id": "dedupOrphanImageKeyOverCap",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "a deduplicated pack with an image no map row uses, its tile_id 8,600,000 bytes: the join's seek on images_id can compare it",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)", "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)", "CREATE TABLE images (tile_data blob, tile_id text)", "CREATE UNIQUE INDEX images_id ON images (tile_id)", "INSERT INTO map VALUES (0, 0, 0, 'a')", "INSERT INTO images VALUES (X'01', 'a'), (X'02', replace(hex(zeroblob(4300000)), '0', 'k'))"]
+        },
+        {
+          "id": "indexKeyAtCap",
+          "schema": {"ok": true},
+          "metadataTables": [],
+          "note": "a leaf key of exactly maxIndexKeyBytes. The table row's b-tree (page 2) isn't walked here",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAACAbcAAd8BtwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYCBhcRDwE7aW5kZXhpeHQDQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkfAQYXDw8BL3RhYmxldHQCQ1JFQVRFIFRBQkxFIHQoYSkNAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQoAAAACAfsAAf8B+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAISIgAAK"
+        },
+        {
+          "id": "indexKeyOverCap",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "one byte over",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAACAbcAAd8BtwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYCBhcRDwE7aW5kZXhpeHQDQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkfAQYXDw8BL3RhYmxldHQCQ1JFQVRFIFRBQkxFIHQoYSkNAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQoAAAACAfsAAf8B+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAISIgAEK"
+        },
+        {
+          "id": "indexInteriorKeyOverCap",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "an index keeps keys in its interior cells too (after the 4 byte child), and a seek compares them",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkCAAAAAQH4AAAAAAQB+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADhIiAAQoAAAABAf8AAf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKCgAAAAEB/wAB/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAo="
+        },
+        {
+          "id": "indexKeyNineByteVarint",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "the 9 byte form, 2^64 - 1 unsigned",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH3AAH3AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///////////w=="
+        },
+        {
+          "id": "indexPageKeysBeforeChildren",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "an interior page's keys are checked when it's visited, before its children: the key over the cap wins over the child past the end",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkCAAAAAQH4AAAAAAMB+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJhIiAAQoAAAABAf8AAf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK"
+        },
+        {
+          "id": "indexCellPointerPastUsable",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "a leaf cell pointer at the end of the page",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH/AAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACg=="
+        },
+        {
+          "id": "indexInteriorCellAtUsableEnd",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "an interior cell whose 4 byte child ends at the usable size: its key size varint has to start and end before it",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkCAAAAAQH8AAAAAAMB/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwoAAAABAf8AAf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK"
+        },
+        {
+          "id": "indexVarintRunsOffPage",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "a key size varint that never ends inside the usable area",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//w=="
+        },
+        {
+          "id": "indexChildIsTablePage",
+          "schema": {"ok": false, "reason": "pageType"},
+          "metadataTables": [],
+          "note": "a table page under an index root (SQLite calls that corrupt)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkCAAAAAAIAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAf4AAf4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoB"
+        },
+        {
+          "id": "indexChildCycle",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "an interior index page that lists itself as its right child",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkCAAAAAQH7AAAAAAIB+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADCgoAAAABAf8AAf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK"
+        },
+        {
+          "id": "indexTooDeep",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "a chain of interior index pages: the leaf is at depth 20",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAABYAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkCAAAAAAIAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAIAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAIAAAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAACgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAALAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAIAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAADQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAAOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAIAAAAAAA8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAARAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAIAAAAAABIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAAEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAACAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAIAAAAAABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAgAAAAAAFgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgAAAAEB/wAB/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAo="
+        },
+        {
+          "id": "indexRootSharedByTwoRows",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "two schema rows on one index b-tree: all index roots are walked as one, page 2 twice",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAACAa4AAdgBrgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgCBhcTDwE9aW5kZXhpeDJ0AkNSRUFURSBJTkRFWCBpeDIgT04gdChhKSYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH/AAH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACg=="
+        },
+        {
+          "id": "indexRootsInSchemaOrder",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "index roots are walked in the schema's walk order: the first one's bad pointer wins",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAACAa4AAdgBrgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgCBhcTDwE9aW5kZXhpeDJ0A0NSRUFURSBJTkRFWCBpeDIgT04gdChhKSYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH/AAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgoAAAABAfwAAfwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACEiIAB"
+        },
+        {
+          "id": "autoindexRow",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "an autoindex row (sql NULL) is an index like any other",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAACAbwAAd8BvAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIQIGFzUPAQBpbmRleHNxbGl0ZV9hdXRvaW5kZXhfdF8xdAMfAQYXDw8BL3RhYmxldHQCQ1JFQVRFIFRBQkxFIHQoYSkNAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQoAAAACAfsAAf8B+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAISIgAEK"
+        },
+        {
+          "id": "indexTypeColumnLies",
+          "schema": {"ok": false, "reason": "keyBytes"},
+          "metadataTables": [],
+          "note": "the row says table, its sql and its page say index: the page decides (SQLite builds the object from the sql and never checks the type column)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdcAAdcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJwEGFxERATt0YWJsZWl4aXgCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAhIiAAQ=="
+        },
+        {
+          "id": "indexRowOnTablePage",
+          "schema": {"ok": true},
+          "metadataTables": [],
+          "note": "an index row whose root is a table page isn't an index b-tree (SQLite reports it corrupt if it ever reads it), so nothing is walked",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkNAAAAAgH4AAH8AfgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAgAECwIABAQ=="
+        },
+        {
+          "id": "tableRootsNotWalked",
+          "schema": {"ok": true},
+          "metadataTables": [],
+          "note": "tables, rows over every cap: the schema probe leaves table b-trees alone (the metadata probe walks metadata's, tiles are never walked)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAd8AAd8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfAQYXDw8BL3RhYmxldHQCQ1JFQVRFIFRBQkxFIHQoYSkNAAAAAgH4AAH8AfgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAgAECwIABAQ=="
+        },
+        {
+          "id": "schemaRecordFourColumns",
+          "schema": {"ok": false, "reason": "schemaRecord"},
+          "metadataTables": [],
+          "note": "a row with no sql column",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAfAAAfAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4BBRcRDwFpbmRleGl4dAIKAAAAAQH/AAH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACg=="
+        },
+        {
+          "id": "schemaRecordTextRootpage",
+          "schema": {"ok": false, "reason": "schemaRecord"},
+          "metadataTables": [],
+          "note": "rootpage stored as text: SQLite reads it as page 2 anyway, so the index behind it would go unchecked",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDw87aW5kZXhpeHQyQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAhIiAAQ=="
+        },
+        {
+          "id": "schemaRecordBlobSql",
+          "schema": {"ok": false, "reason": "schemaRecord"},
+          "metadataTables": [],
+          "note": "sql stored as a blob (SQLite reads it as text)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE6aW5kZXhpeHQCQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH/AAH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACg=="
+        },
+        {
+          "id": "schemaRecordReservedSerialType",
+          "schema": {"ok": false, "reason": "schemaRecord"},
+          "metadataTables": [],
+          "note": "serial type 10 is reserved",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAfEAAfEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAQYXCg8BAHRhYmxldAIKAAAAAQH/AAH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACg=="
+        },
+        {
+          "id": "schemaRecordTrailingBytes",
+          "schema": {"ok": false, "reason": "schemaRecord"},
+          "metadataTables": [],
+          "note": "one byte after the last column",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdcAAdcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJwEGFQ8PAT92aWV3dnYAQ1JFQVRFIFZJRVcgdiBBUyBTRUxFQ1QgMQA="
+        },
+        {
+          "id": "schemaRecordHeaderPastRecord",
+          "schema": {"ok": false, "reason": "schemaRecord"},
+          "metadataTables": [],
+          "note": "a header size bigger than the record",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAfwAAfwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIBfwE="
+        },
+        {
+          "id": "schemaRootpagePastTheEnd",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "an index rootpage past the end of the file",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHQJQ1JFQVRFIElOREVYIGl4IE9OIHQoYSkKAAAAAQH/AAH/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACg=="
+        },
+        {
+          "id": "schemaRootpageNegative",
+          "schema": {"ok": false, "reason": "structure"},
+          "metadataTables": [],
+          "note": "a negative rootpage",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAdgAAdgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYBBhcRDwE7aW5kZXhpeHT/Q1JFQVRFIElOREVYIGl4IE9OIHQoYSk="
+        },
+        {
+          "id": "tilesColumnLikeStatistics",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "1,500 tiles in a table with a column sqlite_stat_note: not a statistics table, not walked (3.0.3 walked it under the schema caps and refused it, rows)",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, sqlite_stat_note text)", "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 1499) INSERT INTO tiles SELECT 11, i, 0, X'01', NULL FROM n"]
+        },
+        {
+          "id": "indexNamedLikeStatistics",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "an index named tiles_sqlite_stat_idx (3.0.3: statistics)",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tiles_sqlite_stat_idx ON tiles (zoom_level, tile_column, tile_row)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+        },
+        {
+          "id": "metadataColumnLikeStatistics",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "a 1,500,000 byte description in a metadata table with a column sqlite_stat_x: the metadata caps apply, not the schema caps (3.0.3: recordBytes)",
+          "sql": ["CREATE TABLE metadata (name text, value text, sqlite_stat_x text)", "INSERT INTO metadata (name, value) VALUES ('name', 'Sample'), ('format', 'png'), ('description', replace(hex(zeroblob(750000)), '0', 'd'))", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+        },
+        {
+          "id": "statisticsMarkInsideWords",
+          "schema": {"ok": true},
+          "metadataTables": [],
+          "note": "a word byte before the mark, a word byte after its digits, no digit after it: part of another name each time, so the table isn't walked",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAZQAAZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABqAQcXLS0BgQd0YWJsZWFwcF9zcWxpdGVfc3RhdDFhcHBfc3FsaXRlX3N0YXQxAkNSRUFURSBUQUJMRSBhcHBfc3FsaXRlX3N0YXQxKGEsIHNxbGl0ZV9zdGF0MXgsIFNRTElURV9TVEFUUykNAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwIABAQ=="
+        },
+        {
+          "id": "statisticsWordAsColumnName",
+          "schema": {"ok": false, "reason": "recordBytes"},
+          "metadataTables": [],
+          "note": "a column named exactly sqlite_stat1 still counts, so its table is held to the schema caps (SQLite keeps sqlite_ names for itself, no producer writes one)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAcgAAcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANgEGFxUVAVF0YWJsZXNpZGVzaWRlAkNSRUFURSBUQUJMRSBzaWRlKGEsIHNxbGl0ZV9zdGF0MSkNAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwIABAQ=="
+        },
+        {
+          "id": "statisticsBracketedName",
+          "schema": {"ok": false, "reason": "recordBytes"},
+          "metadataTables": [],
+          "note": "a quoted name is still the name",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAbgAAbgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABGAQYXDw8BfXRhYmxleHgCQ1JFQVRFIFRBQkxFIFtzcWxpdGVfc3RhdDRdKHRibCxpZHgsbmVxLG5sdCxuZGx0LHNhbXBsZSkNAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwIABAQ=="
+        },
+        {
+          "id": "statisticsCommentBeforeName",
+          "schema": {"ok": false, "reason": "statistics"},
+          "metadataTables": [],
+          "note": "a comment is a word boundary, and SQLite never stores one there",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAcYAAcYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgBBhcPDwFhdGFibGV4eAJDUkVBVEUgVEFCTEUvKiovc3FsaXRlX3N0YXQxKHRibCxpZHgsc3RhdCkNAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAQ=="
+        },
+        {
+          "id": "statisticsQualifiedName",
+          "schema": {"ok": false, "reason": "recordBytes"},
+          "metadataTables": [],
+          "note": "after a dot, any letter case",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAcQAAcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6AQYXDw8BZXRhYmxleHgCQ1JFQVRFIFRBQkxFIG1haW4uU1FMSVRFX1NUQVQxKHRibCxpZHgsc3RhdCkNAAAAAQH8AAH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwIABAQ=="
         }
       ]
     },
@@ -2189,6 +2514,83 @@
         "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "ANALYZE", "UPDATE sqlite_stat1 SET stat = replace(hex(zeroblob(530000)), '0', '1') WHERE idx = 'tile_index'"],
         "expect": {"accepted": false, "rejectedAt": "probe"},
         "note": "a 1,060,000 byte sqlite_stat1 row: SQLite loads it whole at the first statement, before any check of ours, and Android before 12 has no length limit or heap cap for that. The schema probe refuses the file before SQLite opens it (the first 3.0.3 probe let it through)"
+      },
+      {
+        "id": "tilesIndexKeyUnderProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note text)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "CREATE INDEX tiles_note ON tiles (note)", "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(4000000)), '0', 'n'))"],
+        "expect": {
+          "accepted": true,
+          "minZoom": 0,
+          "maxZoom": 1,
+          "name": "Sample",
+          "format": "png",
+          "tiles": [
+            {"z": 0, "x": 0, "y": 0, "hex": "01"},
+            {"z": 1, "x": 0, "y": 0, "hex": "0203"},
+            {"z": 1, "x": 1, "y": 1, "hex": null}
+          ],
+          "relations": {"metadata": "table", "tiles": "table"}
+        },
+        "note": "an index on an extra tiles column with an 8,000,000 byte key: under maxIndexKeyBytes, the pack opens"
+      },
+      {
+        "id": "tilesIndexKeyOverProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note text)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "CREATE INDEX tiles_note ON tiles (note)", "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(4300000)), '0', 'n'))"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "the same key at 8,600,000 bytes: the schema probe's index step refuses the file. A seek that compares a key loads it whole on every SQLite version and length cap (200 MB seen on 3.51)"
+      },
+      {
+        "id": "metadataExpressionIndexOverProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE INDEX metadata_lower ON metadata (lower(name), replace(hex(zeroblob(4300000)), '0', 'x'))", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "two tiny metadata rows and an index on lower(name) carrying an 8,600,000 byte expression: the bake extension reader's WHERE lower(name) = ? seeks it (the metadata probe walks tables only)"
+      },
+      {
+        "id": "dedupOrphanImageKeyOverProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)", "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)", "CREATE TABLE images (tile_data blob, tile_id text)", "CREATE UNIQUE INDEX images_id ON images (tile_id)", "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'b')", "INSERT INTO images VALUES (X'01', 'a'), (X'0203', 'b'), (X'05', replace(hex(zeroblob(4300000)), '0', 'k'))", "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = map.tile_id"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "node-mbtiles' layout with an image no map row uses, its tile_id 8,600,000 bytes: the join's seek on images_id can compare it at any tile read"
+      },
+      {
+        "id": "planetilerShallowRowOverProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, tile_data_id integer, note text, primary key(zoom_level, tile_column, tile_row)) without rowid", "CREATE TABLE tiles_data (tile_data_id integer primary key, tile_data blob)", "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1, NULL), (1, 0, 1, 2, replace(hex(zeroblob(4300000)), '0', 'w'))", "INSERT INTO tiles_data VALUES (1, X'01'), (2, X'0203')", "CREATE VIEW tiles AS SELECT tiles_shallow.zoom_level AS zoom_level, tiles_shallow.tile_column AS tile_column, tiles_shallow.tile_row AS tile_row, tiles_data.tile_data AS tile_data FROM tiles_shallow JOIN tiles_data ON tiles_shallow.tile_data_id = tiles_data.tile_data_id"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "planetiler's compact layout with an 8,600,000 byte row in the WITHOUT ROWID table, which is an index b-tree: every tile read seeks it"
+      },
+      {
+        "id": "tilesColumnLikeStatistics",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, sqlite_stat_note text)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)", "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 1499) INSERT INTO tiles SELECT 11, i, 0, X'01', NULL FROM n"],
+        "expect": {
+          "accepted": true,
+          "minZoom": 11,
+          "maxZoom": 11,
+          "name": "Sample",
+          "format": "png",
+          "tiles": [
+            {"z": 11, "x": 1499, "y": 2047, "hex": "01"},
+            {"z": 11, "x": 0, "y": 0, "hex": null}
+          ],
+          "relations": {"metadata": "table", "tiles": "table"}
+        },
+        "note": "1,500 tiles in a table with a column named sqlite_stat_note: 3.0.3 took it for a statistics table, walked it under the schema caps and refused the pack"
+      },
+      {
+        "id": "indexNamedLikeStatistics",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tiles_sqlite_stat_idx ON tiles (zoom_level, tile_column, tile_row)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"],
+        "expect": {
+          "accepted": true,
+          "minZoom": 0,
+          "maxZoom": 1,
+          "name": "Sample",
+          "format": "png",
+          "tiles": [
+            {"z": 0, "x": 0, "y": 0, "hex": "01"},
+            {"z": 1, "x": 0, "y": 0, "hex": "0203"},
+            {"z": 1, "x": 1, "y": 1, "hex": null}
+          ],
+          "relations": {"metadata": "table", "tiles": "table"}
+        },
+        "note": "an index named tiles_sqlite_stat_idx: 3.0.3 refused it (statistics, not a CREATE TABLE)"
       }
     ],
     "relationCasesRule": "run sql[] in order on an empty database file with an ordinary connection (a row with packBase64 is that exact file instead: write the decoded bytes and skip sql[], which needs writable_schema and Apple's SQLite refuses that by default), open it with the real reader (testBudgetMs, when given, replaces admissionBudgetMs through the test seam) and compare expect: accepted, and when accepted minZoom, maxZoom, name, format, each tiles[] probe (XYZ, hex null = no tile) and extensions{}. Skip a row whose minSqliteVersion is above the runtime sqlite_version() (it can't be built there). rejectedAt and relations are the reference's notes, not asserted"
@@ -3966,7 +4368,7 @@
       {
         "id": "loaded",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "none",
@@ -3979,6 +4381,7 @@
           "recoveryPreservesOrphans": false,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
         },
         "note": "the normal launch"
@@ -3986,7 +4389,7 @@
       {
         "id": "loaded_rebuilt",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": true, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": true, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "none",
@@ -3999,6 +4402,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "S1/S2: sealed recovery provenance survives cold launch; unknown map files, bakes and drafts are preserved"
@@ -4006,7 +4410,7 @@
       {
         "id": "loaded_legacy_left",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "none",
@@ -4019,6 +4423,7 @@
           "recoveryPreservesOrphans": false,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
         },
         "note": "D8: legacy stores still there after a Loaded restore are cleared (the drafts were saved before the write)"
@@ -4026,7 +4431,7 @@
       {
         "id": "locked",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "locked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "locked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "locked",
           "migration": "none",
@@ -4039,6 +4444,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "locked", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "F3: issue with Retry; Retry and mission-data unlock re-run migration + restore"
@@ -4046,7 +4452,7 @@
       {
         "id": "undecryptable",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "unreadable", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "unreadable", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "corrupt",
           "migration": "none",
@@ -4059,6 +4465,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": "map_library_corrupt_message",
           "nextRestore": {"status": "corrupt", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "corruptRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "quarantined to .corrupt-<epoch>; Retry rebuilds (libraryRetry)"
@@ -4066,7 +4473,7 @@
       {
         "id": "newer_schema",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "newerSchema", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "newerSchema", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "corrupt",
           "migration": "none",
@@ -4079,6 +4486,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": "map_library_corrupt_message",
           "nextRestore": {"status": "corrupt", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "corruptRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "same as unreadable"
@@ -4086,7 +4494,7 @@
       {
         "id": "vanished_with_quarantine",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": true, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": true, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "corrupt",
           "migration": "none",
@@ -4099,6 +4507,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": "map_library_corrupt_message",
           "nextRestore": {"status": "corrupt", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "corruptRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "S1: the second load after a quarantine is NOT empty"
@@ -4106,7 +4515,7 @@
       {
         "id": "vanished_after_written",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": true, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": true, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "corrupt",
           "migration": "none",
@@ -4119,6 +4528,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": "map_library_missing_message",
           "nextRestore": {"status": "corrupt", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "corruptRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "S1: a library this device wrote before and is gone now is corrupt, never empty"
@@ -4126,7 +4536,7 @@
       {
         "id": "first_launch",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "empty",
           "migration": "none",
@@ -4139,6 +4549,7 @@
           "recoveryPreservesOrphans": false,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "empty", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
         },
         "note": "genuinely empty, nothing to migrate and no file in the managed directories: authoritative, and the cleanup it authorises has nothing to delete"
@@ -4146,7 +4557,7 @@
       {
         "id": "migrate",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "run",
@@ -4159,6 +4570,7 @@
           "recoveryPreservesOrphans": false,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
         },
         "note": "drafts, then the library write, then clear legacy, then restore as Loaded"
@@ -4166,7 +4578,7 @@
       {
         "id": "legacy_locked",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "locked", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "locked", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "migrationPending",
           "migration": "blocked",
@@ -4179,6 +4591,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "migrationPending", "migration": "blocked", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "no migration, no deletion, Retry or unlock tries again"
@@ -4186,7 +4599,7 @@
       {
         "id": "legacy_quarantined",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "corrupt", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "corrupt", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4199,6 +4612,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "3.0.1 (wp4-ios-1, wp4-android-1/7): the read quarantines the selector, it's never 'no legacy left' and no longer blocks forever: salvage writes what converts, adopts every other map file, freezes the old stores, recoveryPreservesOrphans=true"
@@ -4206,7 +4620,7 @@
       {
         "id": "legacy_pdf_unconvertible",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "pdfUnconvertible", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "pdfUnconvertible", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4219,6 +4633,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "3.0.1: was S3 blocked forever. Salvage: the PDF is adopted where it is (re-inspected, pageCount 0 if it won't inspect), its session stays frozen in the legacy store"
@@ -4226,7 +4641,7 @@
       {
         "id": "legacy_names_nothing",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "namesNothing", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "namesNothing", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "writeEmptyAndClear",
@@ -4239,6 +4654,7 @@
           "recoveryPreservesOrphans": false,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
         },
         "note": "S4: authenticated legacy read that names no existing file: write an empty library, clear legacy"
@@ -4246,7 +4662,7 @@
       {
         "id": "first_launch_with_orphan_files",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "adoptOrphans",
@@ -4259,6 +4675,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "3.0.1 (gap-android-blockers-empirical-2): Empty with no legacy but files in the managed directories is never authoritative. They're adopted by the S2 rules in one write with recoveryPreservesOrphans=true"
@@ -4266,7 +4683,7 @@
       {
         "id": "first_launch_orphans_write_fails",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "libraryFails"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "libraryFails"},
         "expect": {
           "status": "migrationPending",
           "migration": "blocked",
@@ -4279,6 +4696,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "migrationPending", "migration": "blocked", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "the adoption write failed: nothing changes, Retry; never an empty authoritative restore"
@@ -4286,7 +4704,7 @@
       {
         "id": "legacy_quarantined_only",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "quarantinedOnly", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "quarantinedOnly", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4299,6 +4717,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "3.0.1: the pass after a quarantine (Retry, relaunch, or a selector 2.x quarantined): only the .corrupt copy is left and it still counts as legacy, so salvage, never an empty restore that wipes the files"
@@ -4306,7 +4725,7 @@
       {
         "id": "legacy_retained_corrupt",
         "platforms": ["android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "retainedCorrupt", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "retainedCorrupt", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4319,6 +4738,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "Android: the retained selector won't read; salvage keeps (adopts) the retained pack"
@@ -4326,7 +4746,7 @@
       {
         "id": "legacy_retained_quarantined_only",
         "platforms": ["android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "retainedQuarantinedOnly", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "retainedQuarantinedOnly", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4339,6 +4759,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "Android: only the retained selector's .corrupt copy is left; the next read must not drop the retained pack from the inputs and reconcile it away"
@@ -4346,7 +4767,7 @@
       {
         "id": "legacy_session_invalid",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "sessionInvalid", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "sessionInvalid", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4359,6 +4780,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "was S3 blocked forever: the record stays frozen, the PDF file is adopted"
@@ -4366,7 +4788,7 @@
       {
         "id": "legacy_pdf_hash_mismatch",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "pdfHashMismatch", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "pdfHashMismatch", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4379,6 +4801,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "was S3 blocked forever: the changed file is adopted and re-inspected; the old calibration was for other bytes so it isn't applied, it stays frozen in the legacy store"
@@ -4386,7 +4809,7 @@
       {
         "id": "legacy_v1_points_unrebuildable",
         "platforms": ["ios"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "v1PointsUnrebuildable", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "v1PointsUnrebuildable", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4399,6 +4822,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "iOS (wp4-ios-8): the PDF converts without its v1 calibration; the parked points stay in the frozen legacy calibration store instead of being cleared"
@@ -4406,7 +4830,7 @@
       {
         "id": "legacy_salvage_write_fails",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "corrupt", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "libraryFails"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "corrupt", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "libraryFails"},
         "expect": {
           "status": "migrationPending",
           "migration": "blocked",
@@ -4419,6 +4843,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "migrationPending", "migration": "blocked", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "salvage write failed: nothing changes, Retry. The read already quarantined the selector, the next pass sees quarantinedOnly and still salvages"
@@ -4426,7 +4851,7 @@
       {
         "id": "migrate_draft_save_fails",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "draftFails"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "draftFails"},
         "expect": {
           "status": "migrationPending",
           "migration": "blocked",
@@ -4439,6 +4864,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "migrationPending", "migration": "blocked", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "wp4-android-8: drafts are saved BEFORE the library write; a failed save writes no library and clears nothing, Retry"
@@ -4446,7 +4872,7 @@
       {
         "id": "migrate_library_write_fails",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "libraryFails"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "libraryFails"},
         "expect": {
           "status": "migrationPending",
           "migration": "blocked",
@@ -4459,6 +4885,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "migrationPending", "migration": "blocked", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "drafts already saved, library write failed: nothing cleared, Retry redoes it (same draft keys overwritten)"
@@ -4466,7 +4893,7 @@
       {
         "id": "loaded_rebuilt_legacy_left",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": true, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": true, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "none",
@@ -4479,6 +4906,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "3.0.1: a recovery-flagged library never runs D8, the old stores stay frozen"
@@ -4486,7 +4914,7 @@
       {
         "id": "loaded_after_salvage",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "quarantinedOnly", "recoveryPreservesOrphans": true, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "quarantinedOnly", "recoveryPreservesOrphans": true, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "none",
@@ -4499,6 +4927,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "the launch after a salvage: Loaded, imports and basemap changes work, nothing cleaned up or cleared"
@@ -4506,7 +4935,7 @@
       {
         "id": "loaded_quarantine_copy_only",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "quarantinedOnly", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "ok", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "quarantinedOnly", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "none",
@@ -4519,6 +4948,7 @@
           "recoveryPreservesOrphans": false,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
         },
         "note": "an ordinary library next to an old .corrupt copy: normal cleanup, the copy is never cleared"
@@ -4526,7 +4956,7 @@
       {
         "id": "vanished_after_written_legacy_left",
         "platforms": ["ios", "android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": true, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": true, "ledgerOnly": false, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "corrupt",
           "migration": "none",
@@ -4539,6 +4969,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": "map_library_missing_message",
           "nextRestore": {"status": "corrupt", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "corruptRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "3.0.2: a completed write on record (iOS keychain record, Android the sealed-only marker file) and the library gone is Corrupt even with old stores still there. Only the Android ledger-only state below salvages"
@@ -4546,7 +4977,7 @@
       {
         "id": "ledger_only_legacy_left",
         "platforms": ["android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": true, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": true, "legacy": "readable", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "loaded",
           "migration": "salvage",
@@ -4559,6 +4990,7 @@
           "recoveryPreservesOrphans": true,
           "importAllowed": true,
           "basemapChangeAllowed": true,
+          "corruptMessage": null,
           "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
         },
         "note": "3.0.2 (F2): Android's first library write died between the ledger mark and the rename while the old stores wait: a pending migration that salvages (2.x names and calibrations that convert are kept), never Corrupt and never an authoritative run"
@@ -4566,7 +4998,7 @@
       {
         "id": "ledger_only_legacy_locked",
         "platforms": ["android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": true, "legacy": "locked", "recoveryPreservesOrphans": false, "managedFiles": false, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": true, "legacy": "locked", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "migrationPending",
           "migration": "blocked",
@@ -4579,6 +5011,7 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": null,
           "nextRestore": {"status": "migrationPending", "migration": "blocked", "reconcile": false, "clearLegacy": false, "issue": "lockedRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "3.0.2: same, key locked during the legacy read: pending, Retry or unlock"
@@ -4586,7 +5019,7 @@
       {
         "id": "ledger_only_no_legacy",
         "platforms": ["android"],
-        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": true, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "writes": "ok"},
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": true, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": false, "writes": "ok"},
         "expect": {
           "status": "corrupt",
           "migration": "none",
@@ -4599,9 +5032,52 @@
           "recoveryPreservesOrphans": null,
           "importAllowed": false,
           "basemapChangeAllowed": false,
+          "corruptMessage": "map_library_missing_message",
           "nextRestore": {"status": "corrupt", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": "corruptRetry", "notice": null, "recoveryPreservesOrphans": null, "importAllowed": false}
         },
         "note": "3.0.2: a ledger-only library with no old store left proves nothing either way: Corrupt as before, Retry rebuilds and deletes nothing"
+      },
+      {
+        "id": "first_launch_residue_only",
+        "platforms": ["ios", "android"],
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": false, "residueFiles": true, "writes": "ok"},
+        "expect": {
+          "status": "empty",
+          "migration": "none",
+          "reconcile": true,
+          "bakeSweep": true,
+          "draftPrune": true,
+          "clearLegacy": false,
+          "issue": null,
+          "notice": null,
+          "recoveryPreservesOrphans": false,
+          "importAllowed": true,
+          "basemapChangeAllowed": true,
+          "corruptMessage": null,
+          "nextRestore": {"status": "empty", "migration": "none", "reconcile": true, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": false, "importAllowed": true}
+        },
+        "note": "3.0.4: no library, no old store, only crash residue (a .partial copy and a lone SQLite sidecar no import owns): a genuine first launch, authoritative, and its cleanup deletes the residue. 3.0.3 iOS wrote a flagged empty library with the recovered notice and never cleaned up on that install again"
+      },
+      {
+        "id": "first_launch_residue_next_to_maps",
+        "platforms": ["ios", "android"],
+        "given": {"libraryFile": "absent", "missionKey": "unlocked", "corruptSibling": false, "writtenBefore": false, "ledgerOnly": false, "legacy": "none", "recoveryPreservesOrphans": false, "managedFiles": true, "residueFiles": true, "writes": "ok"},
+        "expect": {
+          "status": "loaded",
+          "migration": "adoptOrphans",
+          "reconcile": false,
+          "bakeSweep": false,
+          "draftPrune": false,
+          "clearLegacy": false,
+          "issue": null,
+          "notice": "recovered",
+          "recoveryPreservesOrphans": true,
+          "importAllowed": true,
+          "basemapChangeAllowed": true,
+          "corruptMessage": null,
+          "nextRestore": {"status": "loaded", "migration": "none", "reconcile": false, "clearLegacy": false, "issue": null, "notice": null, "recoveryPreservesOrphans": true, "importAllowed": true}
+        },
+        "note": "3.0.4: a map file next to the residue still adopts, and the residue is never adopted as a map"
       }
     ],
     "legacyCodes": {
@@ -4619,7 +5095,8 @@
       "v1PointsUnrebuildable": "iOS: a v1 calibration whose PDFKit display space can't be rebuilt, so its points can't be put in raw page space (they used to be dropped silently, wp4-ios-8)"
     },
     "givenFields": {
-      "managedFiles": "after s9.8 interrupted-import recovery, the managed directories (iOS ImportedMaps + offline_tiles, Android pdf_maps + mbtiles + offline_tiles) hold a regular file the reconcile or the bake sweep would delete (map file, sidecar, .partial, bake) that no in-flight import owns",
+      "managedFiles": "after s9.8 interrupted-import recovery, the managed directories (iOS ImportedMaps + offline_tiles, Android pdf_maps + mbtiles + offline_tiles) hold a map file: a regular file (not a symlink) whose name ends .pdf or .mbtiles (bakes included, they are .mbtiles), any letter case, that no in-flight import owns and no pending s9.8 marker or journal names. 3.0.4 (s16.3): crash residue is not a map file on either platform (Android since 3.0.3 F4); 3.0.1 to 3.0.3 iOS counted it",
+      "residueFiles": "3.0.4: the managed directories also hold crash residue no in-flight import owns: tests lay out a .pdf.partial and a lone .mbtiles-journal (iOS ImportedMaps/map-<uuid>.pdf.partial, offline_tiles/<name>.mbtiles-journal; Android pdf_maps/import-<hex>.pdf.partial, mbtiles/<name>.mbtiles-journal). Never changes the plan. After the restore (and the cleanup it allows) the residue is gone when expect.reconcile is true and still there when it is false, and it is never an entry",
       "writes": "ok | draftFails (a migration draft save returns false or throws) | libraryFails (the sealed library write fails). 3.0.2: on both platforms a failing write leaves no written-before record, so tests make the real store's write fail (a full disk, an unwritable directory or a seam below SafeStore), not a stub above it",
       "writtenBefore": "a completed library write is on record while the file is absent: iOS the keychain sealed-only record (SealedMigrationPolicy.requiresSealed), Android the .imported_map_library.json.sealed-only-v1 marker file (plus the ledger)",
       "ledgerOnly": "Android only: the authenticated sealed-only ledger (DataKey sentinel) names the library label but neither the library file nor its .sealed-only-v1 marker exists. SafeStore.writeAtomically marks the ledger after the temp file is flushed and before the rename, and the marker after the rename, so only a kill or a failed rename between the two leaves this. iOS has no such state"
@@ -4628,6 +5105,12 @@
       "corrupt": {
         "action": "rebuild",
         "message": "map_library_corrupt_message",
+        "messages": {
+          "copyKept": "map_library_corrupt_message",
+          "missing": "map_library_missing_message",
+          "unfinished": "map_library_unfinished_message",
+          "rule": "3.0.4 C2 (s16.4): the corrupt issue's text says what is on disk and what Retry will do. copyKept when the library's bytes are still on the device (an unreadable or newer-schema file, which the load quarantines, or a .corrupt-* copy beside it); missing when the file is gone with no copy (iOS keychain record, Android marker, or Android ledger only with no old store), Retry rebuilds; unfinished (Android only) when the library reads ledger only with old stores present while the app runs, Retry runs the restore pass and salvages (s15.5 item 1). Rows pin expect.corruptMessage"
+        },
         "adoptedName": {
           "key": "map_recovered_name",
           "args": {"number": 1}
