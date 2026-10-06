@@ -451,7 +451,8 @@ class MBTilesStore private constructor(
             ensureHeapLimit()
             val file = File(path)
             // s15.2: sqlite loads and parses every schema row at the first statement, before any check of
-            // ours, so a schema too big to load is refused off the file before sqlite even opens it.
+            // ours, and reads every ANALYZE row (sqlite_stat1/4) whole with it, so a schema or stat table too
+            // big to load is refused off the file before sqlite even opens it.
             // every MBTiles open comes through here: admission, lazy open, import, rebuild, migration
             val schemaOk = try {
                 MBTilesRecordProbe.schema(file) == null

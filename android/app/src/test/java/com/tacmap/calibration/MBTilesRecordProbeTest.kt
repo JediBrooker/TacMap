@@ -47,11 +47,13 @@ class MBTilesRecordProbeTest {
     fun everyHandMadePageImageGetsTheSharedVerdict() {
         val cases = probe["cases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} cases", cases.size >= 34)
+        assertTrue("only ${cases.size} cases", cases.size >= 51)
         val images = cases.filter { it["packBase64"] != null }
-        assertTrue("only ${images.size} page images", images.size >= 26)
+        assertTrue("only ${images.size} page images", images.size >= 40)
         // the 9 byte varint is 2^64 - 1, a signed compare would let it through as -1
         assertTrue(images.any { it["id"]!!.jsonPrimitive.content == "nineByteVarint" })
+        // PROBE-RT-1: the ANALYZE tables, one of them only findable on its overflow page
+        assertTrue(images.any { it["id"]!!.jsonPrimitive.content == "statisticsMarkOnOverflowPage" })
         val reasons = HashSet<String>()
         for (case in images) {
             val id = case["id"]!!.jsonPrimitive.content
@@ -67,7 +69,7 @@ class MBTilesRecordProbeTest {
                 want?.let { reasons += it }
             }
         }
-        assertEquals(setOf("header", "structure", "pageType", "rows", "recordBytes", "totalBytes"), reasons)
+        assertEquals(setOf("header", "structure", "pageType", "rows", "recordBytes", "totalBytes", "statistics"), reasons)
     }
 
     @Test
@@ -78,7 +80,7 @@ class MBTilesRecordProbeTest {
         val file = tmp.newFile("huge.mbtiles")
         RandomAccessFile(file, "rw").use { f ->
             // page 1: the file header, then sqlite_master's leaf header at 100 with one small schema row
-            f.write(leafPage(size, listOf(60L), headerAt = 100).also { sqliteHeader(size).copyInto(it) })
+            f.write(leafPage(size, listOf(60L), headerAt = 100, withRecords = true).also { sqliteHeader(size).copyInto(it) })
             f.write(leafPage(size, listOf(300_000_000L)))
             f.setLength(2L * size + 300_000_000L)
         }
@@ -90,6 +92,33 @@ class MBTilesRecordProbeTest {
             f.write(leafPage(size, listOf(MBTilesRecordProbe.MAX_METADATA_RECORD_BYTES)))
         }
         assertNull(MBTilesRecordProbe.metadataTable(file, 2))
+    }
+
+    @Test
+    fun aHugeStatisticsRowIsJudgedOffItsRecordSizeBeforeSqliteOpensTheFile() {
+        // PROBE-RT-1: the red team's pack, a sane schema plus sqlite_stat1 with one 150 MB row. sqlite reads
+        // that whole with the schema at the first statement, and the first probe only walked sqlite_master,
+        // so it said fine. the file really is that long (sparse) and the probe reads three pages
+        val size = 4096
+        val file = tmp.newFile("stat1.mbtiles")
+        val statRow = schemaRecord("table", "sqlite_stat1", "sqlite_stat1", 2L, "CREATE TABLE sqlite_stat1(tbl,idx,stat)")
+        RandomAccessFile(file, "rw").use { f ->
+            f.write(cellPage(size, listOf(statRow), headerAt = 100).also { sqliteHeader(size).copyInto(it) })
+            f.write(leafPage(size, listOf(20L, 150_000_000L)))
+            f.setLength(2L * size + 150_000_000L)
+        }
+        assertEquals("recordBytes", MBTilesRecordProbe.schema(file))
+        // ANALYZE's usual few bytes a row are fine
+        RandomAccessFile(file, "rw").use { f ->
+            f.seek(size.toLong())
+            f.write(leafPage(size, listOf(20L, 40L)))
+        }
+        assertNull(MBTilesRecordProbe.schema(file))
+        // and the same row as a view would run sql from the file when sqlite reads it
+        val view = schemaRecord("view", "sqlite_stat1", "sqlite_stat1", 0L,
+            "CREATE VIEW sqlite_stat1(tbl,idx,stat) AS SELECT 'tiles', NULL, hex(zeroblob(400000000))")
+        RandomAccessFile(file, "rw").use { f -> f.write(cellPage(size, listOf(view), headerAt = 100).also { sqliteHeader(size).copyInto(it) }) }
+        assertEquals("statistics", MBTilesRecordProbe.schema(file))
     }
 
     @Test(expected = java.io.IOException::class)
@@ -112,21 +141,40 @@ class MBTilesRecordProbeTest {
         h[19] = 1
     }
 
-    /** a table leaf page, b-tree header at [headerAt], one cell per record size packed at the end. offsets from the page start */
-    private fun leafPage(size: Int, records: List<Long>, headerAt: Int = 0): ByteArray {
+    /**
+     * a table leaf page, b-tree header at [headerAt], one cell per record size packed at the end. offsets from
+     * the page start. [withRecords] puts that many zero bytes in too, the schema's rows get read whole
+     */
+    private fun leafPage(size: Int, records: List<Long>, headerAt: Int = 0, withRecords: Boolean = false): ByteArray =
+        cellPage(size, records.map { if (withRecords) ByteArray(it.toInt()) else null }, headerAt, records)
+
+    /** the same with real records (the sizes come from them), or with sizes only where a record's null */
+    private fun cellPage(size: Int, bodies: List<ByteArray?>, headerAt: Int = 0, sizes: List<Long>? = null): ByteArray {
         val page = ByteArray(size)
         page[headerAt] = 0x0D
-        page[headerAt + 3] = (records.size shr 8).toByte()
-        page[headerAt + 4] = records.size.toByte()
+        page[headerAt + 3] = (bodies.size shr 8).toByte()
+        page[headerAt + 4] = bodies.size.toByte()
         var at = size
-        records.forEachIndexed { i, record ->
-            val cell = varint(record) + varint(i + 1L)
+        bodies.forEachIndexed { i, body ->
+            val cell = varint(sizes?.get(i) ?: body!!.size.toLong()) + varint(i + 1L) + (body ?: ByteArray(0))
             at -= cell.size
             cell.copyInto(page, at)
             page[headerAt + 8 + 2 * i] = (at shr 8).toByte()
             page[headerAt + 9 + 2 * i] = at.toByte()
         }
         return page
+    }
+
+    /** a real record: header (its own size, a serial type per column) then the bodies. Long or String columns */
+    private fun schemaRecord(vararg columns: Any): ByteArray {
+        val types = ArrayList<Long>()
+        var body = ByteArray(0)
+        for (c in columns) when (c) {
+            is Long -> { types += 4L; body += ByteArray(4) { i -> (c shr (24 - 8 * i)).toByte() } }
+            else -> { val text = c.toString().toByteArray(); types += 13L + 2 * text.size; body += text }
+        }
+        val head = types.fold(ByteArray(0)) { acc, t -> acc + varint(t) }
+        return varint(head.size + 1L) + head + body
     }
 
     /** sqlite's varint for values under 2^56 */

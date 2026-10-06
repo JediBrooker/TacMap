@@ -769,9 +769,13 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   SQLite supports that and turns off automatic indexes. Older SQLite (Android
   before 12, iOS before SQLite 3.45) loads a whole value before it checks its
   length, so before SQLite reads anything TacMap also reads the file's own
-  b-tree page headers (never a value) and refuses a pack whose schema has more
-  than 1,000 entries or 1 MiB in all, or whose metadata tables hold more than
-  64 rows or a row over 8 MiB + 128 KiB. That bounds the schema load and every
+  b-tree page headers (never a metadata value) and refuses a pack whose schema
+  has more than 1,000 entries or 1 MiB in all, whose statistics tables (the
+  sqlite_stat1 and sqlite_stat4 that ANALYZE leaves, which SQLite reads in
+  full along with the schema) hold more than that together or aren't plain
+  tables, or whose metadata tables hold more than 64 rows or a row over
+  8 MiB + 128 KiB. To find the statistics tables it reads the schema's own
+  entries, once their size is capped. That bounds the schema load and every
   value SQLite takes from a metadata table's rows, and a tile stored as text
   instead of a blob is never read. What remains: indexes aren't checked, and
   when SQLite looks a key up in an index (a metadata read by name, a view's
