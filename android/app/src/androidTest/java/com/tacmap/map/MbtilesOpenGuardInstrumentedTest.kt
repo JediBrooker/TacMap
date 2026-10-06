@@ -27,11 +27,21 @@ import com.tacmap.calibration.LibraryLoad
 import com.tacmap.calibration.LibraryState
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
 import com.tacmap.calibration.OnlineRasterMapSourceAndroid
+import com.tacmap.calibration.PdfBox
 import com.tacmap.calibration.PdfCalibrationIdentity
+import com.tacmap.calibration.PdfEntryInfo
+import com.tacmap.calibration.PdfMapSource
+import com.tacmap.calibration.PdfPageGeometry
+import com.tacmap.calibration.fiducial.CalibrationDraft
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tacmap.map.render.MbtilesLaunchDecision
 import com.tacmap.map.render.MbtilesOpenGuard
 import com.tacmap.map.render.TileIndex
 import com.tacmap.map.render.pdf.PdfRenderExecutor
+import com.tacmap.util.DataKey
 import com.tacmap.util.MissionKeyUnlockRule
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonNull
@@ -143,6 +153,32 @@ class MbtilesOpenGuardInstrumentedTest {
             byteCount = file.length(),
             fileModifiedAtMs = file.lastModified(),
             importedAtMs = System.currentTimeMillis(),
+        )
+    }
+
+    /** a one page PDF with no georef, so calibrating it is a preview */
+    private fun sheetEntry(): ImportedMapEntry {
+        PDFBoxResourceLoader.init(context)
+        val file = File(files, "pdf_maps/guard-sheet-${UUID.randomUUID()}.pdf").apply { parentFile!!.mkdirs() }
+        PDDocument().use { doc ->
+            doc.addPage(PDPage(PDRectangle(600f, 400f)))
+            doc.save(file)
+        }
+        return ImportedMapEntry(
+            id = UUID.randomUUID().toString(),
+            kind = "pdf",
+            fileName = "pdf_maps/${file.name}",
+            displayName = "Plain sheet",
+            contentKey = PdfCalibrationIdentity.contentKey(file),
+            byteCount = file.length(),
+            fileModifiedAtMs = file.lastModified(),
+            importedAtMs = System.currentTimeMillis(),
+            pdf = PdfEntryInfo(
+                pageCount = 1, pageIndex = 0, rotate = 0,
+                pageBox = listOf(listOf(0.0, 0.0), listOf(600.0, 0.0), listOf(600.0, 400.0), listOf(0.0, 400.0)),
+                geometry = PdfPageGeometry(PdfBox(0.0, 0.0, 600.0, 400.0), null, 0, 600, 400),
+                renderGuardToken = UUID.randomUUID().toString(),
+            ),
         )
     }
 
@@ -353,6 +389,41 @@ class MbtilesOpenGuardInstrumentedTest {
     }
 
     @Test
+    fun leavingAPreviewThatCameUpOverTheRestoresBlankPutsThePackBack() {
+        val pack = packEntry()
+        val sheet = sheetEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.entry(pack.id), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(pack, sheet),
+        )))
+        // E3 brings back a calibration on a sheet with no georef, so it comes back as a preview
+        assertTrue(CalibrationDraftStore(files).save(CalibrationDraft(
+            contentKey = sheet.contentKey!!, pageIndex = 0, entryId = sheet.id, datumId = "WGS84", active = true, updatedAtMs = 1,
+        )))
+        val guard = relaunch()
+        val gate = CountDownLatch(1)
+        val seen = recordAdmissions({ guard }, mapOf(pack.fileName to gate))
+        val vm = viewModel()
+        // the restore's blank went up, then the resumed preview on top of it (same main pass)
+        val preview = vm.mapSource.value
+        assertTrue("not the preview: $preview", (preview as? PdfMapSource)?.isPreview == true)
+        assertTrue(vm.calibration.isActive)
+        // the preview superseded the restore's open, so what it admitted is closed unshown
+        gate.countDown()
+        waitUntil(what = "superseded admission closed") { seen.singleOrNull()?.source?.isClosedForTesting() == true }
+        onMain { }
+
+        // Leave: the durable pack comes back, not a blank nobody's filling
+        onMain {
+            vm.calibration.leave(keep = true)
+            vm.endCalibrationPreview()
+        }
+        waitUntil(what = "pack back after leave") { vm.mapSource.value is OfflineTileMapSourceAndroid }
+        assertEquals(pack.id, vm.shownEntryId())
+        assertEquals(pack.id, activeId())
+        assertEquals("admitted twice", 1, seen.size)
+    }
+
+    @Test
     fun aQuickSecondPickWinsAndTheFirstPackIsClosedUnwritten() {
         val a = packEntry()
         val b = packEntry()
@@ -382,6 +453,48 @@ class MbtilesOpenGuardInstrumentedTest {
         assertEquals(b.id, activeId())
         assertFalse("A still armed", a.id in armed(guard))
         assertTrue("admitted on main", seen.none { it.onMain })
+    }
+
+    @Test
+    fun anActivationThatComesBackLockedWritesNothingAndClosesThePack() {
+        val a = packEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.online(BasemapStyle.OSM_TOPO.name), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(a),
+        )))
+        val guard = relaunch()
+        val gate = CountDownLatch(1)
+        val seen = recordAdmissions({ guard }, mapOf(a.fileName to gate))
+        val vm = viewModel()
+        var ok = false
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        assertEquals(listOf(a.id), armed(guard))
+        // Home locks the mission key while A's still being checked
+        DataKey.lock()
+        try {
+            gate.countDown()
+            waitUntil(what = "A closed") { seen.singleOrNull()?.source?.isClosedForTesting() == true }
+            onMain { }
+            assertTrue(vm.mapSource.value is OnlineRasterMapSourceAndroid)
+            assertEquals("marker left behind", emptyList<String>(), armed(guard))
+        } finally {
+            DataKey.unlock()
+        }
+        assertNull("written behind the lock", activeId())
+    }
+
+    @Test
+    fun aRestoreTheAdmissionRefusesGoesOnlineInMemoryOnly() {
+        val pack = packEntry()
+        seed(pack)
+        val guard = relaunch()
+        admitMbtilesPack = { _, _ -> null }
+        val vm = viewModel()
+        waitUntil(what = "online fallback") { vm.mapSource.value is OnlineRasterMapSourceAndroid }
+        assertEquals("durable selection untouched", pack.id, activeId())
+        assertNull(vm.pdfRecovery.value)
+        assertEquals(emptyList<String>(), armed(guard))
+        assertEquals(MbtilesLaunchDecision.NONE, MbtilesOpenGuard(guardFile).launchDecision(pack.id))
     }
 
     @Test

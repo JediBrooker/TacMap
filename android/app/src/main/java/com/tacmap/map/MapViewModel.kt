@@ -1671,7 +1671,15 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val back = previewReturn ?: return
         previewReturn = null
         if ((_mapSource.value as? PdfMapSource)?.isPreview == true) {
-            _mapSource.value = back
+            // a restore's blank was up when the preview started, and the preview superseded its
+            // open. nothing's coming for that blank now, so restore the durable map instead
+            // (straight up if the pack got admitted meanwhile, else checked off main again)
+            val state = _libraryState.value
+            when {
+                back !is com.tacmap.calibration.MbtilesPlaceholderSource -> _mapSource.value = back
+                state != null && _libraryStatus.value == LibraryStatus.LOADED -> restoreActive(state, reframe = false)
+                else -> publish(onlineBasemap(), frame = false)
+            }
         }
         refreshDraftCounts()
     }
