@@ -356,14 +356,15 @@ final class MBTilesOpenGuardTests: XCTestCase {
         waitFor { MBTilesOpenGuard(url: guardFile).snapshot.inProgress.isEmpty }
         XCTAssertEqual(MBTilesOpenGuard(url: guardFile).snapshot.inProgress, [])
 
-        // a pack that refuses to open: online, and no marker left to blame it
+        // a pack that refuses to open: blank unavailable placeholder (3.0.3 U1,
+        // never online for a saved pack), and no marker left to blame it
         let junk = dir.appendingPathComponent("junk.mbtiles")
         try Data("not sqlite at all".utf8).write(to: junk)
         let other = dir.appendingPathComponent("other_guard.json")
         var armedAtOpen: [String] = []
         MBTilesStore.admissionOpenHookForTesting = { _ in armedAtOpen = MBTilesOpenGuard(url: other).snapshot.inProgress }
         let refused = launch(state, pack: junk, guardFile: other)
-        XCTAssertTrue(refused.mapSource is OnlineRasterBasemapSource)
+        XCTAssertEqual((refused.mapSource as? MBTilesUnavailableSource)?.entryID, entry.id)
         XCTAssertEqual(armedAtOpen, [entry.id.uuidString])
         XCTAssertEqual(MBTilesOpenGuard(url: other).snapshot.inProgress, [])
     }

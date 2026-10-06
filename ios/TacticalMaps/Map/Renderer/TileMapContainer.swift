@@ -796,7 +796,8 @@ struct TileMapContainer: UIViewRepresentable {
                 // building it publishes the render status, swiftui hates that mid update
                 deferMake = true
             default:
-                // incl. MBTilesOpeningSource: a pack still opening draws and asks nothing
+                // incl. MBTilesOpeningSource (a pack still opening) and
+                // MBTilesUnavailableSource (one that cant be shown): draw and ask nothing
                 key = "blank"
                 make = { nil }
             }

@@ -729,7 +729,8 @@ final class ImportLimitsContractTests: XCTestCase {
 
     func testEntryStates() throws {
         let rows = fx["entryStates"] as? [[String: Any]] ?? []
-        XCTAssertEqual(rows.count, 13)
+        // 3.0.3 U1: every row says packRefused, 5 new rows pin openFailed
+        XCTAssertEqual(rows.count, 18)
         let dummyGeoref = PdfGeoreference(crs: .utm(zone: 32, south: false), datum: .wgs84,
                                           affine: PlaneAffine(a: 1, b: 0, c: 500_000, d: 0, e: 1, f: 5_000_000),
                                           crop: CalibrationTarget.box(CGRect(x: 0, y: 0, width: 100, height: 100)), origin: .adobeVP)
@@ -752,8 +753,10 @@ final class ImportLimitsContractTests: XCTestCase {
                 entry.pdf = info
             }
             let file: ImportedMapFileStatus = ["ok": .ok, "missing": .missing][r["fileStatus"] as? String ?? ""] ?? .sizeOrMtimeMismatch
+            let refused = try XCTUnwrap(r["packRefused"] as? Bool, "\(id) packRefused")
             let got = ImportedMapStates.present(entry, file: file, draftPoints: (r["draftPoints"] as? NSNumber)?.intValue,
-                                                parentName: j["parentName"] as? String)
+                                                parentName: j["parentName"] as? String, packRefused: refused)
+            XCTAssertEqual(ImportedMapStates.state(entry, file: file, packRefused: refused), got.state, id)
             let e = r["expect"] as? [String: Any] ?? [:]
             XCTAssertEqual(got.state.rawValue, e["state"] as? String, id)
             XCTAssertEqual(got.effectiveGeoref, e["effectiveGeoref"] as? String, id)

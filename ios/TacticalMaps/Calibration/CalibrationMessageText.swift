@@ -96,6 +96,7 @@ extension CalibrationMessage {
         case "map_state_offline_tiles": return Messages.mapStateOfflineTiles()
         case "map_state_derived": return Messages.mapStateDerived(string("name"))
         case "map_state_unavailable": return Messages.mapStateUnavailable()
+        case "map_state_open_failed": return Messages.mapStateOpenFailed()
         // import
         case "map_import_duplicate": return Messages.mapImportDuplicate(string("name"))
         case "map_import_page_used": return Messages.mapImportPageUsed(number("page"), number("pages"))
