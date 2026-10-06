@@ -49,7 +49,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
 | Imported symbol packs | **Untrusted** | User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated. |
-| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. On an MBTiles pack SQLite runs only TacMap's own fixed queries: SQL stored in the pack (a view that computes anything, a generated column, a virtual table) gets the pack refused, the size of its schema and metadata rows is checked from the file before SQLite reads them, and opening a pack is crash-guarded too (§7). A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
+| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. On an MBTiles pack SQLite runs only TacMap's own fixed queries: SQL stored in the pack (a view that computes anything, a generated column, a virtual table) gets the pack refused, the size of its schema, statistics and metadata rows is checked from the file before SQLite reads them, and opening a pack is crash-guarded too (§7). A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
 | Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
@@ -657,8 +657,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   moves the file and writes its record as one step. It runs only on an authoritative
   read of the library: a library that loaded, or a first launch where no library was
   ever written, no legacy store is left to migrate and no map file is in the managed
-  directories (that names nothing; the most it can delete is what an interrupted copy left
-  behind, see below). A library
+  directories (that names nothing; on Android the most it can delete is what an interrupted
+  copy left behind, see below). A library
   that was written before and is gone now, or that was quarantined as unreadable (a
   `.corrupt-<time>` copy next to it), counts as unreadable, never as empty. If the library
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
@@ -759,27 +759,30 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   These checks read the schema rows SQLite actually runs: each name is looked up
   the way SQLite resolves it (any letter case) and has to match exactly one row
   whose own text declares that name, without `IF NOT EXISTS` (which SQLite never
-  stores), so a hand-edited duplicate or a row that misnames its object can't
-  stand in for the live view or table. The
+  stores), and a table's row has to give its root page as a whole number, the
+  only way SQLite writes it, so a hand-edited duplicate or a row that misnames
+  its object can't stand in for the live view or table. The
   plain views real tools write (node-mbtiles, TileMill, mbutil, MapTiler,
   martin, planetiler, gdal2mbtiles, tippecanoe and tile-join) still open; a
   pack whose views compute anything is refused. Every connection to a pack
   also caps a single value at 4 MiB + 64 KiB
-  and a schema statement at 100,000 bytes (iOS through SQLite's own limits;
-  Android checks the same lengths itself and, from Android 12, caps SQLite's
-  heap at 128 MiB for the process), turns off untrusted schema functions where
-  SQLite supports that and turns off automatic indexes. Older SQLite (Android
-  before 12, iOS before SQLite 3.45) loads a whole value before it checks its
-  length, so before SQLite reads anything TacMap also reads the file's own
-  b-tree page headers (never a metadata value) and refuses a pack whose schema
-  has more than 1,000 entries or 1 MiB in all, whose statistics tables (the
-  sqlite_stat1 and sqlite_stat4 that ANALYZE leaves, which SQLite reads in
-  full along with the schema) hold more than that together or aren't plain
-  tables, or whose metadata tables hold more than 64 rows or a row over
-  8 MiB + 128 KiB. To find the statistics tables it reads the schema's own
-  entries, once their size is capped. That bounds the schema load and every
-  value SQLite takes from a metadata table's rows, and a tile stored as text
-  instead of a blob is never read. What remains: indexes aren't checked, and
+  and a schema statement at 100,000 bytes (iOS through SQLite's own limits,
+  set before SQLite reads the schema; Android checks the same lengths itself
+  and, from Android 12, caps SQLite's heap at 128 MiB for the process before
+  it opens any pack), turns off untrusted schema functions where SQLite
+  supports that and turns off automatic indexes. Older SQLite (Android before
+  12, iOS before SQLite 3.45) loads a whole value before it checks its length,
+  so before SQLite reads anything both apps also read the file's own b-tree
+  page headers (never a metadata value) and refuse, with the same verdict on
+  both, a pack whose schema has more than 1,000 entries or 1 MiB in all, whose
+  statistics tables (the sqlite_stat1 and sqlite_stat4 that ANALYZE leaves,
+  which SQLite reads in full along with the schema) hold more than 1,000 rows
+  or 1 MiB between them or aren't plain tables, or whose metadata tables hold
+  more than 64 rows or a row over 8 MiB + 128 KiB. To find the statistics
+  tables they read the schema's own entries, once their size is capped. That
+  bounds the schema load, the statistics SQLite reads with it and every value
+  SQLite takes from a metadata table's rows, on every Android and iOS version,
+  and a tile stored as text instead of a blob is never read. What remains: indexes aren't checked, and
   when SQLite looks a key up in an index (a metadata read by name, a view's
   join, a tile read) it loads each index entry it compares whole, whatever the
   length cap. So a pack carrying an index on a metadata or tiles table with a
@@ -845,7 +848,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   parse is abandoned rather than stopped, and pdfium (Android rendering) runs in-process
   and could still crash natively on a hostile file. A marker written before parsing
   starts stops an import crash loop: if it is still there at the next launch the copy is
-  removed, the import is not retried and the user is told. On Android the marker sits in
+  removed, the import is not retried and the user is told. The same check also runs after
+  a mission-data unlock or a Retry, while an import may still be running: a marker whose
+  copy a live import in this process is still checking belongs to that import, so the
+  copy and the marker are left alone and nothing is reported. On Android the marker sits in
   the sealed import journal, so when mission data locks while a file is being checked
   (leaving the app) its clear can't be written; the app remembers in memory that it set
   that marker and the check came back, so while it keeps running that marker isn't taken
