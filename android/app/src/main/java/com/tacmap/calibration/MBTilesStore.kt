@@ -371,22 +371,40 @@ class MBTilesStore private constructor(
         internal const val ADMISSION_BUDGET_MS = 30_000L
         internal const val VIEW_QUERY_BUDGET_MS = 2_000L
 
-        // process wide, so once is enough. only the MBTiles readers and the bake writer use sqlite here
-        private val heapLimitSet = AtomicBoolean(false)
+        // the heap cap's process wide, so once is enough. only the MBTiles readers and the bake writer use
+        // sqlite here. true once it's been seen to (put on for 3.31+, nothing to put on below that)
+        private val heapLimitChecked = AtomicBoolean(false)
 
         /**
-         * s14.1 hardening, before the connection's first statement that names tiles or metadata:
-         * the heap cap (3.31+, once per process), no automatic indexes, no untrusted schema
+         * puts the heap cap on from a throwaway in memory connection, before the pack is even opened.
+         * it used to go on in harden() right after SELECT sqlite_version(), but newer sqlite loads the
+         * schema (and the ANALYZE tables with it) on that very statement, so the first pack a process
+         * opened got that load uncapped (PROBE-RT-1). 3.44 still waits for the next one, later ones don't
+         */
+        private fun ensureHeapLimit() {
+            if (heapLimitChecked.get()) return
+            runCatching {
+                SQLiteDatabase.create(null).use { db ->
+                    val version = db.rawQuery("SELECT sqlite_version()", null).use { c ->
+                        require(c.moveToFirst())
+                        requireNotNull(SqliteVersion.parse(c.getString(0)))
+                    }
+                    if (version >= HARD_HEAP_LIMIT_MIN_SQLITE) {
+                        db.rawQuery("PRAGMA hard_heap_limit=$HARD_HEAP_LIMIT_BYTES", null).use { it.moveToFirst() }
+                    }
+                }
+            }.onSuccess { heapLimitChecked.set(true) }
+        }
+
+        /**
+         * s14.1 hardening, before the connection's first statement that names tiles or metadata (the
+         * heap cap's already on, see ensureHeapLimit): no automatic indexes, no untrusted schema
          * functions (3.31+), and no schema statement over the cap. Throws = not admitted
          */
         private fun harden(db: SQLiteDatabase): SqliteVersion {
             val version = db.rawQuery("SELECT sqlite_version()", null).use { c ->
                 require(c.moveToFirst())
                 requireNotNull(SqliteVersion.parse(c.getString(0)))
-            }
-            if (version >= HARD_HEAP_LIMIT_MIN_SQLITE && !heapLimitSet.get()) {
-                runCatching { db.rawQuery("PRAGMA hard_heap_limit=$HARD_HEAP_LIMIT_BYTES", null).use { it.moveToFirst() } }
-                    .onSuccess { heapLimitSet.set(true) }
             }
             // an unindexed join would otherwise copy every image into a temp index on each read
             db.rawQuery("PRAGMA automatic_index=OFF", null).use { it.moveToFirst() }
@@ -397,6 +415,16 @@ class MBTilesStore private constructor(
             ).use { require(!it.moveToFirst()) { "MBTiles schema statement too long" } }
             return version
         }
+
+        /**
+         * forgets that the cap's been seen to, so a test can watch the next open do it. only the flag:
+         * the pragma can lower the cap but never take it back off, so a process keeps it once it's on
+         */
+        @VisibleForTesting
+        internal fun forgetHeapLimitForTesting() = heapLimitChecked.set(false)
+
+        @VisibleForTesting
+        internal fun heapLimitCheckedForTesting(): Boolean = heapLimitChecked.get()
 
         // one daemon thread fires the budget cancels, cancelled timers drop out right away
         private val WATCHDOG by lazy {
@@ -419,6 +447,8 @@ class MBTilesStore private constructor(
             open(path, ADMISSION_BUDGET_MS, metadata)
 
         private fun open(path: String, admissionBudgetMs: Long, prevalidated: Metadata?): MBTilesStore? {
+            // first thing, so nothing sqlite does with this pack runs uncapped
+            ensureHeapLimit()
             val file = File(path)
             // s15.2: sqlite loads and parses every schema row at the first statement, before any check of
             // ours, so a schema too big to load is refused off the file before sqlite even opens it.

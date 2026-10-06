@@ -426,6 +426,35 @@ class MBTilesLifecycleInstrumentedTest {
     }
 
     @Test
+    fun theHeapCapIsOnBeforeAPacksFirstStatement() {
+        // PROBE-RT-1: harden() put hard_heap_limit on after its SELECT sqlite_version(), and newer sqlite
+        // (3.51 yes, this emulator's 3.44 not yet) loads the schema and the ANALYZE tables with it on that
+        // very statement, so the first pack a process opened got that load uncapped. now it goes on before
+        // the pack's opened at all: even a file the record probe turns away has it seen to. sqlite can't
+        // take the cap off again, so in a process an earlier test already capped only the flag shows it
+        if (sqliteVersion() < com.tacmap.calibration.SqliteVersion(3, 31, 0)) return
+        MBTilesStore.forgetHeapLimitForTesting()
+        val notSqlite = File(context.cacheDir, "${System.nanoTime()}-not-sqlite.mbtiles").apply { writeBytes(ByteArray(4096)) }
+        assertNull(MBTilesStore.open(notSqlite.path))
+        assertTrue("cap not seen to before the pack's opened", MBTilesStore.heapLimitCheckedForTesting())
+        assertEquals(MBTilesStore.HARD_HEAP_LIMIT_BYTES.toString(), heapLimit())
+        notSqlite.delete()
+        // and a schema sqlite can't even parse, so the open dies on the first statement that reads it
+        MBTilesStore.forgetHeapLimitForTesting()
+        val file = makeMBTiles("cap-first")
+        val bytes = file.readBytes()
+        val at = String(bytes, Charsets.ISO_8859_1).indexOf("CREATE TABLE metadata")
+        assertTrue(at > 0)
+        // CREATE TABLX, a syntax error once sqlite parses its schema. the record probe only reads sizes
+        bytes[at + 11] = 'X'.code.toByte()
+        file.writeBytes(bytes)
+        assertNull(MBTilesStore.open(file.path))
+        assertTrue("cap not seen to before the pack's first statement", MBTilesStore.heapLimitCheckedForTesting())
+        assertEquals(MBTilesStore.HARD_HEAP_LIMIT_BYTES.toString(), heapLimit())
+        file.delete()
+    }
+
+    @Test
     fun aValueOverTheCapOnAViewFailsClosedButATableStillTruncates() {
         // no sqlite3_limit on android, so the view path checks the byte length itself (s14.1)
         val cap = MBTilesStore.MAX_VALUE_BYTES
@@ -874,6 +903,12 @@ class MBTilesLifecycleInstrumentedTest {
     /** a recordProbe expect: null when ok, else its reason */
     private fun JsonObject.probeReason(): String? =
         if (this["ok"]!!.jsonPrimitive.boolean) null else this["reason"]!!.jsonPrimitive.content
+
+    /** the process wide cap as a fresh connection sees it */
+    private fun heapLimit(): String =
+        SQLiteDatabase.create(null).use { db ->
+            db.rawQuery("PRAGMA hard_heap_limit", null).use { c -> c.moveToFirst(); c.getString(0) }
+        }
 
     /** the framework's own sqlite, what the reader's gates go by */
     private fun sqliteVersion(): com.tacmap.calibration.SqliteVersion =
