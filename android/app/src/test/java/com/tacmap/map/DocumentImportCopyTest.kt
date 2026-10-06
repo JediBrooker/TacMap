@@ -154,6 +154,30 @@ class DocumentImportCopyTest {
         assertFalse(MapImportPipeline.sweepInterrupted(journal))
     }
 
+    @Test
+    fun aSecondScreensSweepLeavesAnImportThatsStillParsingAlone() {
+        // A1 follow up: screen A is mid inspection (marker set, copy in flight) when screen B's
+        // view model loads the library and sweeps. same process, so nothing crashed
+        val dir = Files.createTempDirectory("document-copy-live").toFile()
+        val copy = File(dir, "import-2.pdf").apply { writeText("x") }
+        val journal = MemoryJournal()
+        journal.persist(DocumentImportCopyState("pdf:live", DocumentImportCopyPhase.READY, copy.absolutePath, inspectStartedAtEpochMs = 5L))
+        com.tacmap.calibration.InFlightImportFiles.register(copy)
+        try {
+            assertFalse("no interrupted alert for a live import", MapImportPipeline.sweepInterrupted(journal))
+            assertTrue("A's copy deleted under it", copy.isFile)
+            val live = journal.state("pdf:live")!!
+            assertEquals(5L, live.inspectStartedAtEpochMs)
+            assertFalse(live.interrupted)
+            assertEquals(DocumentImportCopyPhase.READY, live.phase)
+        } finally {
+            com.tacmap.calibration.InFlightImportFiles.release(copy)
+        }
+        // once nothing holds it, a leftover marker is the crash case again
+        assertTrue(MapImportPipeline.sweepInterrupted(journal))
+        assertFalse(copy.exists())
+    }
+
     private class MemoryJournal : DocumentImportCopyStateStore {
         private val states = mutableMapOf<String, DocumentImportCopyState>()
         override fun state(operationKey: String): DocumentImportCopyState? = states[operationKey]

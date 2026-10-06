@@ -216,13 +216,18 @@ final class OnlineRasterTileSource: RasterTileSource {
 /// thread so scrolling stays smooth. Never touches the network.
 final class OfflineRasterTileSource: RasterTileSource {
     private let store: MBTilesStore
+    /// the open guard's first draw watch, nil when the open wasnt guarded
+    private let firstDraw: MBTilesFirstDrawWatch?
     private let queue = DispatchQueue(label: "tacmap.offline-tiles", qos: .userInitiated)
 
     var minZoom: Int { store.metadata.minZoom ?? 0 }
     var maxZoom: Int { store.metadata.maxZoom ?? 19 }
     var tilePixelSize: Int { 256 }
 
-    init(_ source: OfflineTileMapSource) { self.store = source.store }
+    init(_ source: OfflineTileMapSource) {
+        self.store = source.store
+        self.firstDraw = source.firstDraw
+    }
 
     private final class Request: RasterTileRequest {
         var cancelled = false
@@ -231,8 +236,16 @@ final class OfflineRasterTileSource: RasterTileSource {
 
     func loadTile(_ tile: TileIndex, completion: @escaping (UIImage?) -> Void) -> RasterTileRequest? {
         let req = Request()
+        let watch = firstDraw
+        watch?.readStarted()
         queue.async {
-            if req.cancelled { DispatchQueue.main.async { completion(nil) }; return }
+            if req.cancelled {
+                DispatchQueue.main.async {
+                    watch?.readFinished(delivered: false)
+                    completion(nil)
+                }
+                return
+            }
             let image: UIImage?
             if let data = self.store.tileData(z: tile.z, x: tile.x, y: tile.y) {
                 image = decodedTileImage(data)
@@ -240,7 +253,11 @@ final class OfflineRasterTileSource: RasterTileSource {
                 // no row: say so once instead of getting asked every frame
                 image = RasterTileSourceEmpty.image
             }
-            DispatchQueue.main.async { completion(req.cancelled ? nil : image) }
+            DispatchQueue.main.async {
+                // a tile that wont decode still got read and handed over
+                watch?.readFinished(delivered: !req.cancelled)
+                completion(req.cancelled ? nil : image)
+            }
         }
         return req
     }

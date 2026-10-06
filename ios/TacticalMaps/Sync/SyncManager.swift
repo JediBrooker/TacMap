@@ -1203,6 +1203,15 @@ final class SyncManager: ObservableObject {
     private var startupRevisionWriteInFlight = false
     private var startupRevisionEvents: [[String]] = []
     private var afterRevisionJournalReady: [@MainActor () -> Void] = []
+    /// K1: local edit ids whose journal write hit the relock (the scene left
+    /// active with the auth-bound key before the seal ran). Written again after
+    /// the user's unlock, before the next diff.
+    private var relockedRevisionEvents: [[String]] = []
+    /// K1: configure's journal read ran behind the relock, read it after the unlock
+    private var relockedJournalLoad: LocalModelRevisionJournal?
+    /// K1: a v3 join whose replay state read hit the relock (Join tapped right
+    /// before leaving the app). Finished after the unlock instead of abandoned
+    private var relockedJoin: (@MainActor () -> Void)?
 
     // v2 containment ceilings (pending v3 protocol limits)
     private static let maxBase64Bytes = 1_048_576        // 1 MiB encoded ct
@@ -1300,12 +1309,24 @@ final class SyncManager: ObservableObject {
         } ?? LocalModelRevisionJournal(containerURL: storageContainerURL)
         revisionJournalLoading = true
         observeModelRevisions()
+        loadRevisionJournal(journal)
+    }
+
+    private func loadRevisionJournal(_ journal: LocalModelRevisionJournal) {
         let loaded = ReplayLoadResult()
         // SafeStore reads can migrate plaintext and persist a sealed-only
         // barrier. Keep this private instance on the persistence worker until
         // the load settles, while lifetime observers retain local edit events.
         persistenceExecutor.execute({ loaded.success = journal.load() }) { [weak self] in
             guard let self else { return }
+            if !loaded.success, journal.loadHitRelock {
+                // the key relocked before the read ran (App Lock at launch, a
+                // quick trip out). nothing wrong with the file, read it again
+                // once the user has unlocked
+                self.relockedJournalLoad = journal
+                self.resumeRelockedJournalWork()
+                return
+            }
             self.modelRevisionJournal = journal
             if loaded.success { self.drainStartupRevisionEvents() }
             else { self.finishRevisionJournalStartup(success: false) }
@@ -1324,8 +1345,35 @@ final class SyncManager: ObservableObject {
             guard let self else { return }
             self.startupRevisionWriteInFlight = false
             if error == nil { self.drainStartupRevisionEvents() }
+            else if DataKey.failedBehindRelock(error) {
+                // relocked under the seal, not a fault. back on the front of the
+                // queue, the drain after the unlock writes it
+                self.startupRevisionEvents.insert(ids, at: 0)
+                self.drainStartupRevisionEvents()
+            }
             else { self.finishRevisionJournalStartup(success: false) }
         }
+    }
+
+    /// K1: journal work the relock cut off, once sync is foreground ready again
+    /// after the user's unlock. The ids go down before the next diff (it waits
+    /// on pendingJournalWrites). Failing now, with the key there, is the usual
+    /// security stop.
+    private func resumeRelockedJournalWork() {
+        guard presenceCadence.foregroundReady else { return }
+        if let journal = relockedJournalLoad {
+            relockedJournalLoad = nil
+            loadRevisionJournal(journal)
+        }
+        // after the journal: finishJoin waits on a journal still loading
+        if let join = relockedJoin {
+            relockedJoin = nil
+            join()
+        }
+        guard !relockedRevisionEvents.isEmpty else { return }
+        let ids = relockedRevisionEvents.flatMap { $0 }
+        relockedRevisionEvents.removeAll()
+        bumpRevisionJournal(ids)
     }
 
     private func finishRevisionJournalStartup(success: Bool) {
@@ -1366,6 +1414,7 @@ final class SyncManager: ObservableObject {
 
         if foregroundReady {
             if revisionJournalLoading, modelRevisionJournal != nil { drainStartupRevisionEvents() }
+            resumeRelockedJournalWork()
             if !wasForegroundReady {
                 // a presence-only background session never carries on into
                 // the foreground, the normal reconnect below replaces it
@@ -1422,8 +1471,9 @@ final class SyncManager: ObservableObject {
         dropInboundAndLiveWork()
         presenceFlushTimer?.cancel()
         presenceFlushTimer = nil
-        // 17.1 clean point. Best effort: an auth-bound key may be locked already,
-        // then the stride flag just stays false which is the safe side.
+        // 17.1 clean point. Best effort: with the auth-bound key the relock has
+        // usually run already, so this fails straight away without going near
+        // the Keychain and the stride flag stays false, the safe side.
         replayState?.writeCleanPresenceFence(on: persistenceExecutor)
     }
 
@@ -1851,6 +1901,16 @@ final class SyncManager: ObservableObject {
             }) { [weak self] in
                 guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
                 guard loaded.success else {
+                    if rs.loadHitRelock {
+                        // the key relocked under the read, the file's fine. not
+                        // a damaged state: finish this join after the unlock
+                        self.relockedJoin = { [weak self] in
+                            guard let self, self.joinToken == token, self.wantConnected, self.room == code else { return }
+                            self.finishJoin(code: code, v3: v3, v2: v2, proposedRoomName: proposedRoomName)
+                        }
+                        self.resumeRelockedJournalWork()
+                        return
+                    }
                     self.pendingLastError = Messages.syncSavedRollbackProtectionStateIsLockedOrDamagedSyncMessage()
                     self.abandonJoin()
                     return
@@ -1945,6 +2005,7 @@ final class SyncManager: ObservableObject {
         reconnectBackoff.reset()
         closeClassifier.reset()
         joinState = JoinState()
+        relockedJoin = nil
         mutationsPaused = false
         pausedForAction = nil
         surfacedIssueLog.removeAll()
@@ -3189,15 +3250,25 @@ final class SyncManager: ObservableObject {
             startupRevisionEvents.append(changed.map(\.uuidString))
             return
         }
+        bumpRevisionJournal(changed.map(\.uuidString))
+    }
+
+    private func bumpRevisionJournal(_ ids: [String]) {
         do {
             guard revisionJournalAvailable, let journal = modelRevisionJournal else {
                 throw SyncReplayState.ReplayError.invalidState
             }
             pendingJournalWrites += 1
-            journal.bumpAll(changed.map(\.uuidString), on: persistenceExecutor) { [weak self] error in
+            journal.bumpAll(ids, on: persistenceExecutor) { [weak self] error in
                 guard let self else { return }
                 self.pendingJournalWrites -= 1
-                if error != nil {
+                if DataKey.failedBehindRelock(error) {
+                    // the scene left active and the key relocked before this
+                    // seal ran. lifecycle, not damage: no stop, the ids go
+                    // down again after the user's unlock
+                    self.relockedRevisionEvents.append(ids)
+                    self.resumeRelockedJournalWork()
+                } else if error != nil {
                     self.revisionJournalAvailable = false
                     self.pendingLastError = Messages.syncLocalRevisionHistoryCouldNotBeSavedSyncIsede036c2Message()
                     self.failClosedV3(self.pendingLastError!)
@@ -5826,6 +5897,9 @@ final class SyncManager: ObservableObject {
             rs.flushPresenceCounters(on: self.persistenceExecutor) { [weak self] error in
                 guard let self, self.replayState === rs, self.activeConnectionGeneration == generation else { return }
                 self.inboundPersistenceInFlight = false
+                // K1: the key relocked under the seal. the counters stay in
+                // memory and go with the next write, nothing to stop
+                if DataKey.failedBehindRelock(error) { return }
                 if error != nil { self.failClosedV3(Messages.syncPresenceReplayStateCouldNotBeSavedMessage()) }
                 else { self.scheduleInboundDrain() }
             }

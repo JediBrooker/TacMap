@@ -86,6 +86,71 @@ enum DataKeyLegacyRecovery {
     }
 }
 
+/// The DEK DataKey keeps for the process plus the relock gate in front of it
+/// (same rules as Android's DataKeyCache). lock() drops the copy and shuts the
+/// gate. While it's shut get() throws instead of reading the Keychain, so a
+/// save queued before the scene left active can't pop a Face ID or passcode
+/// prompt, or quietly put the key back behind the lock screen. Only unlock(),
+/// the user's own unlock, opens it again. Open at process start. Has its own
+/// lock so a test can drive one from the persistence worker too.
+final class DataKeyCache {
+    private let mutex = NSLock()
+    private var cached: Data?
+    private var relocked = false
+
+    var isCached: Bool {
+        mutex.lock(); defer { mutex.unlock() }
+        return cached != nil
+    }
+
+    /// lock() ran and no unlock() since
+    var isRelocked: Bool {
+        mutex.lock(); defer { mutex.unlock() }
+        return relocked
+    }
+
+    /// The cached DEK, else read it (AUTH mode prompts in there) and keep it.
+    func get(_ read: () throws -> Data) throws -> Data {
+        mutex.lock(); defer { mutex.unlock() }
+        if let cached { return cached }
+        // shut: no read at all. it'd prompt from wherever this runs, or work
+        // and leave the key cached behind the lock screen
+        if relocked { throw DataKey.LockedError(relocked: true) }
+        let dek = try read()
+        cached = dek
+        return dek
+    }
+
+    /// The user's own unlock. Opens the gate once the key is in hand, a read
+    /// that fails (prompt cancelled etc) leaves the gate how it was.
+    @discardableResult
+    func unlock(_ read: () throws -> Data) throws -> Data {
+        mutex.lock(); defer { mutex.unlock() }
+        let dek = try cached ?? read()
+        cached = dek
+        relocked = false
+        return dek
+    }
+
+    func store(_ dek: Data) {
+        mutex.lock(); defer { mutex.unlock() }
+        cached = dek
+    }
+
+    /// Lifecycle lock: drop the copy and keep the gate shut till unlock().
+    func lock() {
+        mutex.lock(); defer { mutex.unlock() }
+        cached = nil
+        relocked = true
+    }
+
+    /// Drop the copy but leave the gate alone, the next get() reads fresh.
+    func drop() {
+        mutex.lock(); defer { mutex.unlock() }
+        cached = nil
+    }
+}
+
 /// The at-rest data-encryption key (DEK) for mission data, and where it lives.
 ///
 /// This app stores a raw 32-byte AES key as an iOS Keychain generic-password
@@ -103,7 +168,8 @@ enum DataKeyLegacyRecovery {
 /// this app makes no blanket jailbreak or secure-hardware guarantee. Process
 /// death loses the live key copy, so AUTH recovery needs authentication.
 ///
-/// RootGate clears the general cache on inactive/App Lock in AUTH mode.
+/// RootGate clears the general cache on inactive/App Lock in AUTH mode, and
+/// nothing reads the Keychain again till the user's own unlock().
 /// DEVICE may retain its cache under the accepted ADR-002 lifecycle policy.
 /// An explicitly started TrackRecorder retains a private copy of this same
 /// general DEK for its already prepared log after the global cache is locked.
@@ -115,6 +181,9 @@ enum DataKey {
 
     /// Auth-bound and the user hasn't authenticated. Recoverable: prompt, retry.
     struct LockedError: LocalizedError, LocalizedMessageError {
+        /// came from the relock gate (lockKey ran, no unlock since), not from
+        /// the Keychain. work that hits it just stops, nothing to report
+        var relocked = false
         var errorDescription: String? { localizedMessage.text }
         var localizedMessage: LocalizedMessage { Messages.displayMissionDataKeyIsLockedAuthenticateToContinueMessage() }
     }
@@ -145,7 +214,8 @@ enum DataKey {
     private static let modeDefaultsKey = "datakey.authBound.v1"
 
     private static let lock = NSLock()
-    private static var cached: Data?
+    /// The process copy of the DEK and the relock gate in front of it.
+    private static let cache = DataKeyCache()
 
     /// True when the DEK needs a user auth before it can be read.
     static var isAuthBound: Bool {
@@ -163,7 +233,8 @@ enum DataKey {
     /// True when a store can read/write right now without prompting.
     static var isUnlocked: Bool {
         lock.lock(); defer { lock.unlock() }
-        return cached != nil || !isAuthBound
+        // relocked counts as locked in either mode, key() would only throw
+        return cache.isCached || (!cache.isRelocked && !isAuthBound)
     }
 
     /// Create the DEK on first ever run. Safe to call before the user has
@@ -186,7 +257,7 @@ enum DataKey {
                 if itemState(metadata.activeAccount) == .missing {
                     guard itemState(previous) != .missing,
                           storeMetadata(prior) else {
-                        cached = nil
+                        cache.drop()
                         return
                     }
                     publishMetadataDefaults(prior)
@@ -209,10 +280,10 @@ enum DataKey {
                     publishMetadataDefaults(prior)
                 case .pending:
                     if !metadata.authBound { publishMetadataDefaults(final) }
-                    cached = nil
+                    cache.drop()
                 case .unrecoverable:
                     publishMetadataDefaults(metadata.authBound ? prior : final)
-                    cached = nil
+                    cache.drop()
                 }
                 return
             }
@@ -233,7 +304,7 @@ enum DataKey {
                         pendingDeletionAccount: stale
                     )
                     guard storeMetadata(pending) else {
-                        cached = nil
+                        cache.drop()
                         return
                     }
                     switch DataKeyRotationFinalizer.finish(
@@ -249,11 +320,11 @@ enum DataKey {
                         publishMetadataDefaults(prior)
                         return
                     case .pending:
-                        cached = nil
+                        cache.drop()
                         return
                     case .unrecoverable:
                         publishMetadataDefaults(prior)
-                        cached = nil
+                        cache.drop()
                         return
                     }
                 } else {
@@ -304,15 +375,44 @@ enum DataKey {
             UserDefaults.standard.set(account, forKey: activeAccountDefaultsKey)
             UserDefaults.standard.set(true, forKey: installedDefaultsKey)
             UserDefaults.standard.set(false, forKey: modeDefaultsKey)
-            cached = dek
+            cache.store(dek)
         }
     }
 
-    /// The DEK. Throws `LockedError` in AUTH mode when the user hasn't
-    /// authenticated, `UnrecoverableError` when the item is gone.
+    /// The DEK. Throws LockedError in AUTH mode when the user hasn't
+    /// authenticated, and in either mode after lockKey() till unlock().
+    /// UnrecoverableError when the item is gone.
     static func key() throws -> Data {
         lock.lock(); defer { lock.unlock() }
-        if let cached { return cached }
+        return try cache.get(readKeychain)
+    }
+
+    /// The user's own unlock: the Unlock button on the mission data screen, or
+    /// a confirmed protection change in Settings. Reads the key (AUTH mode
+    /// prompts here) and only then opens the gate lockKey() shut. A cancelled
+    /// or failed read leaves it shut. Background work never calls this.
+    @discardableResult
+    static func unlock() throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        return try cache.unlock(readKeychain)
+    }
+
+    /// lockKey() ran and nothing has unlocked since.
+    static var isRelocked: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cache.isRelocked
+    }
+
+    /// True when error only means the key got relocked under the work (the
+    /// scene left active with the auth-bound key). Lifecycle, not damage, so
+    /// background callers stop quietly instead of reporting it.
+    static func failedBehindRelock(_ error: Error?) -> Bool {
+        (error as? LockedError)?.relocked == true
+    }
+
+    /// The Keychain read behind key() and unlock(), AUTH mode prompts in here.
+    /// Caller holds lock.
+    private static func readKeychain() throws -> Data {
         let resolved = try loadResolved()
         let dek = resolved.key
         if loadMetadata() == nil {
@@ -325,14 +425,15 @@ enum DataKey {
                 publishMetadataDefaults(recovered)
             }
         }
-        cached = dek
         return dek
     }
 
-    /// Drop the in-memory DEK. AUTH mode will prompt again after this.
+    /// Drop the in-memory DEK and keep it dropped till unlock(). key() won't go
+    /// back to the Keychain in between, so a save still queued when the scene
+    /// left active fails instead of prompting or re-caching behind the lock.
     static func lockKey() {
         lock.lock()
-        cached = nil
+        cache.lock()
         lock.unlock()
         NotificationCenter.default.post(name: lockChanged, object: nil)
     }
@@ -343,7 +444,8 @@ enum DataKey {
     static func setAuthBound(_ enabled: Bool) throws {
         let oldAuthBound = isAuthBound
         guard enabled != oldAuthBound else { return }
-        let dek = try key()
+        // a confirmed change in Settings is the user's own unlock as well
+        let dek = try unlock()
         lock.lock(); defer { lock.unlock() }
         let oldAccount = activeAccount
         let newAccount = accounts.first(where: { $0 != oldAccount }) ?? accounts[1]
@@ -383,18 +485,18 @@ enum DataKey {
         ) {
         case .committed:
             publishMetadataDefaults(final)
-            cached = dek
+            cache.store(dek)
         case .rolledBack:
             publishMetadataDefaults(prior)
-            cached = dek
+            cache.store(dek)
             throw RotationCleanupError()
         case .pending:
             if !enabled { publishMetadataDefaults(final) }
-            cached = nil
+            cache.drop()
             throw UnrecoverableError(status: errSecIO)
         case .unrecoverable:
             publishMetadataDefaults(enabled ? prior : final)
-            cached = nil
+            cache.drop()
             throw UnrecoverableError(status: errSecIO)
         }
     }

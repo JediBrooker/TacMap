@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.tacmap.calibration.ImportError
 import com.tacmap.calibration.InFlightImportFiles
 import com.tacmap.calibration.MBTilesStore
 import com.tacmap.map.render.TileIndex
@@ -184,21 +185,242 @@ class MBTilesLifecycleInstrumentedTest {
     }
 
     @Test
-    fun aTileReadThatNeverEndsOnAViewIsCutOffAsAMissingTile() {
-        // the aggregate never touches tile_data so this passes admission, then every read spins forever
-        val file = makeMBTiles("endless-tile-read")
+    fun gdal2mbtilesCommaJoinPackImportsOpensAndDraws() {
+        // SHADOW-PARITY-2: gdal2mbtiles (a raster producer) stores tiles as FROM map, images WHERE map.tile_id =
+        // images.tile_id. 3.0.1 opened it, the first 3.0.2 grammar didn't, so an upgrade lost the basemap.
+        // the generator's pack as is, just real png pixels in its images so there's something to decode
+        val case = admissionFixture()["relationCases"]!!.jsonArray.map { it.jsonObject }
+            .single { it["id"]!!.jsonPrimitive.content == "gdal2mbtilesCommaJoin" }
+        val expect = case["expect"]!!.jsonObject
+        assertTrue(expect["accepted"]!!.jsonPrimitive.boolean)
+        val png = ByteArrayOutputStream().use { out ->
+            val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+        val file = File(context.cacheDir, "${System.nanoTime()}-gdal2mbtiles.mbtiles")
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+            db.execSQL("UPDATE images SET tile_data = ?", arrayOf(png))
+        }
+
+        requireNotNull(MBTilesStore.open(file.path)).use { store ->
+            assertEquals(expect["name"]!!.jsonPrimitive.content, store.metadata.name)
+            assertEquals(expect["format"]!!.jsonPrimitive.content, store.metadata.format)
+            assertEquals(expect["minZoom"]!!.jsonPrimitive.int, store.metadata.minZoom)
+            assertEquals(expect["maxZoom"]!!.jsonPrimitive.int, store.metadata.maxZoom)
+        }
+        val source = requireNotNull(OfflineTileMapSourceAndroid.open(file.path))
+        try {
+            // 1/1/1 is the deduplicated tile (map row points at image 1), 1/0/1 has no map row
+            val tile = runBlocking { source.renderTileSource().loadTile(TileIndex(1, 1, 1)) }
+            assertNotNull("comma join tile must draw", tile)
+            assertEquals(Color.BLUE, tile!!.getPixel(128, 128))
+            tile.recycle()
+            assertNull(runBlocking { source.renderTileSource().loadTile(TileIndex(1, 0, 1)) })
+        } finally {
+            source.close()
+        }
+
+        val journalDir = File(context.cacheDir, "mbtiles-import-journal-${System.nanoTime()}").apply { mkdirs() }
+        val pipeline = MapImportPipeline(context, DocumentImportCopyJournal.forTests(journalDir))
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val outcome = runBlocking { pipeline.runMbtiles(Uri.fromFile(file), "gdal-${System.nanoTime()}", snapshot) { } }
+        assertTrue("import refused: $outcome", outcome is PreparedOutcome.Mbtiles)
+        val prepared = (outcome as PreparedOutcome.Mbtiles).prepared
+        InFlightImportFiles.release(prepared.file)
+        prepared.file.delete()
+    }
+
+    @Test
+    fun anMbtilesImportIsAdmittedUnderTheInterruptedImportMarker() {
+        // s14.1 r7: a pack that kills its own admission is swept at the next launch like a PDF,
+        // and the replayed pick doesn't go round again
+        val file = makeMBTiles("import-marker")
+        val journal = DocumentImportCopyJournal.forTests(File(context.cacheDir, "marker-journal-${System.nanoTime()}").apply { mkdirs() })
+        val op = "mbtiles:marker-${System.nanoTime()}"
+        var during: DocumentImportCopyState? = null
+        val pipeline = MapImportPipeline(context, journal, validateMbtiles = { f ->
+            during = journal.state(op)
+            MBTilesStore.open(f.path)?.use { it.metadata }
+        })
+        val snapshot = LibrarySnapshot(loaded = true, entryCount = 0, byContentKey = { null })
+        val outcome = runBlocking { pipeline.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
+        val prepared = (outcome as PreparedOutcome.Mbtiles).prepared
+        assertNotNull("no marker while the pack was admitted", during?.inspectStartedAtEpochMs)
+        assertNull(journal.state(op)!!.inspectStartedAtEpochMs)
+
+        // the process died in there: what the journal held at that point is what the next launch finds
+        journal.persist(during!!)
+        InFlightImportFiles.release(prepared.file)
+        assertTrue(MapImportPipeline.sweepInterrupted(journal))
+        assertFalse("the copy goes", prepared.file.exists())
+        var admitted = false
+        val replay = MapImportPipeline(context, journal, validateMbtiles = { admitted = true; null })
+        val again = runBlocking { replay.runMbtiles(Uri.fromFile(file), op, snapshot) { } }
+        assertEquals(ImportError.INTERRUPTED, (again as PreparedOutcome.Failed).failure.error)
+        assertFalse("the replay opened it again", admitted)
+    }
+
+    @Test
+    fun aSlowTileReadOnAViewIsCutOffAsAMissingTile() {
+        // 3.0.2: the old endless subquery view is refused before any read now (viewShape), and so is
+        // anything else that computes. what's left to be slow is a plain join with no index (automatic
+        // indexes are off): every map row on one tile, a nested loop over images for each. the
+        // admission gets a big budget through the seam, the read only has its own 2 s
+        val budget = admissionFixture()["viewQueryBudgetMs"]!!.jsonPrimitive.long
+        var rows = 8_000
+        while (true) {
+            val file = File(context.cacheDir, "${System.nanoTime()}-slow-join.mbtiles")
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                db.execSQL("CREATE TABLE metadata (name text, value text)")
+                db.execSQL("INSERT INTO metadata VALUES ('name', 'Slow join')")
+                db.execSQL("CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)")
+                db.execSQL("CREATE TABLE images (tile_data blob, tile_id text)")
+                db.execSQL("WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ${rows - 1}) " +
+                    "INSERT INTO map SELECT 8, 0, 0, 't' || i FROM n")
+                db.execSQL("WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < ${rows - 1}) " +
+                    "INSERT INTO images SELECT X'01', 't' || i FROM n")
+                db.execSQL("CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, " +
+                    "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = map.tile_id")
+            }
+            val opened = System.nanoTime()
+            val store = requireNotNull(MBTilesStore.open(file.path, 600_000L)) { "a plain join is admitted" }
+            val admissionMs = (System.nanoTime() - opened) / 1_000_000
+            // the read walks the same join the aggregate did, so it's only a test once that's well past the budget
+            if (admissionMs < budget + 1_500 && rows < 64_000) {
+                store.close()
+                file.delete()
+                rows = rows * 3 / 2
+                continue
+            }
+            store.use {
+                val started = System.nanoTime()
+                assertNull(it.tileData(8, 0, 255))
+                val elapsedMs = (System.nanoTime() - started) / 1_000_000
+                assertTrue("read took $elapsedMs ms, admission $admissionMs ms", elapsedMs in (budget - 10)..(budget + 5_000))
+            }
+            file.delete()
+            return
+        }
+    }
+
+    @Test
+    fun everyConnectionIsHardenedBeforeItsFirstRead() {
+        val version = sqliteVersion()
+        requireNotNull(MBTilesStore.open(makeMBTiles("hardened").path)).use { store ->
+            assertEquals("0", store.pragmaForTesting("automatic_index"))
+            if (version >= com.tacmap.calibration.SqliteVersion(3, 31, 0)) {
+                assertEquals("0", store.pragmaForTesting("trusted_schema"))
+                // process wide, set by the first open
+                assertEquals(MBTilesStore.HARD_HEAP_LIMIT_BYTES.toString(), store.pragmaForTesting("hard_heap_limit"))
+            }
+        }
+    }
+
+    @Test
+    fun aValueOverTheCapOnAViewFailsClosedButATableStillTruncates() {
+        // no sqlite3_limit on android, so the view path checks the byte length itself (s14.1)
+        val cap = MBTilesStore.MAX_VALUE_BYTES
+        fun pack(name: String, rows: String, metadataView: Boolean): File {
+            val file = File(context.cacheDir, "${System.nanoTime()}-$name.mbtiles")
+            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                db.execSQL("CREATE TABLE meta_base (name text, value text)")
+                db.execSQL("INSERT INTO meta_base VALUES $rows")
+                if (metadataView) db.execSQL("CREATE VIEW metadata AS SELECT name, value FROM meta_base")
+                else db.execSQL("ALTER TABLE meta_base RENAME TO metadata")
+                db.execSQL("CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)")
+                db.execSQL("INSERT INTO tiles VALUES (8, 0, 0, X'010203')")
+            }
+            return file
+        }
+        val overFormat = "('name', 'Pack'), ('format', replace(hex(zeroblob(${cap / 2 + 1})), '0', 'p'))"
+        val overKey = "('name', 'Pack'), (replace(hex(zeroblob(${cap / 2 + 1})), '0', 'k'), 'v')"
+        val atCap = "('name', replace(hex(zeroblob(${cap / 2})), '0', 'n'))"
+        assertNull("known value over the cap", MBTilesStore.open(pack("view-over-format", overFormat, true).path))
+        assertNull("key over the cap", MBTilesStore.open(pack("view-over-key", overKey, true).path))
+        requireNotNull(MBTilesStore.open(pack("view-at-cap", atCap, true).path)).use { assertEquals("n".repeat(128), it.metadata.name) }
+        // tables never hit the cap: the bounded prefix by rowid, as before
+        requireNotNull(MBTilesStore.open(pack("table-over-format", overFormat, false).path)).use {
+            assertEquals("p".repeat(32), it.metadata.format)
+        }
+        requireNotNull(MBTilesStore.open(pack("table-over-key", overKey, false).path)).use { assertEquals("Pack", it.metadata.name) }
+    }
+
+    @Test
+    fun twoTablesGetNoAdmissionBudget() {
+        // s14.2: a table pack's aggregate is one scan the file bounds, a spent budget doesn't refuse it.
+        // a view still gets one
+        val file = makeMBTiles("table-no-budget")
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 60000) " +
+                "INSERT INTO tiles SELECT 16, i, 0, X'01' FROM n")
+        }
+        requireNotNull(MBTilesStore.open(file.path, 1L)) { "two tables were cut off by the admission budget" }.close()
+        SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("ALTER TABLE tiles RENAME TO tiles_base")
+            it.execSQL("CREATE VIEW tiles AS SELECT * FROM tiles_base")
+        }
+        assertNull(MBTilesStore.open(file.path, 1L))
+        requireNotNull(MBTilesStore.open(file.path)).close()
+    }
+
+    @Test
+    fun aPrevalidatedPackOpensOnItsFirstReadAndStillRefusesAHostileSchema() {
+        // s14.2 r2: the import worker's metadata puts a pack up with no second admission, the first
+        // tile read opens it (hardening, relation, shape and base checks, no aggregate)
+        val file = makeMBTiles("prevalidated")
+        val admitted = requireNotNull(MBTilesStore.open(file.path)).use { it.metadata }
+        val source = OfflineTileMapSourceAndroid.prevalidated(file.path, "Prevalidated", admitted)
+        assertEquals(admitted.maxZoom, source.maxZoom)
+        assertFalse("opened before any read", source.refusedForTesting())
+        assertEquals("010203", source.tileData(8, 0, 255)?.hex())
+        source.close()
+        assertTrue(source.isClosedForTesting())
+        assertNull("closed serves nothing", source.tileData(8, 0, 255))
+
+        // the same metadata claimed for bytes whose tiles view runs SQL: refused on the lazy open, no tile ever
+        val hostile = makeMBTiles("prevalidated-hostile")
+        SQLiteDatabase.openDatabase(hostile.path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("ALTER TABLE tiles RENAME TO tiles_base")
+            it.execSQL("CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, " +
+                "CASE WHEN date('now') > '2000-01-01' THEN tile_data END AS tile_data FROM tiles_base")
+        }
+        val lazy = OfflineTileMapSourceAndroid.prevalidated(hostile.path, "Hostile", admitted)
+        assertNull(lazy.tileData(8, 0, 255))
+        assertTrue("lazy open didn't refuse it", lazy.refusedForTesting())
+        assertNull(lazy.tileData(8, 0, 255))
+        lazy.close()
+
+        // a close while nothing's been read yet never opens it
+        val untouched = OfflineTileMapSourceAndroid.prevalidated(file.path, "Untouched", admitted)
+        untouched.close()
+        assertNull(untouched.tileData(8, 0, 255))
+        assertFalse(untouched.refusedForTesting())
+    }
+
+    @Test
+    fun aHostileViewIsRefusedOnEveryOpenEvenOnceTheTriggerFires() {
+        // SEC-1: date('now') in a view used to pass admission and switch on later. now the text alone refuses it
+        val file = makeMBTiles("date-trigger")
         SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READWRITE).use {
             it.execSQL("ALTER TABLE tiles RENAME TO tiles_base")
             it.execSQL("CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, " +
-                "(WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) SELECT X'01' FROM n WHERE i < 0 LIMIT 1) " +
-                "AS tile_data FROM tiles_base")
+                "CASE WHEN date('now') > '2000-01-01' THEN tile_data END AS tile_data FROM tiles_base")
         }
-        requireNotNull(MBTilesStore.open(file.path)).use { store ->
-            val started = System.nanoTime()
-            assertNull(store.tileData(8, 0, 255))
-            val elapsedMs = (System.nanoTime() - started) / 1_000_000
-            val budget = admissionFixture()["viewQueryBudgetMs"]!!.jsonPrimitive.long
-            assertTrue("read took $elapsedMs ms", elapsedMs in (budget - 10)..(budget + 5_000))
+        assertNull(MBTilesStore.open(file.path))
+        assertNull(OfflineTileMapSourceAndroid.open(file.path))
+        // and a generated column in an ordinary table, the 3.0.0 bomb
+        if (sqliteVersion() >= com.tacmap.calibration.SqliteVersion(3, 31, 0)) {
+            val generated = File(context.cacheDir, "${System.nanoTime()}-generated.mbtiles")
+            SQLiteDatabase.openOrCreateDatabase(generated, null).use { db ->
+                db.execSQL("CREATE TABLE metadata (name text, value text)")
+                db.execSQL("CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, raw blob, " +
+                    "tile_data blob GENERATED ALWAYS AS (hex(zeroblob(64))) VIRTUAL)")
+                db.execSQL("INSERT INTO tiles (zoom_level, tile_column, tile_row, raw) VALUES (8, 0, 0, X'01')")
+            }
+            assertNull(MBTilesStore.open(generated.path))
         }
     }
 
@@ -207,14 +429,31 @@ class MBTilesLifecycleInstrumentedTest {
         val fixture = admissionFixture()
         val cases = fixture["relationCases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} relation cases", cases.size >= 14)
+        assertTrue("only ${cases.size} relation cases", cases.size >= 43)
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "nodeMbtilesDedup" })
+        // SEC-M1-SHADOW: case variant and name lie rows, they come as packBase64 (sql[] needs writable_schema)
+        for (id in listOf("tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant", "tableRowKeepsIfNotExists",
+                "baseRowNameLie")) assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
+        // SHADOW-PARITY-2: gdal2mbtiles' comma join and tippecanoe's ON ... and ..., both opened in 3.0.1
+        for (id in listOf("gdal2mbtilesCommaJoin", "tippecanoeAndJoin", "commaJoinWhereCallsFunction"))
+            assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "tilesViewEndless" })
+        assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "metadataViewOversizedName" })
+        val version = sqliteVersion()
         cases.forEach { case ->
             val id = case["id"]!!.jsonPrimitive.content
+            // can't even be built on an older sqlite (a generated column)
+            val needs = case["minSqliteVersion"]?.jsonPrimitive?.content?.let { com.tacmap.calibration.SqliteVersion.parse(it)!! }
+            if (needs != null && version < needs) return@forEach
             val file = File(context.cacheDir, "${System.nanoTime()}-relation-$id.mbtiles")
-            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
-                case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+            val packed = case["packBase64"]?.jsonPrimitive?.content
+            if (packed != null) {
+                // the exact file the reference judged, iOS can't replay writable_schema sql
+                file.writeBytes(java.util.Base64.getDecoder().decode(packed))
+            } else {
+                SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                    case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+                }
             }
             val testBudget = case["testBudgetMs"]?.jsonPrimitive?.long
             val started = System.nanoTime()
@@ -454,6 +693,15 @@ class MBTilesLifecycleInstrumentedTest {
             .single { it["id"]!!.jsonPrimitive.content == variant }["sql"]!!.jsonArray.map { it.jsonPrimitive.content }
 
     private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
+
+    /** the framework's own sqlite, what the reader's gates go by */
+    private fun sqliteVersion(): com.tacmap.calibration.SqliteVersion =
+        SQLiteDatabase.create(null).use { db ->
+            db.rawQuery("SELECT sqlite_version()", null).use { c ->
+                c.moveToFirst()
+                requireNotNull(com.tacmap.calibration.SqliteVersion.parse(c.getString(0)))
+            }
+        }
 
     private fun makeMBTiles(
         name: String,

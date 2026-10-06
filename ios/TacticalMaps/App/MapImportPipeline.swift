@@ -175,7 +175,8 @@ enum MapImportPipeline {
         try? ImportedMapStorage.importedMapsDirectory().appendingPathComponent(ImportedMapStorage.inspectingMarkerName)
     }
 
-    /// written before the PDF parse starts, holds only the partial's UUID
+    /// written before the PDF parse (or the MBTiles admission) starts, holds
+    /// only the copy's opaque name
     static func writeMarker(_ copy: URL) {
         guard let m = markerURL else { return }
         let token = copy.deletingPathExtension().lastPathComponent
@@ -187,8 +188,9 @@ enum MapImportPipeline {
         try? FileManager.default.removeItem(at: m)
     }
 
-    /// At launch: a marker means the app died inside the PDF parser. Remove the
-    /// copy it names and the marker, don't retry. true = tell the user once.
+    /// At launch: a marker means the app died inside the PDF parser or the
+    /// MBTiles admission. Remove the copy it names and the marker, don't retry.
+    /// true = tell the user once.
     @discardableResult
     static func recoverInterruptedImport() -> Bool {
         guard let m = markerURL, (try? Data(contentsOf: m)) != nil else { return false }
@@ -205,7 +207,10 @@ enum MapImportPipeline {
         guard token.hasPrefix("map-"), !token.contains("/"), let dir = try? ImportedMapStorage.importedMapsDirectory() else {
             return []
         }
-        return Set(["pdf", "pdf.partial"].map { dir.appendingPathComponent("\(token).\($0)") })
+        // 3.0.2: an MBTiles pack that killed its own admission goes the same way
+        return Set(["pdf", "pdf.partial", "mbtiles", "mbtiles.partial"].map {
+            dir.appendingPathComponent("\(token).\($0)")
+        })
     }
 
     // MARK: - PDF
@@ -349,9 +354,15 @@ enum MapImportPipeline {
             }
             do {
                 if isCancelled() { throw MapImportError.cancelled }
-                guard let store = MBTilesStore(url: copy.url) else { throw MapImportError.invalidMbtiles }
-                let metadata = store.metadata
-                store.closeForDeletion()
+                // s9.8 marker round the admission (3.0.2): a pack that kills it
+                // is removed and reported next launch, never adopted. A clean
+                // refusal takes the marker off too
+                writeMarker(copy.url)
+                let opened = MBTilesStore(url: copy.url)
+                let metadata = opened?.metadata
+                opened?.closeForDeletion()
+                removeMarker()
+                guard let metadata else { throw MapImportError.invalidMbtiles }
                 return PreparedMBTilesImport(copy: copy, displayName: displayName(url), metadata: metadata,
                                              modifiedAtMs: ImportedMapStorage.modifiedAtMs(copy.url),
                                              performedWorkOffMainThread: offMain)

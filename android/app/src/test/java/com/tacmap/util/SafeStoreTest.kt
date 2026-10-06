@@ -1,14 +1,17 @@
 package com.tacmap.util
 
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 
 class SafeStoreTest {
@@ -163,6 +166,61 @@ class SafeStoreTest {
         f.writeBytes(SealedEnvelope.sealFile(testKey, """{"shapes":[]}""".toByteArray(), "drawings.json"))
         val r = SafeStore.readOrQuarantine(f, "waypoints.json") { it }
         assertTrue(r is SafeStore.LoadResult.Corrupt)
+    }
+
+    @Test fun aWriteThatFailsBeforeItsRenameLeavesNoLedgerMarkAndTheOldFileStillReads() {
+        // F2: the ledger went down before the bytes, so a full disk on the first sealed write left
+        // a record of a write that never happened and the old plaintext read as a downgrade. a
+        // directory where the temp file goes is a real write failure, even for root
+        val dir = tempDir()
+        val f = File(dir, "data.json")
+        f.writeText("""{"legacy":true}""") // never sealed, pre-encryption
+        val jam = File(dir, "data.json.tmp").apply { mkdirs(); File(this, "x").writeText("x") }
+        assertThrows(IOException::class.java) { SafeStore.writeAtomically(f, label, """{"new":true}""") }
+        assertFalse("ledger marked for bytes that never landed", label in sealedLabels)
+        assertFalse(SafeStore.wasWritten(f))
+        assertEquals("""{"legacy":true}""", f.readText())
+
+        jam.deleteRecursively()
+        // still the old store: accepted and sealed in place, not quarantined as a downgrade
+        val r = SafeStore.readOrQuarantine(f, label) { it }
+        assertEquals("""{"legacy":true}""", (r as SafeStore.LoadResult.Loaded).value)
+        assertTrue(SealedEnvelope.isSealedFile(f.readBytes()))
+    }
+
+    @Test fun theLedgerIsMarkedAfterTheFlushedTempFileAndBeforeTheRename() {
+        val dir = tempDir()
+        val f = File(dir, "data.json")
+        f.writeText("""{"legacy":true}""")
+        var atMark: Pair<Boolean, String>? = null
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String) = label in sealedLabels
+            override fun markSealedOnly(label: String) {
+                val tmp = File(dir, "data.json.tmp")
+                atMark = (tmp.isFile && SealedEnvelope.isSealedFile(tmp.readBytes())) to f.readText()
+                sealedLabels += label
+            }
+        }
+        SafeStore.writeAtomically(f, label, """{"new":true}""")
+        // the sealed bytes sat in the temp file, the real path still had the old ones
+        assertEquals(true to """{"legacy":true}""", atMark)
+        assertTrue(SealedEnvelope.isSealedFile(f.readBytes()))
+        assertTrue(SafeStore.wasWritten(f))
+        assertEquals("""{"new":true}""", (SafeStore.readOrQuarantine(f, label) { it } as SafeStore.LoadResult.Loaded).value)
+    }
+
+    @Test fun aLedgerThatWontTakeTheMarkLeavesNoTempFileAndTheOldBytes() {
+        val dir = tempDir()
+        val f = File(dir, "data.json")
+        SafeStore.writeAtomically(f, label, "v1")
+        val before = f.readBytes()
+        SafeStore.migrationPolicy = object : SafeStore.MigrationPolicy {
+            override fun isSealedOnly(label: String) = label in sealedLabels
+            override fun markSealedOnly(label: String) = throw IOException("sentinel write failed")
+        }
+        assertThrows(IOException::class.java) { SafeStore.writeAtomically(f, label, "v2") }
+        assertArrayEquals(before, f.readBytes())
+        assertFalse(File(dir, "data.json.tmp").exists())
     }
 
     @Test fun atomicWriteReplacesPreviousContents() {

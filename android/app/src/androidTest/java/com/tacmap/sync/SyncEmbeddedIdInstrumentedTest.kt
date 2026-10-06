@@ -68,8 +68,9 @@ class SyncEmbeddedIdInstrumentedTest {
                     assertNotNull("$check", put)
                     assertEquals(expect.getString("localId"), put!!.localId)
                     assertEquals(listOf(put.localId), put.parsed.waypoints.map { it.id })
-                    // the replay commit's own check, on libcore this time
-                    assertEquals(put.localId, UUID.fromString(put.localId).toString())
+                    // localId keeps the sender's casing now, libcore just has to fold it to the state key
+                    assertEquals(expect.getString("stateKey"), UUID.fromString(put.localId).toString())
+                    assertEquals(expect.getString("stateKey"), SyncIdentity.canonicalUuid(put.localId))
                     assertEquals(wire, hasher.wireId(embeddedId))
                 } else {
                     assertTrue("$check", check is V3Check.Skip)

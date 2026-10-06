@@ -160,7 +160,19 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Calibration/MBTilesOpenGuard.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/MBTilesStore.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/MBTilesViewShape.swift",
     "platform": "ios",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -873,6 +885,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/app/MapScreenLaunchGuard.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/app/PendingDocumentImport.kt",
     "platform": "android",
     "area": "import-export",
@@ -1006,6 +1024,12 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesStore.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesViewShape.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
@@ -1336,6 +1360,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/map/MbtilesOpenRequests.kt",
+    "platform": "android",
+    "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/map/MeasureSession.kt",
     "platform": "android",
     "area": "map-navigation",
@@ -1450,6 +1480,12 @@
     "path": "android/app/src/main/java/com/tacmap/map/render/MapCamera.kt",
     "platform": "android",
     "area": "map-navigation",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/map/render/MbtilesOpenGuard.kt",
+    "platform": "android",
+    "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"
   },
   {

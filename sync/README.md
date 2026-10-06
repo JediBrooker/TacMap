@@ -419,9 +419,14 @@ The health endpoint returns `ok` with a no-store
 that header matches `RELAY_RELEASE_ID` in `src/release.ts`; an `ok` body alone is
 only a liveness check. Every change to `src/index.ts`, `src/limits.ts` or
 `wrangler.jsonc` needs a new id: `test/contract.test.ts` hashes those files and
-fails until `src/release.ts` carries the new hash, and it refuses any id listed
-in its retired list, so move the old id there when you bump it (a new hash with
-the old id still passes if you forget).
+fails until `src/release.ts` carries the new hash. Every id that has shipped is
+in one of two lists: ids from after the hash pin are pinned to the hash they
+shipped with (`SHIPPED_RELEASES`), and the two that shipped before it
+(`tacmap-sync-2.0.0-64-fifo1`, `tacmap-sync-2.1.0-sp1`) are refused outright
+(`RETIRED_RELEASE_IDS`). The test fails when the current id is unpinned, when
+its pinned hash differs from the current source (a new hash under an id that
+already shipped), or when the id is retired. Bump the id and add the new
+`{id: hash}` pair; never edit a pinned one.
 
 Verified end-to-end against the deployed Durable Object (two-client WebSocket
 test): snapshot-on-connect, peer broadcast with the opaque `ct` preserved, no

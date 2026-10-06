@@ -527,9 +527,10 @@ class SyncManagerSp3Test {
     }
 
     @Test
-    fun uppercaseEmbeddedIdStaysFoldedWhenTheSnapshotIsRestaged() {
-        // plans/04 2.7: uppercase is canonical, the local id is its lowercase fold,
-        // and the restage reparse of the sender's bytes has to fold it again
+    fun uppercaseEmbeddedIdKeepsItsCasingWhenTheSnapshotIsRestaged() {
+        // plans/04 2.7: uppercase is canonical and with nothing local under that UUID the
+        // local id is the sender's casing (3.0.2, it used to fold to lowercase). the restage
+        // reparse of the sender's bytes has to land on that same one id
         val h = start(separateWorkers = true)
         val peer = FakeV3Peer(h.keys())
         val layer = DrawingLayer(id = "L", name = "Recon", createdAt = 1)
@@ -556,7 +557,7 @@ class SyncManagerSp3Test {
         assertEquals(1, h.socket.sentOfType("hello").size)
         assertNotEqualsSecurity(h)
         assertNull(h.manager.skippedCategoryForTests(wire))
-        assertEquals(listOf(localId), h.drawingStore.committedDocument.value.features.map { it.id })
+        assertEquals(listOf(localId.uppercase()), h.drawingStore.committedDocument.value.features.map { it.id })
     }
 
     @Test

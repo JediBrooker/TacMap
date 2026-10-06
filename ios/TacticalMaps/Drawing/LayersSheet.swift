@@ -202,8 +202,7 @@ struct LayersSheet: View {
     @ViewBuilder
     private var basemapSection: some View {
         Section(L10n.text("Basemap")) {
-            let importedActive = mapVM.mapSource is PDFMapSource
-                || mapVM.mapSource is OfflineTileMapSource
+            let importedActive = mapVM.mapSource is PDFMapSource || mapVM.showsOfflinePack
             // Four online basemaps. Keyed styles (all but OSM Topo) need the
             // ArcGIS key baked in at build time; no key -> hide them rather than
             // offer a basemap that would render blank. Imported maps are picked

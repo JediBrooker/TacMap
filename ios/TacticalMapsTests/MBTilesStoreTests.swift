@@ -431,6 +431,19 @@ final class MBTilesStoreTests: XCTestCase {
         return url
     }
 
+    /// a relationCases row as a file. the ones that write sqlite_master come as
+    /// packBase64, our sqlite has SQLITE_DBCONFIG_DEFENSIVE on so writable_schema
+    /// is a no-op here and their sql[] can't be replayed
+    private func makeRelationPack(_ vector: [String: Any], _ id: String) throws -> URL {
+        guard let packed = vector["packBase64"] as? String else {
+            return try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("relation-\(UUID().uuidString).mbtiles")
+        try XCTUnwrap(Data(base64Encoded: packed), id).write(to: url)
+        return url
+    }
+
     private func hex(_ data: Data?) -> String? {
         data.map { $0.map { String(format: "%02x", $0) }.joined() }
     }
@@ -440,22 +453,27 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(fixture["relationTypes"] as? [String], ["table", "view"])
         XCTAssertEqual(fixture["admissionBudgetMs"] as? Int, MBTilesStore.admissionBudgetMs)
         XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
+        XCTAssertEqual(fixture["admissionBudgetAppliesTo"] as? String, "views")
         let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 14)
+        XCTAssertEqual(cases.count, 43)
         var seen: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
+            // a row SQLite here can't even build (generated columns < 3.31)
+            if let min = vector["minSqliteVersion"] as? String, sqlite3_libversion_number() < Self.versionNumber(min) {
+                continue
+            }
             seen.insert(id)
-            let url = try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+            let url = try makeRelationPack(vector, id)
             defer { try? FileManager.default.removeItem(at: url) }
             let expect = try XCTUnwrap(vector["expect"] as? [String: Any], id)
             let budget = vector["testBudgetMs"] as? Int ?? MBTilesStore.admissionBudgetMs
 
             let started = Date()
             let store = MBTilesStore(url: url, admissionBudgetMs: budget)
-            if vector["testBudgetMs"] != nil {
-                XCTAssertLessThan(Date().timeIntervalSince(started), 10, "\(id): the budget has to stop the aggregate")
-            }
+            // every refusal but the budget one is a schema read, no waiting on anything
+            let limit: TimeInterval = vector["testBudgetMs"] != nil ? 10 : 5
+            XCTAssertLessThan(Date().timeIntervalSince(started), limit, "\(id): admission has to come back quick")
             let accepted = try XCTUnwrap(expect["accepted"] as? Bool, id)
             XCTAssertEqual(store != nil, accepted, id)
             guard accepted, let store else { continue }
@@ -481,7 +499,232 @@ final class MBTilesStoreTests: XCTestCase {
             store.closeForDeletion()
             lazy.closeForDeletion()
         }
-        XCTAssertTrue(seen.isSuperset(of: ["nodeMbtilesDedup", "bothViews", "tilesViewEndless", "tilesIsAnIndex"]))
+        XCTAssertTrue(seen.isSuperset(of: ["nodeMbtilesDedup", "bothViews", "tilesViewEndless", "tilesIsAnIndex",
+                                           "viewDateTrigger", "martinNormalizedLeftJoin", "dedupNoIndexOversizedImage",
+                                           "tableOversizedValues", "schemaStatementTooLong", "budgetUnindexedJoin",
+                                           "tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant",
+                                           "tableRowKeepsIfNotExists", "baseRowNameLie",
+                                           // SHADOW-PARITY-2, both opened in 3.0.1
+                                           "gdal2mbtilesCommaJoin", "tippecanoeAndJoin",
+                                           "commaJoinWhereCallsFunction"]))
+    }
+
+    /// "3.31.0" -> 3031000, what sqlite3_libversion_number gives
+    private static func versionNumber(_ s: String) -> Int32 {
+        let p = s.split(separator: ".").compactMap { Int32($0) } + [0, 0, 0]
+        return p[0] * 1_000_000 + p[1] * 1_000 + p[2]
+    }
+
+    // MARK: 3.0.2 SEC-1, no file SQL on a read
+
+    private func relationCase(_ id: String) throws -> [String: Any] {
+        let cases = try XCTUnwrap(try metadataAdmissionFixture()["relationCases"] as? [[String: Any]])
+        return try XCTUnwrap(cases.first { $0["id"] as? String == id }, id)
+    }
+
+    func testConnectionCapsMatchTheSharedFixtureAndHoldOnEveryConnection() throws {
+        let connection = try XCTUnwrap(try metadataAdmissionFixture()["connection"] as? [String: Any])
+        XCTAssertEqual(connection["maxTileBytes"] as? Int, MBTilesStore.maximumTileBytes)
+        XCTAssertEqual(connection["maxValueBytes"] as? Int, MBTilesStore.maximumValueBytes)
+        XCTAssertEqual(connection["maxSchemaSqlBytes"] as? Int, MBTilesStore.maximumSchemaSQLBytes)
+        let ios = try XCTUnwrap(connection["ios"] as? [String: Any])
+        let limits = try XCTUnwrap(ios["sqlite3_limit"] as? [String: Int])
+        XCTAssertEqual(limits, ["SQLITE_LIMIT_LENGTH": MBTilesStore.maximumValueBytes,
+                                "SQLITE_LIMIT_SQL_LENGTH": MBTilesStore.maximumSchemaSQLBytes])
+        XCTAssertTrue(ios["hardHeapLimit"] is NSNull, "no process wide heap limit on iOS")
+        XCTAssertEqual(Self.versionNumber(try XCTUnwrap(connection["generatedColumnsMinSqlite"] as? String)),
+                       MBTilesStore.generatedColumnsMinimumSQLite)
+        let pragmas = try XCTUnwrap(connection["pragmas"] as? [String])
+        XCTAssertTrue(pragmas.contains("automatic_index=OFF"))
+        XCTAssertTrue(pragmas.contains { $0.hasPrefix("trusted_schema=OFF") })
+
+        // the admission open and the lazy prevalidated open both run hardened
+        let url = try makeSampleMBTiles()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let admitted = try XCTUnwrap(MBTilesStore(url: url))
+        let lazy = MBTilesStore(prevalidatedURL: url, metadata: admitted.metadata)
+        for (label, store) in [("admission", admitted), ("lazy", lazy)] {
+            let h = try XCTUnwrap(store.connectionHardeningForTesting(), label)
+            XCTAssertEqual(Int(h.length), MBTilesStore.maximumValueBytes, label)
+            XCTAssertEqual(Int(h.sqlLength), MBTilesStore.maximumSchemaSQLBytes, label)
+            XCTAssertEqual(h.automaticIndex, 0, label)
+            XCTAssertEqual(h.trustedSchema, 0, label)
+        }
+    }
+
+    func testSharedViewShapeCasesUseThePortedParser() throws {
+        let shape = try XCTUnwrap(try metadataAdmissionFixture()["viewShape"] as? [String: Any])
+        XCTAssertEqual(shape["maxSqlBytes"] as? Int, MBTilesViewShape.maximumSQLBytes)
+        XCTAssertEqual(shape["whitespace"] as? [String], [" ", "\t", "\r", "\n"])
+        XCTAssertEqual(shape["punctuation"] as? [String], ["(", ")", ",", ".", "*", "="])
+        XCTAssertEqual(shape["quotedIdentifiers"] as? [[String]], [["\"", "\""], ["[", "]"], ["`", "`"]])
+        let reserved = try XCTUnwrap(shape["reservedWords"] as? [String])
+        XCTAssertEqual(reserved.count, 149)
+        XCTAssertEqual(Set(reserved), MBTilesViewShape.reservedWords)
+        let cases = try XCTUnwrap(shape["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 82)
+        var reasons: [String: Int] = [:]
+        for c in cases {
+            let id = try XCTUnwrap(c["id"] as? String)
+            let sql = try XCTUnwrap(c["sql"] as? String, id)
+            let relation = try XCTUnwrap(c["relation"] as? String, id)
+            let expect = try XCTUnwrap(c["expect"] as? [String: Any], id)
+            let got = MBTilesViewShape.baseTables(sql: sql, relation: relation)
+            if try XCTUnwrap(expect["accepted"] as? Bool, id) {
+                XCTAssertEqual(try? got.get(), try XCTUnwrap(expect["tables"] as? [String], id), id)
+                reasons["accepted", default: 0] += 1
+            } else {
+                let reason = try XCTUnwrap(expect["reason"] as? String, id)
+                guard case .failure(let r) = got else {
+                    XCTFail("\(id): accepted \(String(describing: try? got.get())), wanted \(reason)")
+                    continue
+                }
+                XCTAssertEqual(r.rawValue, reason, id)
+                reasons[reason, default: 0] += 1
+            }
+        }
+        // 3.0.2 SEC-M1-SHADOW moved ifNotExists from accepted to shape. SHADOW-PARITY-2
+        // moved onWithAnd the other way and added the comma join / AND rows
+        XCTAssertEqual(reasons, ["accepted": 23, "tooLong": 1, "token": 18, "shape": 40])
+        for id in ["gdal2mbtiles", "tippecanoe", "onWithAnd"] {
+            let c = try XCTUnwrap(cases.first { $0["id"] as? String == id }, id)
+            XCTAssertEqual((c["expect"] as? [String: Any])?["accepted"] as? Bool, true, id)
+        }
+    }
+
+    /// SEC-M1-SHADOW: a base table row has to declare its own name, the
+    /// generator's table_declares() verdicts
+    func testSharedBaseTableShapeCasesUseThePortedCheck() throws {
+        let shape = try XCTUnwrap(try metadataAdmissionFixture()["baseTableShape"] as? [String: Any])
+        let cases = try XCTUnwrap(shape["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 35)
+        var verdicts: [Bool: Int] = [:]
+        for c in cases {
+            let id = try XCTUnwrap(c["id"] as? String)
+            let name = try XCTUnwrap(c["name"] as? String, id)
+            let want = try XCTUnwrap((c["expect"] as? [String: Any])?["accepted"] as? Bool, id)
+            XCTAssertEqual(MBTilesViewShape.tableDeclares(sql: c["sql"] as? String, name: name), want, id)
+            verdicts[want, default: 0] += 1
+        }
+        XCTAssertEqual(verdicts, [true: 12, false: 23])
+    }
+
+    /// the process's resident high water mark. SQLite fills what it allocates
+    /// (random bytes, hex digits, printf output) so a big value shows up here
+    private func residentHighWater() -> Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return kr == KERN_SUCCESS ? Int(info.resident_size_max) : 0
+    }
+
+    /// SEC-1: built-ins that allocate inside one uninterruptible step. 3.0.1
+    /// admitted all of these and ran them on the first tile or metadata read
+    func testHostilePacksFailClosedWithoutALargeAllocation() throws {
+        let base = [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')",
+            "CREATE TABLE raw (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO raw VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"
+        ]
+        let bombs: [(String, [String])] = [
+            ("randomblob", base + ["CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, " +
+                                   "randomblob(900000000) AS tile_data FROM raw"]),
+            ("hexZeroblob", base + ["CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, " +
+                                    "hex(zeroblob(400000000)) AS tile_data FROM raw"]),
+            ("printf", [
+                "CREATE TABLE meta_base (name text, value text)",
+                "INSERT INTO meta_base VALUES ('name', 'Sample'), ('format', 'png'), ('tacmap_bake_key', 'k')",
+                "CREATE VIEW metadata AS SELECT name, CASE WHEN name = 'tacmap_bake_key' " +
+                    "THEN printf('%.*c', 900000000, 'x') ELSE value END AS value FROM meta_base",
+                "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+                "INSERT INTO tiles VALUES (0, 0, 0, X'01')"
+            ]),
+            // each one fits under the value cap, all live at once in max()'s registers
+            ("registersTimesCap", base + ["CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, max(" +
+                Array(repeating: "randomblob(4000000)", count: 64).joined(separator: ", ") + ") AS tile_data FROM raw"]),
+            // the 3.0.0 deterministic bomb, in an ordinary looking table
+            ("generatedColumn", [
+                "CREATE TABLE metadata (name text, value text)",
+                "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')",
+                "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, " +
+                    "tile_data blob GENERATED ALWAYS AS (hex(zeroblob(400000000))) VIRTUAL)",
+                "INSERT INTO tiles (zoom_level, tile_column, tile_row) VALUES (0, 0, 0), (1, 0, 1)"
+            ])
+        ]
+        for (id, sql) in bombs {
+            let url = try makePack(sql)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let before = residentHighWater()
+            XCTAssertNil(MBTilesStore(url: url), "\(id): refused at admission")
+            // the prevalidated path never ran admission, it still mustnt run the file's SQL
+            let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
+                name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+            XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), id)
+            XCTAssertNil(lazy.tileData(z: 1, x: 0, y: 0), id)
+            XCTAssertNil(lazy.extensionMetadata("tacmap_bake_key"), id)
+            XCTAssertNil(lazy.connectionHardeningForTesting(), "\(id): the lazy open refuses too")
+            lazy.closeForDeletion()
+            XCTAssertLessThan(residentHighWater() - before, 64 * 1024 * 1024, "\(id): nothing big got allocated")
+        }
+    }
+
+    /// viewDateTrigger: a view whose value turns on later. Refused by both the
+    /// admission and the lazy prevalidated open, the latter serves nothing
+    func testHostileViewIsRefusedOnTheAdmissionAndTheLazyPath() throws {
+        for id in ["viewDateTrigger", "viewCallsFunction", "viewKeywordValue", "viewWhereClause", "viewOverView",
+                   "viewOverVirtualTable", "tilesVirtualTable", "tilesTableGeneratedColumn", "viewOverGeneratedColumn",
+                   "schemaStatementTooLong", "tilesViewEndless", "metadataViewLargeUnknownValue",
+                   // SEC-M1-SHADOW: the row the checks read has to be the object sqlite runs
+                   "tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant", "tableRowKeepsIfNotExists",
+                   "viewRowNameLieBehindIfNotExists", "baseRowNameLie", "baseRowNameLieBehindIfNotExists"] {
+            let vector = try relationCase(id)
+            if let min = vector["minSqliteVersion"] as? String, sqlite3_libversion_number() < Self.versionNumber(min) {
+                continue
+            }
+            let url = try makeRelationPack(vector, id)
+            defer { try? FileManager.default.removeItem(at: url) }
+            XCTAssertNil(MBTilesStore(url: url), id)
+            let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
+                name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+            let started = Date()
+            XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), "\(id) lazy")
+            XCTAssertNil(lazy.extensionMetadata("tacmap_bake_key"), "\(id) lazy")
+            XCTAssertLessThan(Date().timeIntervalSince(started), 1, "\(id): refused at once, not cut off by a budget")
+            lazy.closeForDeletion()
+        }
+    }
+
+    /// F3 / 3.0.2: two tables get no admission budget, their aggregate is one
+    /// scan the file bounds. 3.0.1 interrupted this one at the first check
+    func testATablePackIsAdmittedWithoutTheBudget() throws {
+        let url = try makePack([
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Big'), ('format', 'png')",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19999) " +
+                "INSERT INTO tiles SELECT 15, i, 0, X'01' FROM n"
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = MBTilesStore(url: url, admissionBudgetMs: 0)
+        XCTAssertNotNil(store)
+        XCTAssertEqual(store?.metadata.minZoom, 15)
+        // the same rows behind a view do get the budget
+        let viewURL = try makePack([
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Big'), ('format', 'png')",
+            "CREATE TABLE raw (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19999) " +
+                "INSERT INTO raw SELECT 15, i, 0, X'01' FROM n",
+            "CREATE VIEW tiles AS SELECT * FROM raw"
+        ])
+        defer { try? FileManager.default.removeItem(at: viewURL) }
+        XCTAssertNil(MBTilesStore(url: viewURL, admissionBudgetMs: 0))
+        XCTAssertNotNil(MBTilesStore(url: viewURL))
     }
 
     func testDeduplicatedViewPackPassesImportAdmissionAndDrawsTiles() async throws {
@@ -512,20 +755,73 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertNil(sourceMap.store.tileData(z: 1, x: 1, y: 1))
     }
 
+    /// SHADOW-PARITY-2: gdal2mbtiles, a raster PNG producer, stores tiles as a
+    /// comma join (FROM map, images WHERE map.tile_id = images.tile_id). 3.0.1
+    /// opened those packs and the first 3.0.2 grammar refused them, so an
+    /// upgrade lost the offline basemap. through the real import and the
+    /// prevalidated source the map draws from
+    func testGdal2mbtilesCommaJoinPackImportsAndDrawsTiles() async throws {
+        let vector = try relationCase("gdal2mbtilesCommaJoin")
+        let expect = try XCTUnwrap(vector["expect"] as? [String: Any])
+        XCTAssertEqual(expect["accepted"] as? Bool, true)
+        let source = try makeRelationPack(vector, "gdal2mbtilesCommaJoin")
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let original = ImportedMapStorage.applicationSupportProvider
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("mbtiles-gdal-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        ImportedMapStorage.applicationSupportProvider = { root }
+        defer {
+            ImportedMapStorage.applicationSupportProvider = original
+            try? FileManager.default.removeItem(at: root)
+        }
+        let payload = try await MapImportPipeline.prepareMBTiles(url: source, entryCount: 0, libraryLoaded: true,
+                                                                 isCancelled: { false }, progress: { _ in })
+        XCTAssertEqual(payload.metadata.name, expect["name"] as? String)
+        XCTAssertEqual(payload.metadata.format, expect["format"] as? String)
+        XCTAssertEqual(payload.metadata.minZoom, expect["minZoom"] as? Int)
+        XCTAssertEqual(payload.metadata.maxZoom, expect["maxZoom"] as? Int)
+        XCTAssertEqual(payload.entry()?.kind, .mbtiles)
+
+        let sourceMap = OfflineTileMapSource(prevalidatedURL: payload.copy.url, metadata: payload.metadata)
+        let probes = try XCTUnwrap(expect["tiles"] as? [[String: Any]])
+        // a hit, a deduplicated hit and a miss, so the join really ran
+        XCTAssertEqual(probes.compactMap { $0["hex"] as? String }.count, 3)
+        for probe in probes {
+            let z = try XCTUnwrap(probe["z"] as? Int), x = try XCTUnwrap(probe["x"] as? Int)
+            let y = try XCTUnwrap(probe["y"] as? Int)
+            XCTAssertEqual(hex(sourceMap.store.tileData(z: z, x: x, y: y)), probe["hex"] as? String, "\(z)/\(x)/\(y)")
+        }
+    }
+
     func testViewReadsAfterAdmissionAreBudgetedPerStatement() throws {
-        // The prevalidated path skips admission, so an endless view that was
-        // swapped in later must still come back as a missing tile/extension
-        // instead of wedging the renderer under the store lock.
+        // The prevalidated path skips admission, so a pack swapped in later
+        // whose plain join has no index (automatic indexes are off, so that's a
+        // 20,000 x 20,000 nested loop) must still come back as a missing
+        // tile/extension instead of wedging the renderer under the store lock.
+        // CROSS JOIN pins the left table outside, every key matches, and the
+        // column the read filters on lives in the inner table, so each read
+        // really walks all 400M pairs (no Bloom filter shortcut)
+        let rows = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 19999)"
         let url = try makePack([
-            "CREATE VIEW metadata AS WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) " +
-                "SELECT 'extension_' || i AS name, 'v' AS value FROM n",
-            // i * 0 so the planner can't fold zoom_level=1 to false up front
-            "CREATE VIEW tiles AS WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) " +
-                "SELECT i * 0 AS zoom_level, i * 0 AS tile_column, i * 0 AS tile_row, X'01' AS tile_data FROM n"
+            "CREATE TABLE names (k text, value text)",
+            "CREATE TABLE vals (k text, name text)",
+            "\(rows) INSERT INTO names SELECT 'a', 'v' FROM n",
+            "\(rows) INSERT INTO vals SELECT 'a', 'extension_' || i FROM n",
+            "CREATE VIEW metadata AS SELECT vals.name AS name, names.value AS value FROM names CROSS JOIN vals ON vals.k = names.k",
+            "CREATE TABLE map (zoom_level integer, tile_column integer, k text)",
+            "CREATE TABLE images (tile_row integer, tile_data blob, k text)",
+            // the z0 row and its image come first, every z1 row only meets row 0 images
+            "INSERT INTO map VALUES (0, 0, 'hit')",
+            "INSERT INTO images VALUES (0, X'01', 'hit')",
+            "\(rows) INSERT INTO map SELECT 1, 0, 'a' FROM n",
+            "\(rows) INSERT INTO images SELECT 0, X'02', 'a' FROM n",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, " +
+                "images.tile_row AS tile_row, images.tile_data AS tile_data FROM map CROSS JOIN images ON images.k = map.k"
         ])
         defer { try? FileManager.default.removeItem(at: url) }
         let store = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
-            name: "Endless", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+            name: "Unindexed", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
 
         // lower bound proves the scan really ran until the budget cut it
         let budget = Double(MBTilesStore.viewQueryBudgetMs) / 1000
@@ -541,7 +837,24 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertLessThan(elapsed, 10)
         // the matching row comes first so this one still answers
         XCTAssertEqual(store.tileData(z: 0, x: 0, y: 0), Data([0x01]))
-        XCTAssertNil(MBTilesStore(url: url, admissionBudgetMs: 250))
+
+        // the 3.0.1 endless recursive views aren't budgeted any more, the lazy
+        // open refuses them before a single read
+        let endless = try makePack([
+            "CREATE VIEW metadata AS WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) " +
+                "SELECT 'extension_' || i AS name, 'v' AS value FROM n",
+            "CREATE VIEW tiles AS WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) " +
+                "SELECT i * 0 AS zoom_level, i * 0 AS tile_column, i * 0 AS tile_row, X'01' AS tile_data FROM n"
+        ])
+        defer { try? FileManager.default.removeItem(at: endless) }
+        let refused = MBTilesStore(prevalidatedURL: endless, metadata: MBTilesStore.Metadata(
+            name: "Endless", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+        started = Date()
+        XCTAssertNil(refused.tileData(z: 0, x: 0, y: 0))
+        XCTAssertNil(refused.tileData(z: 1, x: 0, y: 0))
+        XCTAssertNil(refused.extensionMetadata("tacmap_bake_key"))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "refused at once")
+        XCTAssertNil(MBTilesStore(url: endless))
     }
 
     func testAdmissionConstantsMatchTheSharedFixture() throws {

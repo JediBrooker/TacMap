@@ -61,6 +61,9 @@ final class SyncReplayState {
 
     private(set) var localCounter: Int64 = 0
     private(set) var lastSnapshotSeq: Int64 = -1
+    /// the last load() failed only because the key relocked under it, nothing
+    /// wrong with the file (K1). Read it again after the user's unlock
+    private(set) var loadHitRelock = false
 
     private var stamps: [String: VersionStamp] = [:]
     private var tombstones: [String: VersionStamp] = [:]
@@ -636,6 +639,7 @@ final class SyncReplayState {
     }
 
     private func load(repairingLocalActor localActor: (actorId: String, publicKey: String)?) -> Bool {
+        loadHitRelock = false
         if let localActor,
            !localActorBindingIsValid(actorId: localActor.actorId, pubkey: localActor.publicKey) {
             return false
@@ -645,6 +649,7 @@ final class SyncReplayState {
             guard let resolved = try resolvedFileURL() else { return true }
             url = resolved
         } catch {
+            loadHitRelock = DataKey.failedBehindRelock(error)
             return false
         }
         let result = SafeStore.read(url, label: storeLabel) { data -> [String: Any] in
@@ -673,7 +678,10 @@ final class SyncReplayState {
                 actorId: localActor.actorId,
                 publicKey: localActor.publicKey
             )
-        case .locked, .corrupt:
+        case .locked(let error):
+            loadHitRelock = DataKey.failedBehindRelock(error)
+            return false
+        case .corrupt:
             return false
         }
     }
@@ -1060,6 +1068,8 @@ final class SyncReplayState {
             return true
         } catch {
             restore(old)
+            // the file's untouched, the repair runs again on the next load
+            loadHitRelock = DataKey.failedBehindRelock(error)
             return false
         }
     }
@@ -1258,6 +1268,8 @@ final class LocalModelRevisionJournal {
     typealias PersistenceWriter = (Data, URL, String) throws -> Void
 
     private var generations: [String: Int64] = [:]
+    /// the last load() failed only because the key was relocked under it (K1)
+    private(set) var loadHitRelock = false
     private let fileURL: URL?
     private let label = "sync/model-revisions"
     private let testKey: Data?
@@ -1343,6 +1355,7 @@ final class LocalModelRevisionJournal {
 
     @discardableResult
     func load() -> Bool {
+        loadHitRelock = false
         guard let fileURL else { return true }
         if let testKey {
             guard FileManager.default.fileExists(atPath: fileURL.path) else { return true }
@@ -1361,7 +1374,10 @@ final class LocalModelRevisionJournal {
             return values
         }) {
         case .empty: return true
-        case .locked, .corrupt: return false
+        case .locked(let error):
+            loadHitRelock = DataKey.failedBehindRelock(error)
+            return false
+        case .corrupt: return false
         case .loaded(let values):
             var decoded: [String: Int64] = [:]
             for (id, value) in values {

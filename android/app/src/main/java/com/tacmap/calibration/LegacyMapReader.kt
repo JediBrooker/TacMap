@@ -161,7 +161,7 @@ internal class LegacyMapReader(
                 continue
             }
             if (offline.none { it.file == f }) {
-                offline += LegacyOffline(f, mbtilesName(f)?.takeIf { it.isNotBlank() } ?: f.nameWithoutExtension)
+                offline += LegacyOffline(f, packName(f)?.takeIf { it.isNotBlank() } ?: f.nameWithoutExtension)
             }
         }
 
@@ -177,6 +177,16 @@ internal class LegacyMapReader(
         if (causes.isNotEmpty()) return Read.Uncertain(inputs, causes)
         if (pdf == null && offline.isEmpty() && activeSel == null) return Read.Absent
         return Read.Present(inputs)
+    }
+
+    /**
+     * The pack's own name, read under the rebuild marker (s14.1): opening it runs its admission,
+     * and one that took the process down last time isn't opened again, the file stem stands in
+     */
+    private fun packName(f: File): String? {
+        val rel = ImportedMapLibraryStore.relativeName(filesDir, f) ?: return null
+        if (LibraryRebuild.markedName(filesDir) == rel) return null
+        return LibraryRebuild.underMarker(filesDir, rel) { mbtilesName(f) }
     }
 
     private sealed class LegacyPdfRead {

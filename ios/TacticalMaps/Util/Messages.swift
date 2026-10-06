@@ -1074,6 +1074,12 @@ enum Messages {
     static func syncIdentityRejectedMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.sync_identity_rejected", fallback: "The relay rejected this device's signed Unit Sync identity, so sync stopped. Leave the room and join again. If it keeps happening, create a new join code.", arguments: [])
     }
+    static func syncLegacyRoomMixedVersions() -> String {
+        L10n.message("id.sync_legacy_room_mixed_versions", fallback: "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.")
+    }
+    static func syncLegacyRoomMixedVersionsMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.sync_legacy_room_mixed_versions", fallback: "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.", arguments: [])
+    }
     static func syncObjectTooLarge() -> String {
         L10n.message("id.sync_object_too_large", fallback: "An object is too large to sync and stays on this device only. Simplify it or split it into smaller parts to share it.")
     }

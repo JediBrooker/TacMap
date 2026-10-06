@@ -24,10 +24,13 @@ the same numbers.
 """
 
 import argparse
+import base64
 import math
 import os
 import re
+import sqlite3
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -2335,6 +2338,17 @@ def restore_plan(g):
         return out("loaded", "none", not flag, (not flag) and legacy in LEGACY_CLEARABLE, None, flag_after=flag)
     if lf in ("unreadable", "newerSchema") or g["corruptSibling"] or g["writtenBefore"]:
         return out("corrupt", "none", False, False, "corruptRetry")
+    if g["ledgerOnly"]:
+        # 3.0.2 (F2, Android): the authenticated ledger names the library but there's no file and no marker, so a
+        # first write died between its ledger mark and the rename. Old stores still waiting means it was the
+        # migration's write: salvage (keeps names and calibrations that convert, deletes nothing, cleans nothing
+        # up), never an authoritative run or a Corrupt that strands them behind a rebuild. With no old store
+        # nothing says what it was, so Corrupt as before (its Retry rebuild deletes nothing either)
+        if legacy == "none":
+            return out("corrupt", "none", False, False, "corruptRetry")
+        if legacy == "locked":
+            return blocked()
+        return write("salvage", False, "recovered", True, legacy != "namesNothing")
     # a genuine Empty from here on
     if legacy == "none":
         if g["managedFiles"]:
@@ -2368,7 +2382,7 @@ def library_load_rows():
     """s8.2 r1 + 3.0.1: what a launch / unlock / Retry restore does (S1-S4, D8, F3, salvage, orphan adoption)"""
     rows = []
 
-    def run(cid, given, note):
+    def run(cid, given, note, platforms=None):
         e = restore_plan(given)
         nxt = restore_plan(state_after(given, e))
         e["nextRestore"] = {k: nxt[k] for k in ("status", "migration", "reconcile", "clearLegacy", "issue",
@@ -2377,13 +2391,16 @@ def library_load_rows():
         if e["migration"] in ("salvage", "adoptOrphans", "blocked") or e["recoveryPreservesOrphans"]:
             assert not e["reconcile"] and not nxt["reconcile"] and not nxt["clearLegacy"], cid
         assert e["status"] != "empty" or not given["managedFiles"], cid
-        platforms = LEGACY_PLATFORMS.get(given["legacy"], ["ios", "android"])
+        # a ledger-only library (Android) never authorises cleanup, whatever is or isn't around it
+        assert not given["ledgerOnly"] or (not e["reconcile"] and not e["clearLegacy"]), cid
+        platforms = platforms or LEGACY_PLATFORMS.get(given["legacy"], ["ios", "android"])
         rows.append({"id": cid, "platforms": platforms, "given": given, "expect": e, "note": note})
 
     def g(file="absent", key_="unlocked", sibling=False, written=False, legacy="none", recovery=False,
-          files=False, writes="ok"):
+          files=False, writes="ok", ledger=False):
         return {"libraryFile": file, "missionKey": key_, "corruptSibling": sibling, "writtenBefore": written,
-                "legacy": legacy, "recoveryPreservesOrphans": recovery, "managedFiles": files, "writes": writes}
+                "ledgerOnly": ledger, "legacy": legacy, "recoveryPreservesOrphans": recovery, "managedFiles": files,
+                "writes": writes}
 
     run("loaded", g("ok"), "the normal launch")
     run("loaded_rebuilt", g("ok", recovery=True),
@@ -2444,6 +2461,21 @@ def library_load_rows():
         "the launch after a salvage: Loaded, imports and basemap changes work, nothing cleaned up or cleared")
     run("loaded_quarantine_copy_only", g("ok", legacy="quarantinedOnly"),
         "an ordinary library next to an old .corrupt copy: normal cleanup, the copy is never cleared")
+    # 3.0.2 (F2): a library write that fails now leaves no record (Android marks its ledger after the temp file is
+    # flushed, iOS after the rename), so migrate_library_write_fails and friends hold through the real store. What's
+    # left is the instant between Android's ledger mark and the rename
+    run("vanished_after_written_legacy_left", g("absent", written=True, legacy="readable"),
+        "3.0.2: a completed write on record (iOS keychain record, Android the sealed-only marker file) and the "
+        "library gone is Corrupt even with old stores still there. Only the Android ledger-only state below salvages")
+    run("ledger_only_legacy_left", g(ledger=True, legacy="readable"),
+        "3.0.2 (F2): Android's first library write died between the ledger mark and the rename while the old "
+        "stores wait: a pending migration that salvages (2.x names and calibrations that convert are kept), never "
+        "Corrupt and never an authoritative run", platforms=["android"])
+    run("ledger_only_legacy_locked", g(ledger=True, legacy="locked"),
+        "3.0.2: same, key locked during the legacy read: pending, Retry or unlock", platforms=["android"])
+    run("ledger_only_no_legacy", g(ledger=True, files=True),
+        "3.0.2: a ledger-only library with no old store left proves nothing either way: Corrupt as before, Retry "
+        "rebuilds and deletes nothing", platforms=["android"])
     return {"rows": rows,
             "legacyCodes": LEGACY_CODES,
             "givenFields": {
@@ -2452,7 +2484,17 @@ def library_load_rows():
                                 "reconcile or the bake sweep would delete (map file, sidecar, .partial, bake) that no "
                                 "in-flight import owns",
                 "writes": "ok | draftFails (a migration draft save returns false or throws) | libraryFails "
-                          "(the sealed library write fails)"},
+                          "(the sealed library write fails). 3.0.2: on both platforms a failing write leaves no "
+                          "written-before record, so tests make the real store's write fail (a full disk, an "
+                          "unwritable directory or a seam below SafeStore), not a stub above it",
+                "writtenBefore": "a completed library write is on record while the file is absent: iOS the keychain "
+                                 "sealed-only record (SealedMigrationPolicy.requiresSealed), Android the "
+                                 ".imported_map_library.json.sealed-only-v1 marker file (plus the ledger)",
+                "ledgerOnly": "Android only: the authenticated sealed-only ledger (DataKey sentinel) names the "
+                              "library label but neither the library file nor its .sealed-only-v1 marker exists. "
+                              "SafeStore.writeAtomically marks the ledger after the temp file is flushed and before "
+                              "the rename, and the marker after the rename, so only a kill or a failed rename "
+                              "between the two leaves this. iOS has no such state"},
             "retry": {
                 "corrupt": {"action": "rebuild", "message": key("map_library_corrupt_message"),
                             "adoptedName": msg("map_recovered_name", number=1),
@@ -2619,9 +2661,255 @@ MBT_TILE_AGGREGATE = (
 # the reference stands in for the apps' 30 s admission budget with a VM step budget, same verdicts
 MBT_REFERENCE_PROGRESS_CALLS = 20000
 
+# 3.0.2 (SEC-1): file SQL never runs on a read. A view is only admitted as a plain projection of one ordinary
+# table or an equi-join of two, and every table a read touches is ordinary (not virtual) with no generated column.
+# Every connection is hardened before its first statement. The caps are per value and per schema statement
+MBT_MAX_TILE_BYTES = 4 * 1024 * 1024
+# iOS SQLITE_LIMIT_LENGTH; Android has no sqlite3_limit, so its view path checks the same byte length itself
+MBT_MAX_VALUE_BYTES = MBT_MAX_TILE_BYTES + 65536
+# iOS SQLITE_LIMIT_SQL_LENGTH (a longer schema statement fails the schema load); Android scans sqlite_master
+MBT_MAX_SCHEMA_SQL_BYTES = 100000
+# Android PRAGMA hard_heap_limit, process wide, only where SQLite >= 3.31 (API 31+)
+MBT_ANDROID_HEAP_LIMIT = 128 * 1024 * 1024
+MBT_ANDROID_HEAP_LIMIT_MIN_SQLITE = "3.31.0"
+MBT_GENERATED_COLUMNS_MIN_SQLITE = "3.31.0"
+# sqlite.org/lang_keywords.html (147) plus the two literals a bare word can turn into. A bare identifier in a view
+# may not be one of these, so nothing the shape check reads as a column can be a keyword that makes a value
+SQLITE_KEYWORDS = (
+    "ABORT ACTION ADD AFTER ALL ALTER ALWAYS ANALYZE AND AS ASC ATTACH AUTOINCREMENT BEFORE BEGIN BETWEEN BY "
+    "CASCADE CASE CAST CHECK COLLATE COLUMN COMMIT CONFLICT CONSTRAINT CREATE CROSS CURRENT CURRENT_DATE "
+    "CURRENT_TIME CURRENT_TIMESTAMP DATABASE DEFAULT DEFERRABLE DEFERRED DELETE DESC DETACH DISTINCT DO DROP EACH "
+    "ELSE END ESCAPE EXCEPT EXCLUDE EXCLUSIVE EXISTS EXPLAIN FAIL FILTER FIRST FOLLOWING FOR FOREIGN FROM FULL "
+    "GENERATED GLOB GROUP GROUPS HAVING IF IGNORE IMMEDIATE IN INDEX INDEXED INITIALLY INNER INSERT INSTEAD "
+    "INTERSECT INTO IS ISNULL JOIN KEY LAST LEFT LIKE LIMIT MATCH MATERIALIZED NATURAL NO NOT NOTHING NOTNULL NULL "
+    "NULLS OF OFFSET ON OR ORDER OTHERS OUTER OVER PARTITION PLAN PRAGMA PRECEDING PRIMARY QUERY RAISE RANGE "
+    "RECURSIVE REFERENCES REGEXP REINDEX RELEASE RENAME REPLACE RESTRICT RETURNING RIGHT ROLLBACK ROW ROWS "
+    "SAVEPOINT SELECT SET TABLE TEMP TEMPORARY THEN TIES TO TRANSACTION TRIGGER UNBOUNDED UNION UNIQUE UPDATE "
+    "USING VACUUM VALUES VIEW VIRTUAL WHEN WHERE WINDOW WITH WITHOUT").split()
+assert len(SQLITE_KEYWORDS) == 147 and len(set(SQLITE_KEYWORDS)) == 147
+MBT_RESERVED = sorted(set(SQLITE_KEYWORDS) | {"TRUE", "FALSE"})
+MBT_VIEW_WHITESPACE = " \t\r\n"
+MBT_VIEW_PUNCT = "(),.*="
+MBT_VIEW_QUOTES = {'"': '"', "[": "]", "`": "`"}
+
 
 class _MbtReject(Exception):
     pass
+
+
+class _ShapeReject(Exception):
+    pass
+
+
+def _vs_tokens(sql):
+    """the view tokenizer: ASCII words, three quoted identifier forms, six punctuation marks, ASCII whitespace.
+    Anything else (digits starting a token, string literals, comments, operators, parameters, ';', non-ASCII)
+    is a token reject. It never has to understand SQL it doesn't admit"""
+    out, i, n = [], 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in MBT_VIEW_WHITESPACE:
+            i += 1
+        elif ch in MBT_VIEW_PUNCT:
+            out.append(("p", ch))
+            i += 1
+        elif ch.isascii() and (ch.isalpha() or ch == "_"):
+            j = i + 1
+            while j < n and sql[j].isascii() and (sql[j].isalnum() or sql[j] == "_"):
+                j += 1
+            out.append(("w", sql[i:j]))
+            i = j
+        elif ch in MBT_VIEW_QUOTES:
+            j = sql.find(MBT_VIEW_QUOTES[ch], i + 1)
+            body = sql[i + 1:j] if j > i else ""
+            # non-empty printable ASCII, no quote or bracket inside, and no quote or bracket right after the
+            # closing mark: SQLite reads "a""b" as one name a"b, a reader that saw a and b could check the wrong table
+            if j < 0 or not body or any(not (0x20 <= ord(c) <= 0x7E) or c in '"[]`' for c in body) \
+                    or (j + 1 < n and sql[j + 1] in '"[]`'):
+                raise _ShapeReject("token")
+            out.append(("q", body))
+            i = j + 1
+        else:
+            raise _ShapeReject("token")
+    return out
+
+
+def view_shape(sql, relation):
+    """the base table names a plain view reads, or _ShapeReject(tooLong | token | shape). The grammar:
+    CREATE VIEW <relation> [(ident, ...)] AS SELECT col [, col ...] FROM table
+    [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON equalities | USING (ident, ...)) | , table WHERE equalities]
+    where col = * | ident.* | colref [[AS] ident], colref = ident | ident.ident, table = ident [[AS] ident],
+    equalities = colref = colref [AND colref = colref ...], bare or in one pair of parens,
+    ident = a bare word that isn't reserved, or a quoted identifier. Nothing may follow.
+    3.0.2 SEC-M1-SHADOW: no IF NOT EXISTS. SQLite drops it when it stores a view, so only a hand edited schema has
+    it, and the duplicate it lets SQLite skip is how a decoy row sat behind the live view admission never read.
+    3.0.2 SHADOW-PARITY-2: the comma join and the AND are still an equi-join of two tables on column refs, and
+    they're how gdal2mbtiles (FROM map, images WHERE ...) and tippecanoe/tile-join (ON ... and ...) store tiles"""
+    if sql is None or len(sql.encode("utf-8")) > MBT_MAX_SCHEMA_SQL_BYTES:
+        raise _ShapeReject("tooLong" if sql is not None else "shape")
+    toks = _vs_tokens(sql)
+    pos = [0]
+
+    def peek():
+        return toks[pos[0]] if pos[0] < len(toks) else None
+
+    def kw(word):
+        t = peek()
+        if t and t[0] == "w" and t[1].upper() == word:
+            pos[0] += 1
+            return True
+        return False
+
+    def punct(ch):
+        t = peek()
+        if t == ("p", ch):
+            pos[0] += 1
+            return True
+        return False
+
+    def need(ok):
+        if not ok:
+            raise _ShapeReject("shape")
+
+    def maybe_ident():
+        t = peek()
+        if t and (t[0] == "q" or (t[0] == "w" and t[1].upper() not in MBT_RESERVED)):
+            pos[0] += 1
+            return t[1]
+        return None
+
+    def ident():
+        name = maybe_ident()
+        need(name is not None)
+        return name
+
+    def colref():
+        ident()
+        if punct("."):
+            ident()
+
+    def result_column():
+        if punct("*"):
+            return
+        ident()
+        if punct("."):
+            if punct("*"):
+                return
+            ident()
+        if kw("AS"):
+            ident()
+        else:
+            maybe_ident()
+
+    tables = []
+
+    def table_ref():
+        tables.append(ident())
+        if kw("AS"):
+            ident()
+        else:
+            maybe_ident()
+
+    def equalities():
+        paren = punct("(")
+        while True:
+            colref()
+            need(punct("="))
+            colref()
+            if not kw("AND"):
+                break
+        if paren:
+            need(punct(")"))
+
+    need(kw("CREATE"))
+    need(kw("VIEW"))
+    need(ident().lower() == relation)
+    if punct("("):
+        ident()
+        while punct(","):
+            ident()
+        need(punct(")"))
+    need(kw("AS"))
+    need(kw("SELECT"))
+    result_column()
+    while punct(","):
+        result_column()
+    need(kw("FROM"))
+    table_ref()
+    joined = False
+    if punct(","):
+        # the comma join gdal2mbtiles writes, its WHERE is only the join's equalities
+        table_ref()
+        need(kw("WHERE"))
+        equalities()
+    elif kw("INNER") or kw("CROSS"):
+        need(kw("JOIN"))
+        joined = True
+    elif kw("LEFT"):
+        kw("OUTER")
+        need(kw("JOIN"))
+        joined = True
+    elif kw("JOIN"):
+        joined = True
+    if joined:
+        table_ref()
+        if kw("ON"):
+            equalities()
+        elif kw("USING"):
+            need(punct("("))
+            ident()
+            while punct(","):
+                ident()
+            need(punct(")"))
+        else:
+            raise _ShapeReject("shape")
+    need(peek() is None)
+    return tables
+
+
+def table_declares(sql, name):
+    """True when a table's sqlite_master.sql makes exactly the ordinary table `name`: the words CREATE TABLE (first two
+    ASCII words, so not CREATE VIRTUAL TABLE), then one identifier, a viewShape quoted identifier or a word that isn't
+    reserved (a bare word needs whitespace before it), equal to name ASCII case-insensitively and not followed by a
+    quote mark or a dot. 3.0.2 SEC-M1-SHADOW: the identifier closes two ways a row admission reads could differ from
+    the object SQLite runs. IF NOT EXISTS (SQLite never stores it, only a hand edit does, and the duplicate it skips
+    sits behind a live object of the same name), and a row whose name column says one table while its sql makes
+    another, which SQLite without the schema name cross-check (older builds, older Android) loads without complaint"""
+    m = re.match(r"[ \t\r\n]*([A-Za-z]+)[ \t\r\n]+([A-Za-z]+)", sql or "")
+    if not m or m.group(1).upper() != "CREATE" or m.group(2).upper() != "TABLE":
+        return False
+    i, n = m.end(), len(sql)
+    spaced = i < n and sql[i] in MBT_VIEW_WHITESPACE
+    while i < n and sql[i] in MBT_VIEW_WHITESPACE:
+        i += 1
+    if i < n and sql[i] in MBT_VIEW_QUOTES:
+        j = sql.find(MBT_VIEW_QUOTES[sql[i]], i + 1)
+        ident = sql[i + 1:j] if j > i else ""
+        if j < 0 or not ident or any(not (0x20 <= ord(c) <= 0x7E) or c in '"[]`' for c in ident):
+            return False
+        end = j + 1
+    elif spaced and i < n and sql[i].isascii() and (sql[i].isalpha() or sql[i] == "_"):
+        j = i + 1
+        while j < n and sql[j].isascii() and (sql[j].isalnum() or sql[j] == "_"):
+            j += 1
+        ident, end = sql[i:j], j
+        if ident.upper() in MBT_RESERVED:
+            return False
+    else:
+        return False
+    if end < n and sql[end] in '"[]`.':
+        return False
+    return name.isascii() and ident.lower() == name.lower()
+
+
+def _mbt_base_table(conn, name):
+    """what every relation a read touches has to be: one ordinary table, no generated column"""
+    rows = conn.execute("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", (name,)).fetchall()
+    if len(rows) != 1 or rows[0][0] != "table" or not table_declares(rows[0][1], name):
+        raise _MbtReject("base")
+    # needs SQLite >= 3.26 for table_xinfo; generated columns need 3.31, older readers can't even parse them
+    if any(h in (2, 3) for (h,) in conn.execute("SELECT hidden FROM pragma_table_xinfo(?)", (name,))):
+        raise _MbtReject("generated")
 
 
 def _mbt_prefix(blob, length, characters, truncates):
@@ -2647,38 +2935,78 @@ def _mbt_zoom(text):
     return int(text.strip())
 
 
-def _mbt_admit(conn, probes):
+def _mbt_blob_prefix(conn, column, rowid, characters, truncates):
+    """the table path: incremental blob by rowid, like iOS (Android's substr(CAST) by rowid gives the same bytes)"""
+    with conn.blobopen("metadata", column, rowid, readonly=True) as b:
+        length = len(b)
+        prefix = b.read(min(length, characters * 4))
+    return _mbt_prefix(prefix, length, characters, truncates)
+
+
+def _mbt_admit(conn, probes, start_budget):
     types = {}
     for rel in ("metadata", "tiles"):
-        found = conn.execute("SELECT type FROM sqlite_master WHERE name=?", (rel,)).fetchall()
+        # 3.0.2 SEC-M1-SHADOW: NOCASE, the way SQLite resolves FROM tiles. A case variant row (TILES) is a second
+        # object by that name and fails closed, the same as base tables
+        found = conn.execute("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
+                             (rel,)).fetchall()
         if len(found) != 1 or found[0][0] not in ("table", "view"):
             raise _MbtReject("relation")
         types[rel] = found[0][0]
+        # 3.0.2: a view is admitted only as a plain projection or equi-join, checked on its text before anything
+        # reads it, so no expression from the file ever runs
+        if found[0][0] == "view":
+            try:
+                bases = view_shape(found[0][1], rel)
+            except _ShapeReject:
+                raise _MbtReject("shape")
+        else:
+            bases = [rel]
+        for base in bases:
+            _mbt_base_table(conn, base)
+    # 3.0.2 (F3): the admission budget is for views only. A table's aggregate is one scan the file size bounds
+    if "view" in types.values():
+        start_budget()
     if conn.execute("PRAGMA encoding").fetchone()[0].upper() != "UTF-8":
         raise _MbtReject("encoding")
-    # key-addressed path: works on a view (no rowid), gives the table path's answers on a table
-    rows = conn.execute("SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), "
-                        "substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65").fetchall()
-    if len(rows) > 64:
-        raise _MbtReject("rows")
-    known = []
-    for name_type, value_type, name_len, name_prefix in rows:
-        if name_type != "text":
-            raise _MbtReject("metadata")
-        k = _mbt_prefix(name_prefix, name_len, 32, True).lower()
-        if k not in MBT_KNOWN:
-            continue
-        if value_type != "text" or k in known:
-            raise _MbtReject("metadata")
-        known.append(k)
-    values = {}
-    for k in known:
-        chars, truncates = MBT_KNOWN[k]
-        hit = conn.execute("SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, ?) "
-                           "FROM metadata WHERE lower(name) = ? LIMIT 2", (chars * 4, k)).fetchall()
-        if len(hit) != 1 or hit[0][0] != "text":
-            raise _MbtReject("metadata")
-        values[k] = _mbt_prefix(hit[0][2], hit[0][1], chars, truncates)
+    known, values = [], {}
+    if types["metadata"] == "table":
+        rows = conn.execute("SELECT rowid, typeof(name), typeof(value) FROM metadata LIMIT 65").fetchall()
+        if len(rows) > 64:
+            raise _MbtReject("rows")
+        for rowid, name_type, value_type in rows:
+            if name_type != "text":
+                raise _MbtReject("metadata")
+            k = _mbt_blob_prefix(conn, "name", rowid, 32, True).lower()
+            if k not in MBT_KNOWN:
+                continue
+            if value_type != "text" or k in known:
+                raise _MbtReject("metadata")
+            known.append(k)
+            values[k] = _mbt_blob_prefix(conn, "value", rowid, *MBT_KNOWN[k])
+    else:
+        # key-addressed path: a view has no rowid. A name or known value over MBT_MAX_VALUE_BYTES fails here
+        # (SQLITE_LIMIT_LENGTH on iOS and in this reference, an explicit length check on Android)
+        rows = conn.execute("SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), "
+                            "substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65").fetchall()
+        if len(rows) > 64:
+            raise _MbtReject("rows")
+        for name_type, value_type, name_len, name_prefix in rows:
+            if name_type != "text":
+                raise _MbtReject("metadata")
+            k = _mbt_prefix(name_prefix, name_len, 32, True).lower()
+            if k not in MBT_KNOWN:
+                continue
+            if value_type != "text" or k in known:
+                raise _MbtReject("metadata")
+            known.append(k)
+        for k in known:
+            chars, truncates = MBT_KNOWN[k]
+            hit = conn.execute("SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, ?) "
+                               "FROM metadata WHERE lower(name) = ? LIMIT 2", (chars * 4, k)).fetchall()
+            if len(hit) != 1 or hit[0][0] != "text":
+                raise _MbtReject("metadata")
+            values[k] = _mbt_prefix(hit[0][2], hit[0][1], chars, truncates)
     lo, hi, count, valid = conn.execute(MBT_TILE_AGGREGATE).fetchone()
     if not all(isinstance(v, int) for v in (lo, hi, count, valid)) or count <= 0 or count != valid:
         raise _MbtReject("tiles")
@@ -2701,19 +3029,30 @@ def _mbt_admit(conn, probes):
     for z, x, y in probes.get("tiles", []):
         hit = None
         if minimum <= z <= maximum:
-            row = conn.execute("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-                               (z, x, (1 << z) - 1 - y)).fetchone()
-            hit = bytes(row[0]).hex() if row and row[0] is not None else None
+            where = (z, x, (1 << z) - 1 - y)
+            # length first, the payload only when it's a blob of 1 byte to 4 MiB (both readers)
+            n = conn.execute("SELECT CASE WHEN typeof(tile_data)='blob' THEN length(tile_data) END FROM tiles "
+                             "WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1", where).fetchone()
+            if n and n[0] is not None and 0 < n[0] <= MBT_MAX_TILE_BYTES:
+                row = conn.execute("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? "
+                                   "LIMIT 1", where).fetchone()
+                hit = bytes(row[0]).hex() if row and row[0] is not None else None
         tiles.append({"z": z, "x": x, "y": y, "hex": hit})
     if tiles:
         out["tiles"] = tiles
     ext = {}
     for k in probes.get("extensions", []):
-        hit = conn.execute("SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, 512) "
-                           "FROM metadata WHERE lower(name) = ? LIMIT 2", (k,)).fetchall()
         try:
-            ext[k] = _mbt_prefix(hit[0][2], hit[0][1], 128, False) if len(hit) == 1 and hit[0][0] == "text" else None
-        except _MbtReject:
+            if types["metadata"] == "table":
+                hit = conn.execute("SELECT rowid, typeof(value) FROM metadata WHERE lower(name) = ? LIMIT 2",
+                                   (k,)).fetchall()
+                ext[k] = (_mbt_blob_prefix(conn, "value", hit[0][0], 128, False)
+                          if len(hit) == 1 and hit[0][1] == "text" else None)
+            else:
+                hit = conn.execute("SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), "
+                                   "1, 512) FROM metadata WHERE lower(name) = ? LIMIT 2", (k,)).fetchall()
+                ext[k] = _mbt_prefix(hit[0][2], hit[0][1], 128, False) if len(hit) == 1 and hit[0][0] == "text" else None
+        except (_MbtReject, sqlite3.DataError):
             ext[k] = None
     if ext:
         out["extensions"] = ext
@@ -2721,27 +3060,56 @@ def _mbt_admit(conn, probes):
     return out
 
 
-def mbtiles_reference(statements, probes=None):
-    """build the pack in memory with Python's sqlite3 and run the reference admission on it"""
-    import sqlite3
-    conn = sqlite3.connect(":memory:")
-    try:
-        for s in statements:
-            conn.execute(s)
-        calls = [0]
-
-        def tick():
-            calls[0] += 1
-            return 1 if calls[0] > MBT_REFERENCE_PROGRESS_CALLS else 0
-        conn.set_progress_handler(tick, 1000)
+def mbtiles_build(statements):
+    """the pack's bytes: statements in order on one fresh connection with Python's sqlite3, committed and closed"""
+    with tempfile.TemporaryDirectory() as scratch:
+        path = os.path.join(scratch, "pack.mbtiles")
+        build = sqlite3.connect(path)
         try:
-            return _mbt_admit(conn, probes or {})
-        except _MbtReject as r:
-            return {"accepted": False, "rejectedAt": str(r)}
-        except sqlite3.OperationalError as e:
-            return {"accepted": False, "rejectedAt": "budget" if "interrupt" in str(e) else "sql"}
-    finally:
-        conn.close()
+            for s in statements:
+                build.execute(s)
+            build.commit()
+        finally:
+            build.close()
+        with open(path, "rb") as fh:
+            return fh.read()
+
+
+def mbtiles_reference(statements, probes=None, pack=None):
+    """build the pack in a scratch file with Python's sqlite3 (or take its bytes as pack), then open it again read
+    only and hardened the way both readers are (3.0.2): value and schema-statement caps, trusted_schema and
+    automatic indexes off. A fresh connection, so the schema is parsed under the cap like a real open"""
+    with tempfile.TemporaryDirectory() as scratch:
+        path = os.path.join(scratch, "pack.mbtiles")
+        with open(path, "wb") as fh:
+            fh.write(mbtiles_build(statements) if pack is None else pack)
+        conn = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+        try:
+            conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MBT_MAX_VALUE_BYTES)
+            conn.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, MBT_MAX_SCHEMA_SQL_BYTES)
+            conn.execute("PRAGMA trusted_schema=OFF")
+            conn.execute("PRAGMA automatic_index=OFF")
+            calls = [0]
+
+            def tick():
+                calls[0] += 1
+                return 1 if calls[0] > MBT_REFERENCE_PROGRESS_CALLS else 0
+
+            def start_budget():
+                conn.set_progress_handler(tick, 1000)
+            try:
+                return _mbt_admit(conn, probes or {}, start_budget)
+            except _MbtReject as r:
+                return {"accepted": False, "rejectedAt": str(r)}
+            except sqlite3.OperationalError as e:
+                return {"accepted": False, "rejectedAt": "budget" if "interrupt" in str(e) else "sql"}
+            except sqlite3.DataError:
+                # string or blob too big: a value over the cap on the view path
+                return {"accepted": False, "rejectedAt": "length"}
+            except sqlite3.DatabaseError as e:
+                return {"accepted": False, "rejectedAt": "schema" if "malformed database schema" in str(e) else "sql"}
+        finally:
+            conn.close()
 
 
 def _sql_text(v):
@@ -2831,6 +3199,7 @@ def mbtiles_relation_cases():
         "CREATE VIEW metadata AS SELECT name, value FROM meta_base"]
     tiles_view = base_tiles + ["CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base"]
     probes = {"tiles": [(0, 0, 0), (1, 0, 0), (1, 1, 1)]}
+    small = ["PRAGMA page_size=512"]
     rows = [
         ("tablesBaseline", meta_table + [
             "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
@@ -2861,41 +3230,723 @@ def mbtiles_relation_cases():
         ("tilesMissing", meta_table, None, False, "no tiles relation at all"),
         ("tilesViewTextZoom", meta_table + base_tiles + [
             "CREATE VIEW tiles AS SELECT CAST(zoom_level AS TEXT) AS zoom_level, tile_column, tile_row, tile_data "
-            "FROM tiles_base"], None, False, "a view can't launder storage classes: TEXT zoom still fails"),
+            "FROM tiles_base"], None, False,
+         "3.0.2: a CAST in a view is an expression of the file's, refused by the shape check before any read "
+         "(3.0.1 refused it later, at the TEXT zoom)"),
         ("tilesViewOutOfRange", meta_table + base_tiles + [
             "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row + 5 AS tile_row, tile_data FROM tiles_base"],
-         None, False, "row outside 0..2^z-1 through a view still fails"),
+         None, False, "3.0.2: arithmetic in a view, refused by the shape check (3.0.1: by the row range)"),
         ("metadataViewDuplicateKnown", ["CREATE TABLE meta_base (name text, value text)"] + meta + [
             "CREATE VIEW metadata AS SELECT name, value FROM meta_base UNION ALL SELECT 'NAME', 'second'"] + tiles_view,
-         None, False, "duplicate known key (case variant) produced by the view"),
+         None, False, "3.0.2: UNION and literals are refused by the shape check (the duplicate itself is still "
+                      "refused through a plain view, see variantRule)"),
         ("metadataViewNonTextKnown", ["CREATE TABLE meta_base (name text, value text)"] + meta + [
             "CREATE VIEW metadata AS SELECT name, value FROM meta_base UNION ALL SELECT 'minzoom', 0"] + tiles_view,
-         None, False, "known value that isn't TEXT"),
+         None, False, "3.0.2: refused by the shape check"),
         ("metadataViewUnbounded", [
             "CREATE VIEW metadata AS WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) "
             "SELECT 'extension_' || i AS name, 'v' AS value FROM n"] + tiles_view,
-         None, False, "an endless metadata view stops at the 65-row descriptor limit, no budget needed"),
+         None, False, "3.0.2: a recursive CTE is refused by the shape check"),
         ("metadataViewLargeUnknownValue", ["CREATE TABLE meta_base (name text, value text)"] + meta + [
             "CREATE VIEW metadata AS SELECT name, value FROM meta_base UNION ALL "
             "SELECT 'vendor', CAST(zeroblob(1048576) AS TEXT)"] + tiles_view,
-         probes, True, "an unknown value is classified, never copied (native SQLite may still build it)"),
+         None, False, "3.0.2 (was accepted in 3.0.1): zeroblob() in a view is file SQL that allocates, the class "
+                      "SEC-1 is about. Refused by the shape check"),
         ("tilesViewEndless", meta_table + [
             "CREATE VIEW tiles AS WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n) "
             "SELECT 0 AS zoom_level, 0 AS tile_column, 0 AS tile_row, X'01' AS tile_data FROM n"],
-         None, False, "a view's row count isn't bounded by the file: the tile aggregate never ends, the "
-                      "admission budget stops it (tests shorten the budget with their seam)"),
+         None, False, "3.0.2: refused by the shape check at once (3.0.1: by the admission budget). "
+                      "budgetUnindexedJoin is the budget's case now"),
+        # 3.0.2: the plain shapes real producers write are admitted
+        ("mbutilLowercaseView", meta_table + [
+            "create table map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "create table images (tile_data blob, tile_id text)",
+            "create unique index map_index on map (zoom_level, tile_column, tile_row)",
+            "create unique index images_id on images (tile_id)",
+            "insert into map values (0, 0, 0, 'a'), (1, 0, 1, 'b')",
+            "insert into images values (X'01', 'a'), (X'0203', 'b')",
+            "create view tiles as select map.zoom_level as zoom_level, map.tile_column as tile_column, "
+            "map.tile_row as tile_row, images.tile_data as tile_data from map join images on images.tile_id = "
+            "map.tile_id"], probes, True, "mbutil writes the dedup schema in lowercase"),
+        ("martinNormalizedLeftJoin", meta_table + [
+            "CREATE TABLE map (zoom_level INTEGER NOT NULL, tile_column INTEGER NOT NULL, tile_row INTEGER NOT NULL, "
+            "tile_id TEXT, PRIMARY KEY(zoom_level, tile_column, tile_row))",
+            "CREATE TABLE images (tile_data BLOB, tile_id TEXT NOT NULL PRIMARY KEY)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'b'), (1, 1, 0, 'gone')",
+            "INSERT INTO images VALUES (X'01', 'a'), (X'0203', 'b')",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, "
+            "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map LEFT JOIN images "
+            "ON images.tile_id = map.tile_id"],
+         probes, True, "martin's normalized schema is a LEFT JOIN; a map row whose image is gone is no tile"),
+        ("planetilerShallowJoin", meta_table + [
+            "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, "
+            "tile_data_id integer, primary key(zoom_level, tile_column, tile_row)) without rowid",
+            "CREATE TABLE tiles_data (tile_data_id integer primary key, tile_data blob)",
+            "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1), (1, 0, 1, 2)",
+            "INSERT INTO tiles_data VALUES (1, X'01'), (2, X'0203')",
+            "CREATE VIEW tiles AS SELECT tiles_shallow.zoom_level AS zoom_level, tiles_shallow.tile_column AS "
+            "tile_column, tiles_shallow.tile_row AS tile_row, tiles_data.tile_data AS tile_data FROM tiles_shallow "
+            "JOIN tiles_data ON tiles_shallow.tile_data_id = tiles_data.tile_data_id"],
+         probes, True, "planetiler's deduplicated layout, other table names, a WITHOUT ROWID base"),
+        ("viewColumnListQuotedAliases", meta_table + base_tiles + [
+            "CREATE VIEW \"tiles\"(zoom_level, tile_column, tile_row, tile_data) AS SELECT \"t\".\"zoom_level\", "
+            "[t].[tile_column], `t`.`tile_row`, t.tile_data FROM \"tiles_base\" AS t"],
+         probes, True, "a column list, the three quoted identifier forms and a table alias"),
+        ("starProjection", meta_table + base_tiles + ["CREATE VIEW tiles AS SELECT * FROM tiles_base"],
+         probes, True, "SELECT * over one ordinary table"),
+        ("usingJoin", meta_table + [
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "CREATE TABLE images (tile_data blob, tile_id text)",
+            "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)",
+            "CREATE UNIQUE INDEX images_id ON images (tile_id)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'b')",
+            "INSERT INTO images VALUES (X'01', 'a'), (X'0203', 'b')",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM map JOIN images "
+            "USING (tile_id)"], probes, True, "JOIN ... USING"),
+        # 3.0.2 SHADOW-PARITY-2: producers 3.0.1 opened whose tiles view the first 3.0.2 grammar refused. Their own
+        # DDL, tile ids and dedup the way they write them
+        ("gdal2mbtilesCommaJoin", [
+            "CREATE TABLE images (\n    tile_id INTEGER PRIMARY KEY,\n    tile_data BLOB NOT NULL\n)",
+            "CREATE TABLE map (\n    zoom_level INTEGER NOT NULL,\n    tile_column INTEGER NOT NULL,\n    tile_row INTEGER "
+            "NOT NULL,\n    tile_id INTEGER NOT NULL\n        REFERENCES images (tile_id)\n        ON DELETE CASCADE ON "
+            "UPDATE CASCADE,\n    PRIMARY KEY (zoom_level, tile_column, tile_row)\n)",
+            GDAL2MBTILES_VIEW,
+            "CREATE TABLE metadata (\n    name TEXT PRIMARY KEY,\n    value TEXT NOT NULL\n)",
+            "INSERT OR REPLACE INTO images (tile_id, tile_data) VALUES (1, X'89504E470D0A1A0A01'), "
+            "(2, X'89504E470D0A1A0A02')",
+            "INSERT OR REPLACE INTO map (zoom_level, tile_column, tile_row, tile_id) VALUES (0, 0, 0, 1), (1, 0, 1, 2), "
+            "(1, 1, 0, 1)",
+            "INSERT OR REPLACE INTO metadata (name, value) VALUES ('name', 'Sample'), ('type', 'baselayer'), "
+            "('version', '1.0.0'), ('description', 'gdal2mbtiles'), ('format', 'png')"],
+         {"tiles": [(0, 0, 0), (1, 0, 0), (1, 1, 1), (1, 0, 1)]}, True,
+         "gdal2mbtiles (ecometrica, PyPI 2.1.5), a raster PNG producer: tiles is FROM map, images WHERE map.tile_id = "
+         "images.tile_id. 3.0.1 opened it, 3.0.2 before SHADOW-PARITY-2 refused it at the shape check. 1/1/1 is a "
+         "deduplicated tile, 1/0/1 has none"),
+        ("tippecanoeAndJoin", [
+            "CREATE TABLE metadata (name text, value text);",
+            "create unique index name on metadata (name);",
+            "CREATE TABLE map (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_id TEXT);",
+            "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row);",
+            "CREATE TABLE images (zoom_level integer, tile_data blob, tile_id text);",
+            "CREATE UNIQUE INDEX images_id ON images (zoom_level, tile_id);",
+            TIPPECANOE_VIEW + ";",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'pbf')",
+            "INSERT INTO images VALUES (0, X'1F8B0801', 'a'), (1, X'1F8B0802', 'a')",
+            "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'a')"],
+         probes, True, "felt/tippecanoe and tile-join: ON images.tile_id = map.tile_id and images.zoom_level = "
+                       "map.zoom_level, so the same tile id at two zooms is two images. Vector tiles TacMap doesn't "
+                       "draw, but 3.0.1 opened the pack"),
+        ("commaJoinWhereCallsFunction", [
+            "CREATE TABLE images (tile_id INTEGER PRIMARY KEY, tile_data BLOB NOT NULL)",
+            "CREATE TABLE map (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_id INTEGER)",
+            "INSERT INTO images VALUES (1, X'01'), (2, X'0203')",
+            "INSERT INTO map VALUES (0, 0, 0, 1), (1, 0, 1, 2)",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM map, images "
+            "WHERE map.tile_id = images.tile_id AND length(zeroblob(map.tile_id)) = map.tile_id"] + meta_table,
+         None, False, "SEC-1 through the comma join: its WHERE is only the join's equalities. A zeroblob() sized by a "
+                      "value from the file there is refused by the shape check before any read (true on every row, "
+                      "so a looser WHERE would admit the pack and run it on every tile)"),
+        ("dedupNoIndexOversizedImage", meta_table + [
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "CREATE TABLE images (tile_data blob, tile_id text)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'big'), (1, 1, 0, 'c')",
+            "INSERT INTO images VALUES (X'01', 'a'), (zeroblob(5242880), 'big'), (X'0203', 'c')",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, "
+            "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = "
+            "map.tile_id"],
+         probes, True, "the 3.0.1 A4 worry: with no index SQLite built an automatic index holding every image, "
+                       "so one image over the value cap broke every read. Automatic indexes are off: the small "
+                       "tiles read, the 5 MiB one is no tile (over maxTileBytes)"),
+        ("tableOversizedValues", [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', replace(hex(zeroblob(2621440)), '0', 'n')), ('format', 'png')",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, zeroblob(5242880)), (1, 1, 0, X'0203')"],
+         probes, True, "tables never hit the value cap: iOS reads metadata by incremental blob, tiles are "
+                       "length-checked before the payload. The 5 MiB name truncates, the 5 MiB tile is no tile"),
+        ("metadataViewOversizedName", [
+            "CREATE TABLE meta_base (name text, value text)",
+            "INSERT INTO meta_base VALUES ('name', replace(hex(zeroblob(2621440)), '0', 'n')), ('format', 'png')",
+            "CREATE VIEW metadata AS SELECT name, value FROM meta_base",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows],
+         None, False, "the view path has to materialise a value: over maxValueBytes fails closed (iOS "
+                      "SQLITE_LIMIT_LENGTH, Android its own length check)"),
+        # 3.0.2 (SEC-1): file SQL in a view never runs
+        ("viewCallsFunction", meta_table + base_tiles + [
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM tiles_base"],
+         None, False, "SEC-1: a built-in that allocates, the bomb's shape with a harmless size"),
+        ("viewDateTrigger", meta_table + base_tiles + [
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, CASE WHEN date('now') > '2000-01-01' "
+            "THEN tile_data END AS tile_data FROM tiles_base"],
+         None, False, "SEC-1: a view whose value depends on the date passes 3.0.1 admission and turns later"),
+        ("viewKeywordValue", meta_table + base_tiles + [
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, CURRENT_TIMESTAMP AS tile_data "
+            "FROM tiles_base"],
+         None, False, "a reserved word as a bare column could make a value, so it isn't an identifier here"),
+        ("viewWhereClause", meta_table + base_tiles + [
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base "
+            "WHERE zoom_level = tile_row"], None, False, "no WHERE"),
+        ("viewOverView", meta_table + base_tiles + [
+            "CREATE VIEW inner_tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM inner_tiles"],
+         None, False, "a view's base has to be an ordinary table, never another view"),
+        ("viewOverVirtualTable", meta_table + [
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "CREATE VIRTUAL TABLE images USING fts4(tile_data, tile_id)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a')",
+            "INSERT INTO images (tile_data, tile_id) VALUES (X'01', 'a')",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, "
+            "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = "
+            "map.tile_id"], None, False, "a virtual table runs module code on read, never a base"),
+        ("tilesVirtualTable", meta_table + [
+            "CREATE VIRTUAL TABLE tiles USING fts4(zoom_level, tile_column, tile_row, tile_data)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01')"],
+         None, False, "tiles itself a virtual table"),
+        ("tilesTableGeneratedColumn", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, raw blob, "
+            "tile_data blob GENERATED ALWAYS AS (raw) VIRTUAL)",
+            "INSERT INTO tiles (zoom_level, tile_column, tile_row, raw) VALUES (0, 0, 0, X'01')"],
+         None, False, "a generated column is file SQL on every read (the 3.0.0 bomb: GENERATED ALWAYS AS "
+                      "(hex(zeroblob(N)))). Needs SQLite 3.31+, older readers can't parse the schema at all"),
+        ("viewOverGeneratedColumn", meta_table + [
+            "CREATE TABLE tiles_base (zoom_level integer, tile_column integer, tile_row integer, raw blob, "
+            "tile_data blob GENERATED ALWAYS AS (raw) VIRTUAL)",
+            "INSERT INTO tiles_base (zoom_level, tile_column, tile_row, raw) VALUES (0, 0, 0, X'01')",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base"],
+         None, False, "same through a plain view"),
+        ("schemaStatementTooLong", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows,
+            "CREATE TABLE junk (\"%s\")" % ("x" * MBT_MAX_SCHEMA_SQL_BYTES)],
+         None, False, "any schema statement over maxSchemaSqlBytes fails the open (iOS SQLITE_LIMIT_SQL_LENGTH "
+                      "fails the schema load; Android scans sqlite_master): the parser's memory follows the "
+                      "schema text"),
+        ("budgetUnindexedJoin", [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')",
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "CREATE TABLE images (tile_data blob, tile_id text)",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19999) "
+            "INSERT INTO map SELECT 0, 0, 0, 't' || i FROM n",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 19999) "
+            "INSERT INTO images SELECT X'01', 't' || i FROM n",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, "
+            "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = "
+            "map.tile_id"],
+         None, False, "a plain join with no index and automatic indexes off is a 20,000 x 20,000 nested loop: "
+                      "the admission budget (views only) stops it. Tests shorten the budget with their seam"),
+        # 3.0.2 SEC-M1-SHADOW: the sqlite_master row admission checks has to be the object SQLite runs. These write
+        # sqlite_master with writable_schema so they ship packBase64 too, 512 byte pages keep that small
+        ("tilesShadowedByCaseVariant", small + meta_table + base_tiles + [
+            "CREATE VIEW TILES AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM tiles_base",
+            "PRAGMA writable_schema=ON",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'tiles', 'tiles', 0, "
+            "'CREATE VIEW IF NOT EXISTS tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the live tiles is the TILES view (loaded first, FROM tiles resolves any case); the plain row "
+                      "named exactly tiles is a dormant duplicate SQLite skips because of IF NOT EXISTS. 3.0.2 "
+                      "before this looked the relation up case-exact, checked the decoy and ran randomblob() on "
+                      "every read. Refused: two rows NOCASE"),
+        ("metadataShadowedByCaseVariant", small + ["CREATE TABLE meta_base (name text, value text)"] + meta + tiles_view + [
+            "CREATE VIEW METADATA AS SELECT name, value || hex(randomblob(4)) AS value FROM meta_base",
+            "PRAGMA writable_schema=ON",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'metadata', 'metadata', "
+            "0, 'CREATE VIEW IF NOT EXISTS metadata AS SELECT name, value FROM meta_base')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the same through metadata"),
+        ("tableRowKeepsIfNotExists", small + meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows,
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET sql = 'CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column "
+            "integer, tile_row integer, tile_data blob)' WHERE name = 'tiles'",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "harmless on its own, but SQLite never stores IF NOT EXISTS, so only a hand edit does, and on "
+                      "SQLite without the schema name cross-check the same edit hides a decoy table row behind a "
+                      "live view of that name. Refused at the base table check (baseTableShape)"),
+        # rows whose name column lies about the object their sql makes. SQLite with the init-time name cross-check
+        # (this reference, iOS, recent Android) refuses these as a malformed schema. Older builds without it (older
+        # Android) load them, and 3.0.2 before SEC-M1-SHADOW admitted them and ran the expression; the
+        # fixed readers refuse them there by viewShape or baseTableShape. Same verdict either way
+        ("viewRowNameLieBehindIfNotExists", small + meta_table + base_tiles + [
+            "CREATE VIEW zzz AS SELECT zoom_level FROM tiles_base",
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET sql = 'CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, "
+            "randomblob(16) AS tile_data FROM tiles_base' WHERE name = 'zzz'",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'tiles', 'tiles', 0, "
+            "'CREATE VIEW IF NOT EXISTS tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the live tiles comes from a row named zzz, the row named tiles is a skipped decoy"),
+        ("baseRowNameLie", small + meta_table + [
+            "CREATE TABLE decoy (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO decoy VALUES " + tiles_rows,
+            "CREATE VIEW t AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM decoy",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM t",
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET name = 't', tbl_name = 't' WHERE name = 'decoy'",
+            "UPDATE sqlite_master SET name = 'zzz', tbl_name = 'zzz' WHERE type = 'view' AND name = 't'",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "tiles is a plain view over t; the row named t is a table whose sql makes decoy, the live t "
+                      "is an expression view in a row named zzz. No IF NOT EXISTS anywhere"),
+        ("baseRowNameLieBehindIfNotExists", small + meta_table + base_tiles + [
+            "CREATE VIEW zzz AS SELECT zoom_level FROM tiles_base",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM b",
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET sql = 'CREATE VIEW b AS SELECT zoom_level, tile_column, tile_row, "
+            "randomblob(16) AS tile_data FROM tiles_base' WHERE name = 'zzz'",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 'b', 'b', 2, "
+            "'CREATE TABLE IF NOT EXISTS b (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the base table row b is a skipped IF NOT EXISTS decoy, the live b is an expression view in a "
+                      "row named zzz"),
     ]
+    min_sqlite = {"tilesTableGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE,
+                  "viewOverGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE}
+    want_reason = {"tilesIsAnIndex": "relation", "tilesMissing": "relation", "viewOverView": "base",
+                   "viewOverVirtualTable": "base", "tilesVirtualTable": "base",
+                   "tilesTableGeneratedColumn": "generated", "viewOverGeneratedColumn": "generated",
+                   "metadataViewOversizedName": "length", "schemaStatementTooLong": "schema",
+                   "budgetUnindexedJoin": "budget", "tilesShadowedByCaseVariant": "relation",
+                   "metadataShadowedByCaseVariant": "relation", "tableRowKeepsIfNotExists": "base",
+                   "viewRowNameLieBehindIfNotExists": "schema", "baseRowNameLie": "schema",
+                   "baseRowNameLieBehindIfNotExists": "schema"}
     out = []
     for cid, sql, pr, accepted, note in rows:
-        r = mbtiles_reference(sql, pr)
+        # a row that writes sqlite_master itself ships its file too: Apple's sqlite has SQLITE_DBCONFIG_DEFENSIVE on,
+        # which refuses writable_schema, so that harness can't run its sql[]. The reference judges those same bytes
+        pack = mbtiles_build(sql) if any(s.startswith("PRAGMA writable_schema") for s in sql) else None
+        r = mbtiles_reference(sql, pr, pack)
         assert r["accepted"] == accepted, (cid, r)
-        if cid == "tilesViewEndless":
-            assert r["rejectedAt"] == "budget", r
+        if not accepted:
+            assert r["rejectedAt"] == want_reason.get(cid, "shape"), (cid, r)
         row = {"id": cid, "sql": sql, "expect": r, "note": note}
-        if cid == "tilesViewEndless":
+        if pack is not None:
+            row["packBase64"] = base64.b64encode(pack).decode("ascii")
+        if cid == "budgetUnindexedJoin":
             row["testBudgetMs"] = 250
+        if cid in min_sqlite:
+            row["minSqliteVersion"] = min_sqlite[cid]
         out.append(row)
+    assert len({r["id"] for r in out}) == len(out)
     return out
+
+
+# 3.0.2: the view grammar on its own, no SQLite involved. Both readers port view_shape() and must give the same
+# verdict, reason and base tables. Reasons: tooLong (over maxSchemaSqlBytes), token (the tokenizer met something
+# it doesn't admit), shape (the grammar, reserved words and the view's own name)
+NODE_MBTILES_VIEW = ("CREATE VIEW tiles AS\n    SELECT\n        map.zoom_level AS zoom_level,\n"
+                     "        map.tile_column AS tile_column,\n        map.tile_row AS tile_row,\n"
+                     "        images.tile_data AS tile_data\n    FROM map\n    JOIN images ON images.tile_id = map.tile_id")
+DEDUP_SELECT = ("SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, map.tile_row AS tile_row, "
+                "images.tile_data AS tile_data FROM map")
+# 3.0.2 SHADOW-PARITY-2: two producers 3.0.1 opened and the first 3.0.2 grammar refused, as SQLite stores them
+# (CREATE VIEW then the text from the name on, so the indentation stays and the semicolon goes).
+# gdal2mbtiles (ecometrica, PyPI 2.1.5) MBTiles._create, a raster PNG producer: a comma join
+GDAL2MBTILES_VIEW = ("CREATE VIEW tiles AS\n                    SELECT zoom_level, tile_column, tile_row, tile_data\n"
+                     "                    FROM map, images\n                    WHERE map.tile_id = images.tile_id")
+# felt/tippecanoe and tile-join mbtiles.cpp (vector tiles): ON with two equalities
+TIPPECANOE_VIEW = ("CREATE VIEW tiles AS " + DEDUP_SELECT + " JOIN images ON images.tile_id = map.tile_id and "
+                   "images.zoom_level = map.zoom_level")
+
+
+def view_shape_cases():
+    ok = [
+        ("nodeMbtiles", "tiles", NODE_MBTILES_VIEW, ["map", "images"],
+         "node-mbtiles/TileMill, as SQLite stores it (IF NOT EXISTS and the semicolon dropped)"),
+        ("mbutilLowercase", "tiles", DEDUP_SELECT.lower().replace("select", "create view tiles as select", 1)
+         + " join images on images.tile_id = map.tile_id", ["map", "images"], "keywords are case-insensitive"),
+        ("leftJoin", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " LEFT JOIN images ON images.tile_id = map.tile_id",
+         ["map", "images"], "martin normalized"),
+        ("leftOuterJoin", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT
+         + " LEFT OUTER JOIN images ON images.tile_id = map.tile_id", ["map", "images"], ""),
+        ("innerJoin", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " INNER JOIN images ON images.tile_id = map.tile_id",
+         ["map", "images"], ""),
+        ("crossJoinOn", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " CROSS JOIN images ON images.tile_id = map.tile_id",
+         ["map", "images"], ""),
+        ("onInParens", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " JOIN images ON (images.tile_id = map.tile_id)",
+         ["map", "images"], ""),
+        ("usingOne", "tiles", "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM map "
+         "JOIN images USING (tile_id)", ["map", "images"], ""),
+        ("usingTwo", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b USING (k, j)", ["a", "b"], ""),
+        ("columnList", "tiles", "CREATE VIEW tiles(zoom_level, tile_column, tile_row, tile_data) AS SELECT a, b, c, d "
+         "FROM t", ["t"], ""),
+        ("quotedForms", "tiles", "CREATE VIEW \"tiles\" AS SELECT \"t\".\"zoom_level\", [t].[tile_column], "
+         "`t`.`tile_row`, t.tile_data FROM \"tiles_base\" AS t", ["tiles_base"],
+         "the three quoted forms; base names come back without quotes"),
+        ("aliasesWithoutAs", "tiles", "CREATE VIEW tiles AS SELECT m.zoom_level zoom_level, m.tile_column tile_column, "
+         "m.tile_row tile_row, i.tile_data tile_data FROM map m JOIN images i ON i.tile_id = m.tile_id",
+         ["map", "images"], ""),
+        ("tableStar", "tiles", "CREATE VIEW tiles AS SELECT t.* FROM tiles_base t", ["tiles_base"], ""),
+        ("mixedCase", "tiles", "Create View Tiles As Select * From T", ["T"],
+         "the view name compares ASCII case-insensitively"),
+        ("metadataPlain", "metadata", "CREATE VIEW metadata AS SELECT name, value FROM meta_base", ["meta_base"], ""),
+        ("metadataRenamed", "metadata", "CREATE VIEW metadata AS SELECT k AS name, v AS value FROM kv", ["kv"], ""),
+        ("newlinesTabs", "tiles", "CREATE\tVIEW\r\ntiles\nAS\n\tSELECT\n\t*\nFROM\n\tt", ["t"], "ASCII whitespace"),
+        # 3.0.2 SHADOW-PARITY-2: the same equi-join written as a comma join, and ON with an AND of equalities
+        ("gdal2mbtiles", "tiles", GDAL2MBTILES_VIEW, ["map", "images"],
+         "gdal2mbtiles (raster PNG): a comma join, the join's equality in WHERE. 3.0.1 opened it, 3.0.2 before "
+         "SHADOW-PARITY-2 refused it"),
+        ("tippecanoe", "tiles", TIPPECANOE_VIEW, ["map", "images"],
+         "felt/tippecanoe and tile-join: two equalities joined by a lowercase and"),
+        ("onWithAnd", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND b.j = a.j", ["a", "b"],
+         "refused before SHADOW-PARITY-2: an AND of column equalities is still an equi-join"),
+        ("onAndInParens", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " LEFT JOIN images ON (images.tile_id = "
+         "map.tile_id AND images.zoom_level = map.zoom_level AND images.tile_id = map.tile_id)", ["map", "images"],
+         "one pair of parens round the whole condition, any number of equalities"),
+        ("commaJoinWhereAnd", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k AND a.j = b.j",
+         ["a", "b"], "a comma join takes the same equalities ON does"),
+        ("commaJoinAliasesParens", "tiles", "CREATE VIEW tiles AS SELECT m.zoom_level, m.tile_column, m.tile_row, "
+         "i.tile_data FROM map AS m, \"images\" i WHERE (m.tile_id = i.tile_id)", ["map", "images"],
+         "table aliases, a quoted table and the condition in parens"),
+    ]
+    bad = [
+        ("tooLong", "tiles", "CREATE VIEW tiles AS SELECT * FROM t" + " " * MBT_MAX_SCHEMA_SQL_BYTES, "tooLong",
+         "over maxSchemaSqlBytes before anything is tokenized"),
+        ("digit", "tiles", "CREATE VIEW tiles AS SELECT zoom_level + 1 AS zoom_level FROM t", "token", "no numbers"),
+        ("stringLiteral", "tiles", "CREATE VIEW tiles AS SELECT 'x' AS tile_data FROM t", "token", "no string literals"),
+        ("blobLiteral", "tiles", "CREATE VIEW tiles AS SELECT X'01' AS tile_data FROM t", "token", ""),
+        ("lineComment", "tiles", "CREATE VIEW tiles AS SELECT * FROM t -- note", "token", "no comments"),
+        ("blockComment", "tiles", "CREATE VIEW tiles AS SELECT /* x */ * FROM t", "token", ""),
+        ("semicolon", "tiles", "CREATE VIEW tiles AS SELECT * FROM t;", "token", ""),
+        ("parameter", "tiles", "CREATE VIEW tiles AS SELECT ? AS tile_data FROM t", "token", ""),
+        ("concatOperator", "tiles", "CREATE VIEW tiles AS SELECT a || b AS tile_data FROM t", "token", ""),
+        ("lessThan", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " JOIN images ON images.tile_id < map.tile_id",
+         "token", ""),
+        ("nonAscii", "tiles", "CREATE VIEW tiles AS SELECT zöom FROM t", "token", "ASCII only"),
+        ("doubledQuote", "tiles", "CREATE VIEW tiles AS SELECT \"a\"\"b\" FROM t", "token", "no quote escapes"),
+        ("doubledQuoteTable", "tiles", "CREATE VIEW tiles AS SELECT * FROM \"x\"\"y\"", "token",
+         "SQLite's table is x\"y; splitting it into table x with alias y would check the wrong base"),
+        ("doubledBacktick", "tiles", "CREATE VIEW tiles AS SELECT * FROM `x``y`", "token", ""),
+        ("adjacentQuoted", "tiles", "CREATE VIEW tiles AS SELECT \"a\"[b] FROM t", "token", ""),
+        ("emptyQuoted", "tiles", "CREATE VIEW tiles AS SELECT \"\" FROM t", "token", ""),
+        ("unterminatedQuote", "tiles", "CREATE VIEW tiles AS SELECT \"abc FROM t", "token", ""),
+        ("formFeed", "tiles", "CREATE VIEW tiles AS SELECT *\fFROM t", "token", "only space, tab, CR, LF"),
+        ("function", "tiles", "CREATE VIEW tiles AS SELECT zoom_level, hex(tile_data) AS tile_data FROM t", "shape",
+         "no function calls"),
+        ("cast", "tiles", "CREATE VIEW tiles AS SELECT CAST(zoom_level AS TEXT) AS zoom_level FROM t", "shape", ""),
+        ("caseExpression", "tiles", "CREATE VIEW tiles AS SELECT CASE WHEN tile_data IS NULL THEN tile_data END "
+         "AS tile_data FROM t", "shape", ""),
+        ("keywordValue", "tiles", "CREATE VIEW tiles AS SELECT CURRENT_TIMESTAMP AS tile_data FROM t", "shape",
+         "a reserved word can make a value"),
+        ("nullValue", "tiles", "CREATE VIEW tiles AS SELECT NULL AS tile_data FROM t", "shape", ""),
+        ("trueValue", "tiles", "CREATE VIEW tiles AS SELECT TRUE AS zoom_level FROM t", "shape",
+         "TRUE/FALSE are literals when no such column exists"),
+        ("reservedColumn", "tiles", "CREATE VIEW tiles AS SELECT key FROM t", "shape",
+         "every reserved word, even ones SQLite would take as a name"),
+        ("where", "tiles", "CREATE VIEW tiles AS SELECT * FROM t WHERE zoom_level = tile_row", "shape",
+         "WHERE only as a comma join's condition, on one table it's a filter"),
+        ("unionAll", "tiles", "CREATE VIEW tiles AS SELECT * FROM a UNION ALL SELECT * FROM b", "shape", ""),
+        ("withCte", "tiles", "CREATE VIEW tiles AS WITH x AS (SELECT * FROM t) SELECT * FROM x", "shape", ""),
+        ("distinct", "tiles", "CREATE VIEW tiles AS SELECT DISTINCT * FROM t", "shape", ""),
+        ("orderBy", "tiles", "CREATE VIEW tiles AS SELECT * FROM t ORDER BY zoom_level", "shape", ""),
+        ("threeTables", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k JOIN c ON c.k = a.k",
+         "shape", "at most two tables"),
+        ("naturalJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a NATURAL JOIN b", "shape", ""),
+        ("commaJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b", "shape",
+         "a comma join needs its WHERE equalities, without them it's a cross join"),
+        ("joinWithoutConstraint", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b", "shape", ""),
+        # 3.0.2 SHADOW-PARITY-2: the comma join's WHERE and the AND chain are column equalities and nothing else
+        ("commaJoinWhereOr", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k OR a.j = b.j", "shape",
+         "only AND joins equalities"),
+        ("commaJoinWhereFunction", "tiles", "CREATE VIEW tiles AS SELECT * FROM map, images WHERE map.tile_id = "
+         "lower(images.tile_id)", "shape", "the comma join's WHERE is column refs too"),
+        ("commaJoinWhereLiteral", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k AND a.z = 0",
+         "token", "no filter on a value, only the join"),
+        ("commaJoinOn", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b ON a.k = b.k", "shape",
+         "SQLite takes ON after a comma, no producer writes it"),
+        ("commaJoinThreeTables", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b, c WHERE a.k = b.k AND b.k = c.k",
+         "shape", "at most two tables either way"),
+        ("commaJoinThenJoin", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b JOIN c ON c.k = a.k", "shape", ""),
+        ("joinOnThenWhere", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k WHERE a.j = b.j",
+         "shape", "no WHERE after a JOIN"),
+        ("onAndDangling", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND", "shape", ""),
+        ("onAndNot", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k = a.k AND NOT b.j = a.j", "shape",
+         ""),
+        ("onEachEqualityInParens", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON (b.k = a.k) AND (b.j = a.j)",
+         "shape", "parens go round the whole condition or nowhere"),
+        ("onAndUnclosedParen", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON (b.k = a.k AND b.j = a.j",
+         "shape", ""),
+        ("commaJoinWhereNestedParens", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE ((a.k = b.k))", "shape",
+         ""),
+        ("commaJoinWhereChained", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k = a.j", "shape",
+         "(a.k = b.k) = a.j compares a truth value"),
+        ("commaJoinWhereCollate", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k = b.k COLLATE NOCASE",
+         "shape", ""),
+        ("subquery", "tiles", "CREATE VIEW tiles AS SELECT * FROM (SELECT * FROM t)", "shape", ""),
+        ("schemaQualifiedTable", "tiles", "CREATE VIEW tiles AS SELECT * FROM main.map", "shape", ""),
+        ("threePartColumn", "tiles", "CREATE VIEW tiles AS SELECT main.t.zoom_level FROM t", "shape", ""),
+        ("wrongName", "tiles", "CREATE VIEW tiles_old AS SELECT * FROM t", "shape", "the view has to be the relation"),
+        ("metadataNameForTiles", "tiles", "CREATE VIEW metadata AS SELECT * FROM t", "shape", ""),
+        ("notAView", "tiles", "CREATE TABLE tiles AS SELECT * FROM t", "shape", ""),
+        ("trailingWords", "tiles", "CREATE VIEW tiles AS SELECT * FROM t a b", "shape", ""),
+        ("starAlias", "tiles", "CREATE VIEW tiles AS SELECT * AS x FROM t", "shape", ""),
+        ("emptyColumnList", "tiles", "CREATE VIEW tiles() AS SELECT * FROM t", "shape", ""),
+        ("temporaryView", "tiles", "CREATE TEMP VIEW tiles AS SELECT * FROM t", "shape", ""),
+        ("ifNotExists", "tiles", "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t", "shape",
+         "3.0.2 SEC-M1-SHADOW (3.0.2 builds before it accepted this): SQLite drops IF NOT EXISTS when it stores a "
+         "view, so only a hand edited schema has it, and the duplicate it skips is a decoy behind the live view"),
+    ]
+    out = []
+    for cid, rel, sql, tables, note in ok:
+        got = view_shape(sql, rel)
+        assert got == tables, (cid, got)
+        out.append({"id": cid, "relation": rel, "sql": sql, "expect": {"accepted": True, "tables": tables},
+                    "note": note})
+    for cid, rel, sql, reason, note in bad:
+        try:
+            view_shape(sql, rel)
+            raise AssertionError(cid)
+        except _ShapeReject as r:
+            assert str(r) == reason, (cid, str(r), reason)
+        out.append({"id": cid, "relation": rel, "sql": sql, "expect": {"accepted": False, "reason": reason},
+                    "note": note})
+    assert len({r["id"] for r in out}) == len(out)
+    return out
+
+
+def table_shape_cases():
+    """3.0.2 SEC-M1-SHADOW: table_declares() on its own, no SQLite. Both readers port it and must agree"""
+    rows = [
+        ("plain", "tiles", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, "
+         "tile_data blob)", True, "what GDAL, tippecanoe and rio-mbtiles write"),
+        ("noSpaceBeforeParen", "tiles", "CREATE TABLE tiles(zoom_level, tile_column, tile_row, tile_data)", True, ""),
+        ("lowercase", "map", "create table map (zoom_level integer, tile_column integer, tile_row integer, "
+         "tile_id text)", True, "mbutil"),
+        ("withoutRowid", "tiles_shallow", "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, "
+         "tile_row integer, tile_data_id integer, primary key(zoom_level, tile_column, tile_row)) without rowid", True,
+         "planetiler; only the name is read, the rest of the text can be anything"),
+        ("renamedDoubleQuoted", "metadata_base", "CREATE TABLE \"metadata_base\" (name, value)", True,
+         "ALTER TABLE ... RENAME stores the new name double quoted"),
+        ("bracketQuoted", "map", "CREATE TABLE [map] (a)", True, ""),
+        ("backtickQuoted", "images", "CREATE TABLE `images` (a)", True, ""),
+        ("quotedNoSpace", "t", " \n create\ttable\"t\"(a)", True, "a quoted name needs no space before it"),
+        ("quotedWithSpace", "tiles base", "CREATE TABLE \"tiles base\" (a)", True, ""),
+        ("nameCaseDiffers", "tiles", "CREATE TABLE Tiles (a)", True,
+         "ASCII case-insensitive, the way SQLite resolves names"),
+        ("quotedReservedWord", "if", "CREATE TABLE \"if\" (a)", True, "a quoted reserved word is just a name"),
+        ("ifNotExists", "tiles", "CREATE TABLE IF NOT EXISTS tiles (a)", False,
+         "SQLite drops IF NOT EXISTS when it stores a table, so only a hand edit has it"),
+        ("declaresAnotherTable", "t", "CREATE TABLE decoy (a)", False,
+         "the row's name column says t while its sql makes decoy (SQLite without the name cross-check loads it)"),
+        ("virtualTable", "tiles", "CREATE VIRTUAL TABLE tiles USING fts4(a)", False, "module code on every read"),
+        ("commentedVirtual", "t", "CREATE/**/VIRTUAL TABLE t USING fts4(a)", False,
+         "a comment isn't whitespace, VIRTUAL can't pass as part of the first word"),
+        ("view", "tiles", "CREATE VIEW tiles AS SELECT * FROM t", False, ""),
+        ("temporaryTable", "tiles", "CREATE TEMP TABLE tiles (a)", False, ""),
+        ("schemaQualified", "tiles", "CREATE TABLE main.tiles (a)", False, ""),
+        ("schemaPrefixMatchesName", "main", "CREATE TABLE main.tiles (a)", False,
+         "no dot after the name, so the schema part never counts as the table"),
+        ("commentBeforeName", "t", "CREATE TABLE /**/t (a)", False, ""),
+        ("commentBetweenWords", "t", "CREATE/**/TABLE t (a)", False, ""),
+        ("glued", "t", "CREATETABLE t (a)", False, ""),
+        ("tableWordRunsOn", "_x", "CREATE TABLE_x (a)", False, "TABLE_x is one word to SQLite"),
+        ("tabBeforeName", "t", "CREATE TABLE\tt", True, ""),
+        ("bareReservedWord", "key", "CREATE TABLE key (a)", False,
+         "a reserved word is never a bare name here, which is what keeps IF out"),
+        ("doubledQuote", "x", "CREATE TABLE \"x\"\"y\" (a)", False, "SQLite's table is x\"y"),
+        ("emptyQuoted", "t", "CREATE TABLE \"\" (a)", False, ""),
+        ("unterminatedQuote", "t", "CREATE TABLE \"t (a)", False, ""),
+        ("singleQuoted", "t", "CREATE TABLE 't' (a)", False, "not one of the three identifier forms"),
+        ("nonAsciiBare", "zöom", "CREATE TABLE zöom (a)", False, "ASCII only"),
+        ("nonAsciiQuoted", "zöom", "CREATE TABLE \"zöom\" (a)", False, ""),
+        ("formFeed", "t", "CREATE\fTABLE t (a)", False, "only space, tab, CR, LF"),
+        ("wordsOnly", "t", "CREATE TABLE", False, ""),
+        ("empty", "t", "", False, ""),
+        ("noSql", "t", None, False, "a table row with NULL sql"),
+    ]
+    out = []
+    for cid, name, sql, accepted, note in rows:
+        assert table_declares(sql, name) is accepted, cid
+        out.append({"id": cid, "name": name, "sql": sql, "expect": {"accepted": accepted}, "note": note})
+    assert len({r["id"] for r in out}) == len(out)
+    return out
+
+
+def mbtiles_connection():
+    """3.0.2 (SEC-1): what every MBTiles connection gets before its first statement, on both readers"""
+    return {
+        "maxTileBytes": MBT_MAX_TILE_BYTES,
+        "maxValueBytes": MBT_MAX_VALUE_BYTES,
+        "maxSchemaSqlBytes": MBT_MAX_SCHEMA_SQL_BYTES,
+        "pragmas": ["trusted_schema=OFF (SQLite >= 3.31; iOS always, Android API 31+)", "automatic_index=OFF"],
+        "ios": {"sqlite3_limit": {"SQLITE_LIMIT_LENGTH": MBT_MAX_VALUE_BYTES,
+                                  "SQLITE_LIMIT_SQL_LENGTH": MBT_MAX_SCHEMA_SQL_BYTES},
+                "hardHeapLimit": None},
+        "android": {"hardHeapLimitBytes": MBT_ANDROID_HEAP_LIMIT,
+                    "hardHeapLimitMinSqlite": MBT_ANDROID_HEAP_LIMIT_MIN_SQLITE,
+                    "explicitChecks": [
+                        "before anything else: no sqlite_master row has length(CAST(sql AS BLOB)) > maxSchemaSqlBytes",
+                        "view path: a descriptor name, a known value or a bake extension whose "
+                        "length(CAST(... AS BLOB)) > maxValueBytes fails closed (extension: reads as missing)"]},
+        "generatedColumnsMinSqlite": MBT_GENERATED_COLUMNS_MIN_SQLITE,
+        "rules": (
+            "Every connection, the admission open and the lazy prevalidated open alike, before its first statement: "
+            "PRAGMA trusted_schema=OFF where SQLite >= 3.31, PRAGMA automatic_index=OFF, and the value and schema "
+            "caps (iOS sqlite3_limit; Android PRAGMA hard_heap_limit where SQLite >= 3.31 plus its explicit "
+            "checks). Then, before any statement names tiles or metadata: each must be exactly one sqlite_master "
+            "row (name compared NOCASE, the way SQLite resolves it) of type table or view. A view's "
+            "sqlite_master.sql must pass viewShape (reserved words, grammar, maxSchemaSqlBytes) and gives the base "
+            "tables. Every table a read touches (tiles or metadata when a table, each view's base tables) must be "
+            "exactly one sqlite_master row (name compared NOCASE) of type table whose sql passes baseTableShape "
+            "(the words CREATE TABLE, so not CREATE VIRTUAL TABLE, then exactly that table's name) and, where "
+            "SQLite >= 3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not "
+            "admitted, and a lazy open serves no tile. Because every row checked must declare its own name with no "
+            "IF NOT EXISTS, it is the object SQLite loaded for that name (a second one would be a schema error), so "
+            "no expression stored in the file is ever evaluated on a read"),
+    }
+
+
+# 3.0.2 (SEC-1): the MBTiles open guard, modelled on pdf_tile_render.json crashGuard but with its own file and
+# state. One active basemap at a time, armed on every foreground restore and activation (not verified once)
+MBT_GUARD_MAX_IN_PROGRESS = 4
+
+
+class MbtOpenGuard:
+    def __init__(self):
+        self.in_progress = []   # oldest first
+        self.suspect = None
+
+    def state(self):
+        return {"v": 1, "inProgress": list(self.in_progress), "suspect": self.suspect}
+
+    def step(self, ev):
+        op = ev["op"]
+        if op == "arm":
+            if not ev.get("foreground", True):
+                return {"armed": False}
+            tok = ev["token"]
+            self.in_progress = [t for t in self.in_progress if t != tok] + [tok]
+            while len(self.in_progress) > MBT_GUARD_MAX_IN_PROGRESS:
+                self.in_progress.pop(0)
+            return {"armed": True}
+        if op == "complete":
+            self.in_progress = [t for t in self.in_progress if t != ev["token"]]
+            return {}
+        if op == "disarmBackground":
+            self.in_progress = []
+            return {}
+        if op == "launch":
+            rt = ev.get("restoredToken")
+            if rt is not None and rt in self.in_progress:
+                self.suspect = rt
+                res = {"decision": "suppress"}
+            elif rt is not None and self.suspect == rt:
+                res = {"decision": "suppress"}
+            else:
+                res = {"decision": "none"}
+            self.in_progress = []
+            return res
+        if op == "resolve":
+            if ev["choice"] in ("openAnyway", "deleted"):
+                self.suspect = None
+            return {}
+        raise ValueError(op)
+
+
+def mbtiles_open_guard():
+    def t(i):
+        return "00000000-0000-4000-8000-%012d" % i
+    A, B, C, D, E = t(1), t(2), t(3), t(4), t(5)
+    cases = [
+        ("a clean restore: armed before the open, completed after the first draw, next launch restores it", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "complete", "token": A},
+            {"op": "launch", "restoredToken": A}]),
+        ("crash while the restored pack is admitted: held back next launch; Not Now asks again; Open Anyway clears", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "launch", "restoredToken": A},
+            {"op": "resolve", "choice": "notNow"},
+            {"op": "launch", "restoredToken": A},
+            {"op": "resolve", "choice": "openAnyway"},
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "complete", "token": A},
+            {"op": "launch", "restoredToken": A}]),
+        ("crash in the first draw after a tap whose library write landed: held back next launch", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "complete", "token": A},
+            {"op": "arm", "token": B, "foreground": True},
+            {"op": "launch", "restoredToken": B}]),
+        ("crash while admitting a tapped pack before its write: the map that is restored is untouched", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "complete", "token": A},
+            {"op": "arm", "token": B, "foreground": True},
+            {"op": "launch", "restoredToken": A},
+            {"op": "launch", "restoredToken": B}]),
+        ("never armed in the background; going to the background disarms without blaming the pack", [
+            {"op": "arm", "token": A, "foreground": False},
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "disarmBackground"},
+            {"op": "launch", "restoredToken": A}]),
+        ("Delete Map clears the suspect", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "launch", "restoredToken": A},
+            {"op": "resolve", "choice": "deleted"},
+            {"op": "launch", "restoredToken": None}]),
+        ("a standing suspect stays held back until resolved; another map restores normally meanwhile", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "launch", "restoredToken": A},
+            {"op": "resolve", "choice": "notNow"},
+            {"op": "arm", "token": B, "foreground": True},
+            {"op": "complete", "token": B},
+            {"op": "launch", "restoredToken": B},
+            {"op": "launch", "restoredToken": A}]),
+        ("re-arming keeps one marker per pack (moved to newest); at most 4 markers, the oldest goes", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "arm", "token": B, "foreground": True},
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "arm", "token": C, "foreground": True},
+            {"op": "arm", "token": D, "foreground": True},
+            {"op": "arm", "token": E, "foreground": True},
+            {"op": "launch", "restoredToken": B}]),
+        ("complete for a pack that isn't armed changes nothing", [
+            {"op": "arm", "token": A, "foreground": True},
+            {"op": "complete", "token": B},
+            {"op": "launch", "restoredToken": A}]),
+    ]
+    out = []
+    for label, events in cases:
+        g = MbtOpenGuard()
+        steps = []
+        for ev in events:
+            res = g.step(ev)
+            steps.append({"event": ev, "result": res, "state": g.state()})
+        out.append({"label": label, "steps": steps})
+    # the two crash rows really hold the pack back, the clean ones really don't
+    assert out[1]["steps"][1]["result"] == {"decision": "suppress"} and out[0]["steps"][2]["result"] == {"decision": "none"}
+    assert out[3]["steps"][3]["result"] == {"decision": "none"} and out[7]["steps"][6]["result"] == {"decision": "none"}
+    return {
+        "fileName": "mbtiles_open_guard.json",
+        "fileVersion": 1,
+        "maxInProgress": MBT_GUARD_MAX_IN_PROGRESS,
+        "token": "the library entry id (a random UUID; iOS entry.id.uuidString, Android entry.id). Nothing else goes "
+                 "in the file: no name, path or hash",
+        "location": {"ios": "Application Support, excluded from backup, completeUntilFirstUserAuthentication, "
+                            "written atomically then fsynced", "android": "noBackupFilesDir, written atomically then "
+                                                                         "fsynced"},
+        "decode": "v != 1 or unreadable: an empty state. Tokens that aren't UUIDs are dropped, inProgress keeps "
+                  "its newest maxInProgress",
+        "firstDrawQuietMs": 500,
+        "noReadCompleteMs": 2000,
+        "window": (
+            "arm(foreground only) before the restore or activation opens the pack, durably on disk before the open "
+            "starts. complete when: the open refused the pack (nothing will draw); or after the source is "
+            "published, at least one tile read has been delivered and no read for it has been pending for "
+            "firstDrawQuietMs; or no read was requested within noReadCompleteMs of publication (camera outside "
+            "the pack); or the source was replaced or closed before that. disarmBackground when the scene / "
+            "Activity goes to the background, next to the PDF guard's. launch: once per process, at the first "
+            "restore that knows its restored entry (the PDF guard's moment), restoredToken = the durable active "
+            "entry when it is an MBTiles pack, else null; a later restore in the same process still holds back a "
+            "standing suspect"),
+        "suppress": (
+            "don't open the pack: publish online(preferred style) in memory only (the durable selection and the "
+            "entry stay as they are, like the PDF guard) and show the PDF guard's alert reused as is: "
+            "pdf_guard_crash_title {name} / pdf_guard_crash_message with pdf_guard_open_anyway, "
+            "pdf_guard_delete_map (the usual delete confirm) and Not Now. Open Anyway = resolve(openAnyway), then "
+            "the normal guarded open. Picking the entry in Layers counts as Open Anyway. Not Now = "
+            "resolve(notNow): next launch asks again. Delete = the library delete, then resolve(deleted)"),
+        "cases": out,
+    }
 
 
 def mbtiles_admission():
@@ -2952,32 +4003,80 @@ def mbtiles_admission():
     # 3.0.1: tiles and metadata may each be a table or a view (MBTiles 1.3), the 2.x Android behaviour
     adm["relationTypes"] = ["table", "view"]
     adm["admissionBudgetMs"] = 30000
+    adm["admissionBudgetAppliesTo"] = "views"
     adm["viewQueryBudgetMs"] = 2000
     adm["relationRules"] = (
-        "Exactly one sqlite_master row named 'tiles' and one named 'metadata', each type 'table' or 'view'; "
-        "anything else (missing, index, trigger) fails closed. A TABLE keeps the existing reads (rowid "
-        "descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no "
-        "incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), "
+        "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared "
+        "NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case "
+        "variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its "
+        "sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, "
+        "not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the "
+        "existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no "
+        "rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), "
         "typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; "
         "each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), "
         "1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the "
-        "bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. Every "
-        "other admission check is unchanged on both. Every admission statement (from the first one after "
-        "open to the tile aggregate) shares one deadline of admissionBudgetMs; on expiry the statement is "
-        "interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. "
-        "After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) "
-        "each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no "
-        "per-read budget. PRAGMA trusted_schema=OFF is set first where the SQLite supports it")
+        "bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the "
+        "view path a name or value over connection.maxValueBytes fails closed. Every other admission check is "
+        "unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the "
+        "relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS "
+        "sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no "
+        "admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it "
+        "now runs off the main thread. After admission, statements against a relation that is a VIEW (tile "
+        "reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing "
+        "extension. Tables get no per-read budget")
+    adm["connection"] = mbtiles_connection()
+    adm["viewShape"] = {
+        "maxSqlBytes": MBT_MAX_SCHEMA_SQL_BYTES,
+        "whitespace": [" ", "\t", "\r", "\n"],
+        "punctuation": list(MBT_VIEW_PUNCT),
+        "quotedIdentifiers": [["\"", "\""], ["[", "]"], ["`", "`"]],
+        "reservedWords": MBT_RESERVED,
+        "tokens": (
+            "ASCII whitespace separates tokens. A word is [A-Za-z_][A-Za-z0-9_]* (ASCII). A quoted identifier is "
+            "one of the three pairs with a non-empty body of printable ASCII (0x20-0x7E) holding none of "
+            "\" [ ] `, and the character right after its closing mark may not be one of \" [ ] ` either (SQLite "
+            "reads \"a\"\"b\" as the one name a\"b; splitting it would check the wrong base table). Punctuation "
+            "is ( ) , . * =. Anything else, anywhere in the text, is reason token. Text longer than maxSqlBytes "
+            "(UTF-8) is reason tooLong before tokenizing"),
+        "grammar": (
+            "CREATE VIEW name [( ident {, ident} )] AS SELECT column {, column} FROM table "
+            "[join] <end>. name = ident equal to the relation (ASCII case-insensitive). column = * | ident . * | "
+            "colref [[AS] ident]. colref = ident [. ident]. table = ident [[AS] ident]. join = [INNER | LEFT "
+            "[OUTER] | CROSS] JOIN table (ON equalities | USING ( ident {, ident} )) | , table WHERE equalities. "
+            "equalities = eq {AND eq} | ( eq {AND eq} ), eq = colref = colref (3.0.2 SHADOW-PARITY-2: the comma "
+            "join and the AND, how gdal2mbtiles and tippecanoe/tile-join store tiles; still an equi-join of two "
+            "tables on column refs). ident = a quoted identifier, or a word not in reservedWords (ASCII "
+            "case-insensitive). Keywords match words only, ASCII case-insensitively. Any other token sequence is "
+            "reason shape, IF NOT EXISTS included (3.0.2 SEC-M1-SHADOW: SQLite never stores it, so it only turns up "
+            "in a hand edited schema). Accepted: the base tables, each table's ident in order (quoted ones without "
+            "their marks)"),
+        "cases": view_shape_cases(),
+    }
+    adm["baseTableShape"] = {
+        "rule": (
+            "3.0.2 SEC-M1-SHADOW, table_declares(sql, name) in the generator: a table row's sqlite_master.sql "
+            "passes when it matches [ \\t\\r\\n]*([A-Za-z]+)[ \\t\\r\\n]+([A-Za-z]+) with the two words CREATE and "
+            "TABLE (ASCII case-insensitive), then optional viewShape whitespace and one identifier: a viewShape "
+            "quoted identifier, or a word ([A-Za-z_][A-Za-z0-9_]*, ASCII, not in viewShape.reservedWords) that "
+            "has at least one whitespace character before it. The character right after the identifier may not be "
+            "\" [ ] ` or a dot, and the identifier (quoted ones without their marks) has to equal name ASCII "
+            "case-insensitively. Nothing after that is read. Any other text, and NULL, fails"),
+        "cases": table_shape_cases(),
+    }
     adm["relationVariants"] = MBT_VARIANTS
     adm["variantRule"] = ("every cases[] and extensionCases[] row gives the same verdict and values after its own "
                           "setup plus metadataView or bothViews; every tileZoomCases[] row after tilesView or "
                           "bothViews. The generator proves it against its reference admission")
     adm["relationCases"] = mbtiles_relation_cases()
-    adm["relationCasesRule"] = ("run sql[] in order on an empty database file, open it with the real reader "
-                                "(testBudgetMs, when given, replaces admissionBudgetMs through the test seam) and "
-                                "compare expect: accepted, and when accepted minZoom, maxZoom, name, format, each "
-                                "tiles[] probe (XYZ, hex null = no tile) and extensions{}. rejectedAt and relations "
-                                "are the reference's notes, not asserted")
+    adm["relationCasesRule"] = ("run sql[] in order on an empty database file with an ordinary connection (a row "
+                                "with packBase64 is that exact file instead: write the decoded bytes and skip sql[], "
+                                "which needs writable_schema and Apple's SQLite refuses that by default), open it "
+                                "with the real reader (testBudgetMs, when given, replaces admissionBudgetMs through "
+                                "the test seam) and compare expect: accepted, and when accepted minZoom, maxZoom, "
+                                "name, format, each tiles[] probe (XYZ, hex null = no tile) and extensions{}. Skip a "
+                                "row whose minSqliteVersion is above the runtime sqlite_version() (it can't be "
+                                "built there). rejectedAt and relations are the reference's notes, not asserted")
     return adm
 
 
@@ -2992,6 +4091,7 @@ def import_doc():
         "calibration": CALIBRATION,
         "import": IMPORT,
         "mbtilesMetadataAdmission": mbtiles_admission(),
+        "mbtilesOpenGuard": mbtiles_open_guard(),
         "errors": {k: {"key": key(v[0]), "args": v[1]} for k, v in IMPORT_ERRORS.items()},
         "georefRejectReasons": ["lptsOutOfRange", "nonFinite", "gptsOffEarth", "rmsGate", "degenerateViewport",
                                 "malformed", "unknownDatum", "unsupportedProjection"],

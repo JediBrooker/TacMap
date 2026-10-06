@@ -189,6 +189,57 @@ final class MapViewModel: ObservableObject {
     /// what map (if any) it restored
     private var pdfGuardDecided = false
     var pdfRenderGuard: PDFRenderGuard = .shared
+
+    /// 3.0.2 M1: imported MBTiles get their own open guard (own file, own
+    /// reducer), decided at the same moment as the PDF one
+    var mbtilesOpenGuard: MBTilesOpenGuard = .shared
+    private var mbtilesGuardDecided = false
+    /// the restored pack launch held back, it was opening or drawing when the
+    /// app died. Same alert as the PDF suspect, the durable selection stays put
+    @Published private(set) var mbtilesCrashSuspect: ImportedMapEntry?
+    /// the guard only ever arms in the foreground, tests pin it
+    var guardIsForeground: () -> Bool = { UIApplication.shared.applicationState != .background }
+
+    /// 3.0.2 M2: a pack is opened and admitted on packOpenQueue, never main,
+    /// and lands back on packOpenMain. Tests swap all three
+    var packOpenQueue: (@escaping () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) }
+    var packOpenMain: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
+    var packOpener: (URL, ImportedMapEntry) -> OfflineTileMapSource? = { url, e in
+        OfflineTileMapSource(url: url, entryID: e.id, displayName: e.displayName)
+    }
+    /// the one open still allowed to land. Anything published meanwhile or a
+    /// newer open drops it, its result gets closed instead
+    private var pendingPackOpen: (ticket: Int, entryID: UUID)?
+    private var packOpenTicket = 0
+    var packOpenPending: Bool { pendingPackOpen != nil }
+
+    /// admitted metadata, this process only, never persisted. Keyed on the
+    /// entry + the file stamp a restore trusts, so other bytes are a miss
+    private struct AdmittedPackKey: Hashable {
+        let id: UUID, fileName: String, contentKey: String?, byteCount: Int64, modifiedAtMs: Int64
+        init(_ e: ImportedMapEntry) {
+            id = e.id; fileName = e.fileName; contentKey = e.contentKey
+            byteCount = e.byteCount; modifiedAtMs = e.fileModifiedAtMs
+        }
+    }
+    private var admittedPacks: [AdmittedPackKey: MBTilesStore.Metadata] = [:]
+
+    /// what a pack open does once it lands
+    private struct PackOpenPlan {
+        /// blank placeholder while it opens (restore), else the old map stays up
+        var placeholder: Bool
+        /// activation: ActivateEntry re-reduced from the library, one write
+        var writes: Bool
+        var reframe: Bool
+        var verify: Bool
+        static let restore = PackOpenPlan(placeholder: true, writes: false, reframe: true, verify: true)
+        static let calibrationReturn = PackOpenPlan(placeholder: true, writes: false, reframe: false, verify: false)
+        static let openAnyway = PackOpenPlan(placeholder: false, writes: false, reframe: true, verify: true)
+        static func activate(reframe: Bool) -> PackOpenPlan {
+            PackOpenPlan(placeholder: false, writes: true, reframe: reframe, verify: false)
+        }
+    }
+    private var backgroundObserver: NSObjectProtocol?
     /// whose estimate / bake gets cancelled when its map is deleted. tests swap it
     var bakeController: PDFBakeController = .shared
     private var pdfRuntimeSink: AnyCancellable?
@@ -207,6 +258,10 @@ final class MapViewModel: ObservableObject {
         if let online = initialMapSource as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
         // header label + the map container follow the PDF render status
         pdfRuntimeSink = pdfRuntime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        // next to the PDF guard's: a jetsam kill in the background isnt the pack's fault
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.mbtilesOpenGuard.disarmForBackground() }
         // OD-F4: Try Again found the right bytes again (or didnt), the row follows
         pdfRuntime.onStoredFileVerdict = { [weak self] pdf, ok in
             guard let self, let id = pdf.entryID else { return }
@@ -238,6 +293,10 @@ final class MapViewModel: ObservableObject {
                     Task { await self.elevationService.cancelInFlight() }
                 }
             }
+    }
+
+    deinit {
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
     }
 
     // MARK: - Imported map library (the ONE authority for the active map, s8.2)
@@ -278,7 +337,13 @@ final class MapViewModel: ObservableObject {
 
     /// M10: E3 auto-resume waits while any crash suspect is pending, the
     /// durable one held back or a preview's (C8)
-    var crashSuspectPending: Bool { pdfCrashSuspect != nil || pdfRenderGuard.suspect != nil }
+    var crashSuspectPending: Bool {
+        pdfCrashSuspect != nil || pdfRenderGuard.suspect != nil || mbtilesCrashSuspect != nil
+    }
+
+    /// the crash alert is up for one of the two (PDF first, it's the older one)
+    var crashSuspectAlertShowing: Bool { pdfCrashSuspect != nil || mbtilesCrashSuspect != nil }
+    var crashSuspectDisplayName: String { pdfCrashSuspect?.displayName ?? mbtilesCrashSuspect?.displayName ?? "" }
 
     var drafts: CalibrationDraftStoring { libraryDependencies.drafts }
 
@@ -310,13 +375,136 @@ final class MapViewModel: ObservableObject {
             return src
         case .mbtiles:
             guard status == .ok else { return nil }
-            return OfflineTileMapSource(url: url, entryID: e.id, displayName: e.displayName)
+            // M2: never a fresh open here (main). Only metadata this process
+            // already admitted, anything else goes through openPack
+            return admittedPackSource(e, url: url)
         }
     }
 
-    var activeEntryID: UUID? {
-        (mapSource as? PDFMapSource)?.entryID ?? (mapSource as? OfflineTileMapSource)?.entryID
+    /// 3.0.2 M1: every MBTiles open that can end up on screen (restore,
+    /// activation, Open Anyway, import) runs under the open guard. Armed durably
+    /// before the open; a refused pack clears it right away, an admitted one once
+    /// its first draw settles, or when the source is replaced, closed or dropped.
+    /// This one's the lazy reader over admitted metadata, its open happens on the
+    /// first tile read (renderer thread) so the first draw covers it
+    private func admittedPackSource(_ e: ImportedMapEntry, url: URL) -> OfflineTileMapSource? {
+        guard let meta = admittedPacks[AdmittedPackKey(e)] else { return nil }
+        let token = e.id.uuidString
+        let guardStore = mbtilesOpenGuard
+        let armed = guardStore.arm(token: token, foreground: guardIsForeground())
+        let src = OfflineTileMapSource(prevalidatedURL: url, metadata: meta, entryID: e.id, displayName: e.displayName)
+        if armed { src.firstDraw = MBTilesFirstDrawWatch { guardStore.complete(token: token) } }
+        return src
     }
+
+    /// 3.0.2 M2: restore, activation and Open Anyway of a pack. Main arms the
+    /// guard and, for a restore, puts up the blank placeholder. The open, the
+    /// hardening, relation/shape/base checks and the admission aggregate all run
+    /// off main. Back on main it only lands if it's still the newest ask for the
+    /// same file in a loaded library, else its store is closed and the guard
+    /// cleared. false = no file to open, nothing changed
+    @discardableResult
+    private func openPack(_ e: ImportedMapEntry, plan: PackOpenPlan) -> Bool {
+        guard e.kind == .mbtiles, fileStatus(e) == .ok, let url = libraryDependencies.fileURL(e) else { return false }
+        // already admitted this process: lazy reader, nothing to wait for
+        if let src = admittedPackSource(e, url: url) {
+            pendingPackOpen = nil
+            return landPack(src, e, plan: plan)
+        }
+        if plan.placeholder {
+            publishMapSource(MBTilesOpeningSource(entryID: e.id, displayName: e.displayName), reframe: false)
+        }
+        let token = e.id.uuidString
+        let guardStore = mbtilesOpenGuard
+        let armed = guardStore.arm(token: token, foreground: guardIsForeground())
+        packOpenTicket &+= 1
+        let ticket = packOpenTicket
+        pendingPackOpen = (ticket, e.id)
+        let opener = packOpener, main = packOpenMain
+        packOpenQueue { [weak self] in
+            let src = opener(url, e)
+            main {
+                guard let self else {
+                    src?.closeForDeletion()
+                    if armed { guardStore.complete(token: token) }
+                    return
+                }
+                self.packOpened(src, asked: e, ticket: ticket, armed: armed, guardStore: guardStore, plan: plan)
+            }
+        }
+        return true
+    }
+
+    /// main, an off main open came back
+    private func packOpened(_ src: OfflineTileMapSource?, asked: ImportedMapEntry, ticket: Int, armed: Bool,
+                            guardStore: MBTilesOpenGuard, plan: PackOpenPlan) {
+        let token = asked.id.uuidString
+        // superseded: something else went on screen, a newer open started, or
+        // the library / the entry's file changed underneath it
+        guard pendingPackOpen?.ticket == ticket, libraryStatus == .loaded,
+              let e = library?.entry(asked.id), AdmittedPackKey(e) == AdmittedPackKey(asked) else {
+            // still the newest ask but the library moved: nothing's coming for it now
+            if pendingPackOpen?.ticket == ticket { pendingPackOpen = nil }
+            src?.closeForDeletion()
+            if armed { guardStore.complete(token: token) }
+            return
+        }
+        pendingPackOpen = nil
+        guard let src else {
+            // refused: nothing written. A restore goes online in memory like it
+            // always did, an activation leaves the old map up. Unless the old map
+            // is a restore's blank placeholder this tap took over from
+            if armed { guardStore.complete(token: token) }
+            if plan.placeholder {
+                publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+            } else {
+                replaceOrphanedPlaceholder(refused: e.id)
+            }
+            return
+        }
+        admittedPacks[AdmittedPackKey(e)] = src.store.metadata
+        if armed { src.firstDraw = MBTilesFirstDrawWatch { guardStore.complete(token: token) } }
+        landPack(src, e, plan: plan)
+    }
+
+    @discardableResult
+    private func landPack(_ src: OfflineTileMapSource, _ e: ImportedMapEntry, plan: PackOpenPlan) -> Bool {
+        guard plan.writes else {
+            publishMapSource(src, reframe: plan.reframe)
+            if plan.verify { verifyInBackground(e) }
+            return true
+        }
+        let ok = execute(.activateEntry(e.id)) { _, _ in
+            self.clearCalibrationReturn()
+            self.publishMapSource(src, reframe: plan.reframe)
+        }
+        // this tap took over from a restore still opening and its write failed
+        if !ok { replaceOrphanedPlaceholder() }
+        return ok
+    }
+
+    /// an activation took over from a restore that was still opening, then
+    /// didnt land (pack refused, or its write failed). The restore's result got
+    /// dropped, so nothing is coming for the blank placeholder: open the restored
+    /// pack again, online in memory when that can't happen or it's the very pack
+    /// that just got refused. Never leave the blank up with nothing pending
+    private func replaceOrphanedPlaceholder(refused: UUID? = nil) {
+        guard pendingPackOpen == nil, let held = mapSource as? MBTilesOpeningSource else { return }
+        if held.entryID != refused, let restored = library?.entry(held.entryID), openPack(restored, plan: .restore) {
+            return
+        }
+        publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+    }
+
+    private static func entryID(of s: MapSource) -> UUID? {
+        (s as? PDFMapSource)?.entryID ?? (s as? OfflineTileMapSource)?.entryID ?? (s as? MBTilesOpeningSource)?.entryID
+    }
+
+    /// the placeholder counts, it's that entry being shown (just not drawn yet)
+    var activeEntryID: UUID? { Self.entryID(of: mapSource) }
+
+    /// an offline pack is up, or about to be (no online tiles either way)
+    var showsOfflinePack: Bool { mapSource is OfflineTileMapSource || mapSource is MBTilesOpeningSource }
 
     @discardableResult
     func selectOnlineBasemap(_ style: BasemapStyle) -> Bool {
@@ -329,7 +517,15 @@ final class MapViewModel: ObservableObject {
 
     @discardableResult
     func activateLibraryEntry(_ id: UUID, reframe: Bool = true) -> Bool {
-        guard let e = library?.entry(id), let source = source(for: e) else { return false }
+        guard let e = library?.entry(id) else { return false }
+        if e.kind == .mbtiles {
+            // picking the held back pack by hand is Open Anyway, before it opens
+            resolveMBTilesSuspect(id, .openAnyway)
+            // M2: opened off main, the old map stays up till it lands and the
+            // write happens then. true = on its way
+            return openPack(e, plan: .activate(reframe: reframe))
+        }
+        guard let source = source(for: e) else { return false }
         return execute(.activateEntry(id)) { _, _ in
             self.clearCalibrationReturn()
             // picking the held back map by hand is Open Anyway (same as Android)
@@ -345,8 +541,12 @@ final class MapViewModel: ObservableObject {
     /// import commit: one write adds the entry (+ makes it active). ownsCopy =
     /// the in-flight copy behind it: released once it's in the library, kept for
     /// the Retry when the write fails, dropped on Not Now (S7)
+    /// packMetadata: what the import worker already admitted off main (M2), the
+    /// pack is shown from that, never re-admitted here
     @discardableResult
-    func addImportedEntry(_ e: ImportedMapEntry, activate: Bool, ownsCopy copy: URL? = nil) -> Bool {
+    func addImportedEntry(_ e: ImportedMapEntry, activate: Bool, ownsCopy copy: URL? = nil,
+                          packMetadata: MBTilesStore.Metadata? = nil) -> Bool {
+        if e.kind == .mbtiles, let packMetadata { admittedPacks[AdmittedPackKey(e)] = packMetadata }
         let shown = activate ? source(for: e) : nil
         let ok = execute(.addEntry(e, activate: activate && shown != nil)) { _, _ in
             if let copy {
@@ -359,6 +559,8 @@ final class MapViewModel: ObservableObject {
             // a refused transition (library full etc) has no Retry, the copy goes now
             if mapSelectionPersistenceIssue == nil { ImportedMapStorage.unlink(copy); InFlightImportFiles.unregister(copy) } else { pendingImportCopy = copy }
         }
+        // a pack with no admitted metadata to hand: the normal off main activation
+        if ok, activate, shown == nil, e.kind == .mbtiles { _ = activateLibraryEntry(e.id) }
         return ok
     }
 
@@ -519,6 +721,8 @@ final class MapViewModel: ObservableObject {
                 if let bake = e.pdf?.validBake { self.libraryDependencies.removeBakeFile(bake) }
             }
             if let suspect = self.pdfCrashSuspect?.entryID, ids.contains(suspect) { self.pdfCrashSuspect = nil }
+            // same for a held back pack, its guard hears deleted
+            for e in removed where e.kind == .mbtiles { self.resolveMBTilesSuspect(e.id, .deleted) }
             // R3-2: anything a failed unlink left behind goes too (same as Android)
             if next.permitsCleanup { _ = self.libraryDependencies.sweepBakes(ImportedMapLibrary.bakeFileNames(next)) }
             self.tamperedEntryIDs.subtract(ids)
@@ -548,12 +752,15 @@ final class MapViewModel: ObservableObject {
         guard let back = calibrationReturn else { return }
         clearCalibrationReturn()
         // the durable entry may have been re-activated, rebuild it from the library
-        if let id = (back as? PDFMapSource)?.entryID ?? (back as? OfflineTileMapSource)?.entryID,
-           let e = library?.entry(id), let fresh = source(for: e) {
-            publishMapSource(fresh, reframe: false)
-        } else {
-            publishMapSource(back, reframe: false)
+        if let id = Self.entryID(of: back), let e = library?.entry(id) {
+            // a pack reopens off main (its old store closed when the display went up)
+            if e.kind == .mbtiles, openPack(e, plan: .calibrationReturn) { return }
+            if let fresh = source(for: e) {
+                publishMapSource(fresh, reframe: false)
+                return
+            }
         }
+        publishMapSource(back, reframe: false)
     }
 
     var inCalibrationDisplay: Bool { calibrationReturn != nil }
@@ -629,6 +836,7 @@ final class MapViewModel: ObservableObject {
             mapSelectionPersistenceIssue = nil
             pendingRetry = nil
             _ = decideLaunchGuard(restoredToken: nil)
+            _ = decideMBTilesLaunchGuard(restoredToken: nil)
             afterRestore(LibraryState())
             showNextLaunchNotice()
             return .nothing
@@ -646,6 +854,11 @@ final class MapViewModel: ObservableObject {
             // C3: an unlock / Retry that reads back the selection a calibration
             // display started from isnt a map change, leave the display up
             let calibrationUntouched = calibrationReturn != nil && s.active == calibrationDurableSelection
+            // 3.0.2 M1: the MBTiles guard decides right here too, restoredToken =
+            // the durable active entry when it's a pack
+            var restoredPack: ImportedMapEntry?
+            if case .entry(let id)? = s.active, let e = s.entry(id), e.kind == .mbtiles { restoredPack = e }
+            let pack = decideMBTilesLaunchGuard(restoredToken: restoredPack?.id.uuidString)
             switch calibrationUntouched ? nil : s.active {
             case .online(let style)?:
                 _ = decideLaunchGuard(restoredToken: nil)
@@ -667,10 +880,23 @@ final class MapViewModel: ObservableObject {
                         publishMapSource(pdf)
                         if !pdf.storedFileUnavailable { verifyInBackground(e) }
                     }
+                } else if let e = restoredPack, e.id == id, pack.holdBack {
+                    _ = decideLaunchGuard(restoredToken: nil)
+                    // crash loop breaker, like the PDF one: online in memory only,
+                    // the durable selection and the pack stay exactly as they are
+                    if pack.ask { mbtilesCrashSuspect = e }
+                    if pack.ask || !(mapSource is OnlineRasterBasemapSource) {
+                        publishMapSource(preferredOnlineBasemap(), reframe: false)
+                    }
                 } else {
                     _ = decideLaunchGuard(restoredToken: nil)
-                    if activeEntryID != id {
-                        if let e = s.entry(id), let src = source(for: e) {
+                    // a placeholder whose open went away (library locked under
+                    // it, say) isnt showing anything, this restore reopens it
+                    let opening = mapSource is MBTilesOpeningSource && pendingPackOpen?.entryID == id
+                    if activeEntryID != id || (mapSource is MBTilesOpeningSource && !opening) {
+                        if let e = s.entry(id), e.kind == .mbtiles, openPack(e, plan: .restore) {
+                            // M2: blank placeholder now, the pack once it's admitted off main
+                        } else if let e = s.entry(id), let src = source(for: e) {
                             publishMapSource(src)
                             verifyInBackground(e)
                         } else {
@@ -820,6 +1046,30 @@ final class MapViewModel: ObservableObject {
         return outcome.decision == .suppress
     }
 
+    /// 3.0.2 M1, the MBTiles twin of decideLaunchGuard. Once per launch at the
+    /// same moment. holdBack = don't open the restored pack, ask = this launch
+    /// just found it, put the alert up
+    private func decideMBTilesLaunchGuard(restoredToken: String?) -> (holdBack: Bool, ask: Bool) {
+        guard !mbtilesGuardDecided else {
+            // a later restore (unlock, Retry) still holds back a standing suspect
+            return (restoredToken != nil && mbtilesOpenGuard.suspect == restoredToken, false)
+        }
+        mbtilesGuardDecided = true
+        let held = mbtilesOpenGuard.launchDecision(restoredToken: restoredToken) == .suppress
+        return (held, held)
+    }
+
+    /// the user opened (or deleted) a pack the guard holds back, it hears so
+    /// and the alert comes down if it was for that pack
+    private func resolveMBTilesSuspect(_ id: UUID, _ choice: PDFSuspectResolution) {
+        guard mbtilesOpenGuard.suspect == id.uuidString || mbtilesCrashSuspect?.id == id else { return }
+        mbtilesOpenGuard.resolveSuspect(choice)
+        if mbtilesCrashSuspect?.id == id {
+            mbtilesCrashSuspect = nil
+            showNextLaunchNotice(after: 0.35)
+        }
+    }
+
     /// next queued notice, once nothing else is up. SwiftUI drops an alert
     /// presented in the same turn another one went away, hence the delay
     private func showNextLaunchNotice(after delay: Double = 0) {
@@ -827,7 +1077,7 @@ final class MapViewModel: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.showNextLaunchNotice() }
             return
         }
-        guard pdfLaunchNotice == nil, pdfCrashSuspect == nil, !queuedLaunchNotices.isEmpty else { return }
+        guard pdfLaunchNotice == nil, !crashSuspectAlertShowing, !queuedLaunchNotices.isEmpty else { return }
         pdfLaunchNotice = queuedLaunchNotices.removeFirst()
     }
 
@@ -852,6 +1102,12 @@ final class MapViewModel: ObservableObject {
 
     /// crash recovery alert: Open Anyway
     func openCrashSuspectAnyway() {
+        if pdfCrashSuspect == nil, let e = mbtilesCrashSuspect {
+            resolveMBTilesSuspect(e.id, .openAnyway)
+            // then the normal guarded open (off main), from the library as it is now
+            if let fresh = library?.entry(e.id) { openPack(fresh, plan: .openAnyway) }
+            return
+        }
         guard let pdf = pdfCrashSuspect else { return }
         pdfRenderGuard.resolveSuspect(.openAnyway)
         pdfCrashSuspect = nil
@@ -866,14 +1122,23 @@ final class MapViewModel: ObservableObject {
 
     /// crash recovery alert: Not Now. the suspect stays so next launch asks again
     func dismissCrashSuspect() {
-        pdfRenderGuard.resolveSuspect(.notNow)
-        pdfCrashSuspect = nil
+        if pdfCrashSuspect == nil, mbtilesCrashSuspect != nil {
+            mbtilesOpenGuard.resolveSuspect(.notNow)
+            mbtilesCrashSuspect = nil
+        } else {
+            pdfRenderGuard.resolveSuspect(.notNow)
+            pdfCrashSuspect = nil
+        }
         showNextLaunchNotice(after: 0.35)
     }
 
     /// crash recovery alert: Delete Map, through the normal (one write) delete
     @discardableResult
     func deleteCrashSuspect() -> Bool {
+        if pdfCrashSuspect == nil, let e = mbtilesCrashSuspect {
+            // the delete's own publish resolves the guard (deleted) and drops the alert
+            return deleteLibraryEntry(e.id)
+        }
         guard let id = pdfCrashSuspect?.entryID else { return false }
         guard deleteLibraryEntry(id) else { return false }
         pdfRenderGuard.resolveSuspect(.deleted)
@@ -955,13 +1220,18 @@ final class MapViewModel: ObservableObject {
 
     private func publishMapSource(_ source: MapSource, reframe: Bool = true) {
         NSLog("[MapVM] map source changed -> kind=\(source.kind)")
+        // M2: whatever goes up now is newer than a pack still opening
+        pendingPackOpen = nil
         let previousSource = mapSource
         mapSource = source
         if let online = source as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
         if !(source is PDFMapSource) { pdfRuntime.reset() }
         if previousSource !== source {
+            // replaced before its first draw settled: the guard clears here too
             (previousSource as? OfflineTileMapSource)?.closeForDeletion()
         }
+        // M1: the no read clock of a guarded pack starts once it's on screen
+        (source as? OfflineTileMapSource)?.firstDraw?.start()
         if reframe { frameCamera(for: source, userLocation: lastUserCoordinate) }
     }
 

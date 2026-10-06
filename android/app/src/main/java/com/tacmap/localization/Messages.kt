@@ -916,6 +916,10 @@ object Messages {
         L10n.message("id.sync_legacy_membership_help", "Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.")
     fun syncLegacyMembershipHelpMessage(): LocalizedMessage =
         LocalizedMessage("id.sync_legacy_membership_help", "Authenticated online membership is unavailable in legacy v2 rooms. Upgrade every device to a v3 room for relay-reported signed sessions.", listOf())
+    fun syncLegacyRoomMixedVersions(): String =
+        L10n.message("id.sync_legacy_room_mixed_versions", "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.")
+    fun syncLegacyRoomMixedVersionsMessage(): LocalizedMessage =
+        LocalizedMessage("id.sync_legacy_room_mixed_versions", "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.", listOf())
     fun syncLivenessCaveat(): String =
         L10n.message("id.sync_liveness_caveat", "Identity and session signatures are verified, but connection liveness is relay-attested; it is not cryptographic proof that a peer is currently online and remains subject to the replay/rollback caveat above.")
     fun syncLivenessCaveatMessage(): LocalizedMessage =

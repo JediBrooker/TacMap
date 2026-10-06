@@ -9,7 +9,9 @@ import com.tacmap.localization.L10n
 import android.content.ActivityNotFoundException
 import android.Manifest
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.KeyguardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -112,6 +114,20 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (MapScreenLaunchGuard.shouldYield(
+                restoring = savedInstanceState != null,
+                isTaskRoot = isTaskRoot,
+                action = intent?.action,
+                categories = intent?.categories,
+                taskRootIsMapScreen = ::taskRootIsMapScreen,
+            )
+        ) {
+            // launcher / notification tap stacked us on the running map. finish before any of
+            // the per launch stuff (VM, import sweep, key unlock, grant cleanup) touches its state.
+            // finish() in onCreate goes straight to onDestroy, no start/resume/pause
+            finish()
+            return
+        }
         lifecycle.addObserver(trackRecordingResumeObserver)
         pendingImportCoordinator = PendingDocumentImportCoordinator(
             restorePendingDocumentImport(savedInstanceState)
@@ -334,6 +350,19 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         }
     }
 
+    /** root of this task is a MainActivity already, whatever intent that one came in with */
+    private fun taskRootIsMapScreen(): Boolean = runCatching {
+        val mine = ComponentName(this, MainActivity::class.java)
+        getSystemService(ActivityManager::class.java).appTasks
+            .map { it.taskInfo }
+            .firstOrNull { info ->
+                @Suppress("DEPRECATION")
+                val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.taskId else info.id
+                id == taskId
+            }
+            ?.baseActivity == mine
+    }.getOrDefault(false)
+
     override fun onStart() {
         super.onStart()
         // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
@@ -370,6 +399,7 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         // PDF tiles only render for a visible map, a bake keeps going (WP2 contract E)
         com.tacmap.map.render.pdf.PdfRenderExecutor.foreground = false
         (application as TacticalApp).pdfRenderGuard.disarmBackground()
+        (application as TacticalApp).mbtilesOpenGuard.disarmBackground()
         if (shareSheetLock.onStop()) {
             lockForBackground()
             // compose pauses recomposition at ON_STOP, so flipping missionKeyReady cant tear

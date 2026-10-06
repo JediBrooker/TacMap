@@ -805,6 +805,80 @@ class SyncManagerScenarioTest {
         }
     }
 
+    /**
+     * Shipped 2.x Android v2 sync (fc6261c SyncManager.kt), only the bits that decide what
+     * it sees. The record id has to be lowercase canonical (STRICT_SYNC_UUID) and the embedded
+     * id has to equal it exactly, anything else is dropped before its clock moves. versions
+     * are keyed by that id and a put or del needs a strictly higher v. It sends lowercase.
+     */
+    private class Shipped2xAndroid(private val keys: SyncCrypto.RoomKeys) {
+        val clientId = "a2a2a2a2-0000-4000-8000-0000000000a2"
+        private val seed = SyncSigning.generateSeed()
+        private val pub = SyncSigning.publicKey(seed)
+        private val strict = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        private var clock = 0L
+        private val versions = HashMap<String, Long>()
+        private val lastContent = HashMap<String, String>()
+        /** What the 2.x Android user has, id to GeoJSON. */
+        val model = LinkedHashMap<String, String>()
+
+        fun diff(): List<JSONObject> {
+            val out = ArrayList<JSONObject>()
+            for ((id, content) in model) {
+                if (lastContent[id] == content) continue
+                clock += 1
+                versions[id] = clock
+                out += seal(id, clock, "waypoint", content)
+                lastContent[id] = content
+            }
+            for (id in lastContent.keys.filter { it !in model }) {
+                clock += 1
+                versions[id] = clock
+                out += seal(id, clock, "del", "")
+                lastContent.remove(id)
+            }
+            return out
+        }
+
+        fun receive(frame: JSONObject) {
+            val id = frame.getString("id")
+            val v = frame.getLong("v")
+            if (!strict.matches(id) || (versions[id] ?: Long.MIN_VALUE) >= v) return
+            val del = frame.optString("t") == "del" || frame.optBoolean("deleted")
+            val kind = if (del) "del" else frame.getString("kind")
+            val plain = SyncCrypto.open(keys.roomKey, SyncCrypto.decodeBase64(frame.getString("ct")), SyncCrypto.aad(id, v, kind))
+                ?: return
+            val inner = JSONObject(String(plain, Charsets.UTF_8))
+            val content = if (del) "" else inner.getString("c")
+            val signed = SyncSigning.objectMessage(id, v, kind, frame.getString("by"), content)
+            if (!SyncSigning.verify(inner.getString("pub"), signed, inner.getString("sig"))) return
+            if (!del) {
+                val embedded = GeoJsonImporter.parse(
+                    content, existingLayers = emptyList(), fallbackLayerId = DrawingDocument.DEFAULT_LAYER_ID, density = 1f,
+                ).waypoints.singleOrNull()?.id
+                if (embedded != id) return
+            }
+            clock = maxOf(clock, v)
+            versions[id] = v
+            if (del) {
+                model.remove(id)
+                lastContent.remove(id)
+            } else {
+                model[id] = content
+                lastContent[id] = content
+            }
+        }
+
+        private fun seal(id: String, v: Long, kind: String, content: String): JSONObject {
+            val sig = SyncSigning.sign(seed, SyncSigning.objectMessage(id, v, kind, clientId, content))
+            val inner = JSONObject().put("pub", pub).put("sig", sig)
+            if (kind != "del") inner.put("c", content)
+            val ct = SyncCrypto.encodeBase64(SyncCrypto.seal(keys.roomKey, inner.toString().toByteArray(), SyncCrypto.aad(id, v, kind)))
+            return JSONObject().put("t", if (kind == "del") "del" else "put").put("id", id).put("v", v)
+                .put("by", clientId).apply { if (kind != "del") put("kind", kind) }.put("ct", ct)
+        }
+    }
+
     /** The v2 relay: newest (v, by) per raw id, case sensitive like obj:<id>. */
     private class V2Relay {
         val records = LinkedHashMap<String, JSONObject>()
@@ -919,11 +993,12 @@ class SyncManagerScenarioTest {
         assertEquals(placed(moved), placed(iosWaypoint(late.model[UUID.fromString(wp.id)])))
         assertTrue(late.diff().isEmpty())
 
-        // android's own objects stay lowercase, shipped 2.x android drops uppercase
+        // android's own objects stay lowercase, shipped 2.x android drops uppercase. the first
+        // send pins that (3.0.2) so a later uppercase edit can't flip it
         val own = h.addWaypoint("carol's own")
         h.advance(500)
         assertEquals(own.id, h.socket.sentOfType("put").last().getString("id"))
-        assertNull(h.manager.rememberedV2IdForTests(own.id))
+        assertEquals(own.id, h.manager.rememberedV2IdForTests(own.id))
     }
 
     @Test
@@ -1044,21 +1119,42 @@ class SyncManagerScenarioTest {
     @Test
     fun v2RememberVectorsLearnThroughTheRealManager() {
         val rows = v2Vectors().getJSONArray("remember")
-        assertEquals(7, rows.length())
+        assertEquals(12, rows.length())
         val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
         val by = "c0ffee00-0000-4000-8000-000000000001"
+        // every row is about this one object, own events are this device's sends for it
+        val stateKey = "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
         for (i in 0 until rows.length()) {
             val row = rows.getJSONObject(i)
             val harness = SyncHarness()
             try {
                 v2Connected(harness = harness)
                 val events = row.getJSONArray("events")
-                var stateKey: String? = null
+                fun local() = harness.waypointStore.committedWaypoints.value.singleOrNull { it.id == stateKey }
+                fun ownPut() {
+                    val current = local()
+                    if (current == null) assertTrue(harness.waypointStore.add(waypoint("own", stateKey)))
+                    else assertTrue(harness.waypointStore.update(current.copy(name = current.name + "+")))
+                    harness.advance(500)
+                }
                 for (j in 0 until events.length()) {
                     val event = events.getJSONObject(j)
+                    when (event.optString("own")) {
+                        "put" -> { ownPut(); continue }
+                        "del" -> {
+                            // a del needs something we already sent, and that first send is an own
+                            // put, which pins the same lowercase id
+                            if (local() == null) ownPut()
+                            val dels = harness.socket.sentOfType("del").size
+                            assertTrue(harness.waypointStore.remove(local()!!))
+                            harness.advance(500)
+                            assertEquals(row.getString("id"), dels + 1, harness.socket.sentOfType("del").size)
+                            continue
+                        }
+                    }
                     val raw = event.getString("raw")
                     val key = raw.lowercase().let { if (it.length == 32) "${it.substring(0, 8)}-${it.substring(8, 12)}-${it.substring(12, 16)}-${it.substring(16, 20)}-${it.substring(20)}" else it }
-                    stateKey = key
+                    assertEquals(stateKey, key)
                     val v = 10L + j
                     val frame = if (event.getString("t") == "del") {
                         v2Del(raw, v, by, keys)
@@ -1070,10 +1166,132 @@ class SyncManagerScenarioTest {
                     harness.deliver(frame)
                 }
                 val expected = row.opt("expectRemembered").takeUnless { it == JSONObject.NULL } as String?
-                assertEquals(row.getString("id"), expected, harness.manager.rememberedV2IdForTests(stateKey!!))
+                assertEquals(row.getString("id"), expected, harness.manager.rememberedV2IdForTests(stateKey))
+                // and the next local edit really goes out under it
+                ownPut()
+                assertEquals(row.getString("id"), expected ?: stateKey, harness.socket.sentOfType("put").last().getString("id"))
             } finally {
                 harness.close()
             }
+        }
+    }
+
+    // ---- interop-v2-2xandroid-regression: what we sent or accepted first sticks ----
+
+    private fun Shipped2xAndroid.name(id: String): String? = iosWaypoint(model[id])?.name
+
+    /** Our frame goes to the relay, gets acked and reaches the 2.x Android member. */
+    private fun relayOut(frame: JSONObject, relay: V2Relay, ann: Shipped2xAndroid, harness: SyncHarness) {
+        relay.store(frame)
+        harness.deliver(v2Ack(frame))
+        ann.receive(frame)
+    }
+
+    @Test
+    fun v2ObjectsWeSentOrMetLowercaseStayVisibleTo2xAndroidAfterAnUppercaseIosEdit() {
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val ann = Shipped2xAndroid(keys)
+        val relay = V2Relay()
+        val ian = "1A1A1A1A-0000-4000-8000-0000000001A1" // 3.0.1 iOS, uppercase frames like 2.x iOS
+        val dir = java.nio.file.Files.createTempDirectory("v2-own-pins").toFile()
+        val first = SyncHarness(dir = dir)
+        val (mine, annsId) = try {
+            v2Connected(harness = first)
+            // carol (us) places W, ann on 2.x android places A
+            val mine = first.addWaypoint("carol")
+            first.advance(500)
+            relayOut(first.socket.sentOfType("put").single(), relay, ann, first)
+            assertEquals("carol", ann.name(mine.id))
+            val annsWaypoint = waypoint("ann")
+            val annsId = annsWaypoint.id
+            ann.model[annsId] = FakeV3Peer.waypointContent(annsWaypoint)
+            ann.diff().forEach { relay.store(it); first.deliver(it) }
+            assertEquals("ann", first.waypointStore.committedWaypoints.value.single { it.id == annsId }.name)
+
+            // ian on 3.0.1 iOS edits both, uppercase. we apply it, 2.x android drops it
+            for (id in listOf(mine.id, annsId)) {
+                val edit = waypoint("ian", id)
+                val frame = v2Record(id.uppercase(), 20, ian, FakeV3Peer.waypointContent(edit), keys).put("t", "put")
+                relay.store(frame)
+                first.deliver(frame)
+                ann.receive(frame)
+                assertEquals("ian", first.waypointStore.committedWaypoints.value.single { it.id == id }.name)
+                assertEquals("pin stays what we used or met first", id, first.manager.rememberedV2IdForTests(id))
+            }
+            assertEquals("carol", ann.name(mine.id))
+            assertEquals("ann", ann.name(annsId))
+
+            // carol edits both: lowercase, so ann sees them (3.0.1 sent them uppercase)
+            for (id in listOf(mine.id, annsId)) {
+                val current = first.waypointStore.committedWaypoints.value.single { it.id == id }
+                assertTrue(first.waypointStore.update(current.copy(name = "carol again")))
+                first.advance(500)
+                val edit = first.socket.sentOfType("put").last()
+                assertEquals(id, edit.getString("id"))
+                relayOut(edit, relay, ann, first)
+                assertEquals("carol again", ann.name(id))
+            }
+            // and the two converge, nothing echoed back
+            assertTrue(ann.diff().isEmpty())
+            mine to annsId
+        } finally {
+            first.close(deleteFiles = false)
+        }
+
+        // restart: the relay serves ian's uppercase puts before our lowercase ones (it sorts
+        // by raw id), so only the pins on disk keep us lowercase
+        val second = SyncHarness(dir = dir)
+        try {
+            val items = relay.records.entries.sortedBy { it.key }.map { snapshotItem(it.value) }
+            assertEquals("3F2A sorts before 3f2a", mine.id.uppercase(), items.map { it.getString("id") }
+                .first { it.equals(mine.id, ignoreCase = true) })
+            v2Connected(items, second)
+            for (id in listOf(mine.id, annsId)) {
+                assertEquals(id, second.manager.rememberedV2IdForTests(id))
+                val current = second.waypointStore.committedWaypoints.value.single { it.id == id }
+                assertTrue(second.waypointStore.update(current.copy(name = "after restart")))
+                second.advance(500)
+                val edit = second.socket.sentOfType("put").last()
+                assertEquals(id, edit.getString("id"))
+                ann.receive(edit)
+                assertEquals("after restart", ann.name(id))
+            }
+        } finally {
+            second.close()
+        }
+    }
+
+    @Test
+    fun v2OwnPinIsWrittenByTheDiffPassBeforeAnythingComesBack() {
+        // the process dies right after our first put, before any ack or inbound frame could
+        // trigger the batch write. the pin still has to be on disk
+        val keys = SyncHarness.cachedV2(SyncHarness.CODE_V2.removePrefix("2:"))
+        val dir = java.nio.file.Files.createTempDirectory("v2-own-pin-write").toFile()
+        val first = SyncHarness(dir = dir)
+        val (mine, put) = try {
+            v2Connected(harness = first)
+            val mine = first.addWaypoint("carol")
+            first.advance(500)
+            val put = first.socket.sentOfType("put").single()
+            assertEquals(mine.id, put.getString("id"))
+            mine to put
+        } finally {
+            first.close(deleteFiles = false)
+        }
+
+        // meanwhile a 3.0.1 iOS teammate moved it, uppercase, and the relay sorts that first
+        val ios = v2Record(mine.id.uppercase(), put.getLong("v") + 1, "1A1A1A1A-0000-4000-8000-0000000001A1",
+            FakeV3Peer.waypointContent(mine.copy(name = "ian")), keys)
+        val second = SyncHarness(dir = dir)
+        try {
+            v2Connected(listOf(ios, snapshotItem(put)), second)
+            assertEquals("ian", second.waypointStore.committedWaypoints.value.single().name)
+            assertEquals(mine.id, second.manager.rememberedV2IdForTests(mine.id))
+            assertTrue(second.waypointStore.update(second.waypointStore.committedWaypoints.value.single().copy(name = "carol")))
+            second.advance(500)
+            assertEquals(mine.id, second.socket.sentOfType("put").last().getString("id"))
+        } finally {
+            second.close()
         }
     }
 }
