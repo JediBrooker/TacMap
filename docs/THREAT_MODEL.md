@@ -724,10 +724,12 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
   library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
   hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
-  In a salvage those links are made before the write, so if the app is killed part way through, the retry can list
-  the same map twice, and a kill between the write and the unlink leaves the old name behind as a second, unlisted
-  link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
-  leftovers). Nothing is lost in either case.
+  In a salvage those links are made before the write, so if the app is killed part way through, the links it made
+  are still there on the retry. The retry lists each file once, by its file identity, and unlinks those leftover
+  names after its write; only a leftover that had to be copied rather than linked is listed a second time. A kill
+  between the write and the unlink leaves the old name behind as a second, unlisted link to the same bytes that
+  Delete Map does not remove (after a plain migration the next reconcile removes such leftovers). Nothing is lost
+  in either case.
   On iOS, old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather
   than being dropped; Android can't rebuild them either and brings that map back uncalibrated. A library that was
   never written, with no old stores left to migrate, while map files sit in app storage is salvaged the same way

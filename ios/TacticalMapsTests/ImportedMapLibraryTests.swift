@@ -696,6 +696,57 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         XCTAssertEqual(ImportedMapLibrary.fileStatus(try XCTUnwrap(lib.entries.first)), .ok)
     }
 
+    /// A2 (3.0.3): a salvage killed after adopt linked a 2.x file but before the
+    /// write. The redo adopted that map-<uuid> link as "Recovered map 1" next to
+    /// the 2.x name it relinked, same bytes listed twice, both left on disk
+    func testSalvageKilledAfterLinkingListsTheAdoptedMapOnce() throws {
+        let old = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "Keep.pdf")
+        let fileBytes = try Data(contentsOf: old)
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
+        PDFSessionStore.defaultsProvider().set(Data("unreadable legacy session".utf8), forKey: "active_pdf_v1")
+        _ = try XCTUnwrap(ImportedMapLibraryMigration.linkOpaque(old, ext: "pdf"))
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try loadedLibrary()
+        XCTAssertEqual(lib.entries.map(\.displayName), ["Keep"], "listed once, not again as a recovered map")
+        let e = try XCTUnwrap(lib.entries.first)
+        let url = try XCTUnwrap(ImportedMapLibrary.fileURL(e))
+        XCTAssertEqual(try Data(contentsOf: url), fileBytes)
+        XCTAssertEqual(try importedNames(), [url.lastPathComponent], "the leftover link and the 2.x name both went after the write")
+    }
+
+    /// same window for a map the salvage converts (v1 points it can't rebuild)
+    func testSalvageKilledAfterConvertingListsTheConvertedMapOnce() throws {
+        let old = try legacyCopy("tacmap_grid_sf_plain.pdf", as: "Hut map.pdf")
+        try storeV1Session(file: old, calibration: try v1Calibration())
+        XCTAssertTrue(ActiveMapSelectionStore.save(OnlineRasterBasemapSource(.osmTopo)))
+        PDFSessionStore.legacyPageTransform = { _ in nil }
+        _ = try XCTUnwrap(ImportedMapLibraryMigration.linkOpaque(old, ext: "pdf"))
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        let lib = try loadedLibrary()
+        XCTAssertEqual(lib.entries.map(\.displayName), ["Hut map"])
+        let url = try XCTUnwrap(ImportedMapLibrary.fileURL(try XCTUnwrap(lib.entries.first)))
+        XCTAssertEqual(try importedNames(), [url.lastPathComponent])
+    }
+
+    /// two different files are never folded together, and a plain copy (no
+    /// shared inode) is still adopted on its own
+    func testOneNamePerFileOnlyFoldsHardLinks() throws {
+        let a = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "A.pdf")
+        let b = try legacyCopy("tacmap_grid_sf_iso.pdf", as: "B.pdf")
+        let linkA = try XCTUnwrap(ImportedMapLibraryMigration.linkOpaque(a, ext: "pdf"))
+        let copyB = root.appendingPathComponent("ImportedMaps/map-\(UUID().uuidString.lowercased()).pdf")
+        try FileManager.default.copyItem(at: b, to: copyB)
+        let split = ImportedMapLibraryRecovery.oneNamePerFile([linkA, a, b, copyB], taken: [])
+        XCTAssertEqual(split.kept, [a, b, copyB], "the 2.x name wins over its opaque link")
+        XCTAssertEqual(split.extra, [linkA])
+        let taken = try XCTUnwrap(ImportedMapLibraryRecovery.fileIdentity(b))
+        let again = ImportedMapLibraryRecovery.oneNamePerFile([linkA, a, b, copyB], taken: [taken])
+        XCTAssertEqual(again.kept, [a, copyB])
+        XCTAssertEqual(again.extra, [linkA, b])
+    }
+
     // MARK: - 3.0.1 salvage (s13.1 L3-L12): an uncertain legacy read ends, it never blocks forever
 
     /// the bytes of every map file in ImportedMaps, whatever it's called now

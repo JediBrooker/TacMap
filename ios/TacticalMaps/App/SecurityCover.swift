@@ -58,6 +58,18 @@ final class SecurityCoverWindows {
     /// whoever was key before the cover went up gets it back on unlock
     private var previousKey: [WeakWindow] = []
     private var subscriptions: Set<AnyCancellable> = []
+    /// A5: what a cover that only ever was .privacy took away (the text field
+    /// we resigned, VoiceOver's focus). Handed back once it's down, so pulling
+    /// down Control Center doesn't cost the keyboard. Never while covered: the
+    /// keyboard still goes before the switcher snapshot
+    private var takenEditors: [WeakObject] = []
+    private var takenFocus: WeakObject?
+    private var privacyOnly = false
+    /// test seams, VoiceOver isn't running under XCTest
+    var voiceOverFocus: () -> Any? = {
+        UIAccessibility.isVoiceOverRunning ? UIAccessibility.focusedElement(using: .notificationVoiceOver) : nil
+    }
+    var postAccessibility: (UIAccessibility.Notification, Any?) -> Void = { UIAccessibility.post(notification: $0, argument: $1) }
 
     nonisolated init() {}
 
@@ -97,6 +109,13 @@ final class SecurityCoverWindows {
             tearDown()
             return
         }
+        if covers.isEmpty {
+            privacyOnly = true
+            takenFocus = voiceOverFocus().map { WeakObject($0 as AnyObject) }
+        }
+        // a lock or the mission data screen on top means the user did more than
+        // glance away, they get a clean slate after it
+        if cover != .privacy { privacyOnly = false }
         watchWindows()
         for scene in scenes { raise(in: scene) }
     }
@@ -113,6 +132,7 @@ final class SecurityCoverWindows {
             // drop first responders underneath, otherwise the keyboard keeps
             // typing into a sheet behind the cover
             for window in scene.windows where Self.isUnderneath(window) {
+                if let editor = Self.firstResponder(in: window) { takenEditors.append(WeakObject(editor)) }
                 window.endEditing(true)
             }
             let window = SecurityCoverWindow(windowScene: scene)
@@ -126,7 +146,7 @@ final class SecurityCoverWindows {
             window.rootViewController = host
             covers.append(window)
             window.makeKeyAndVisible()
-            UIAccessibility.post(notification: .screenChanged, argument: host.view)
+            postAccessibility(.screenChanged, host.view)
         }
         mute(scene)
     }
@@ -154,10 +174,39 @@ final class SecurityCoverWindows {
                 ?? scene?.windows.first { Self.isUnderneath($0) && !$0.isHidden && $0.windowLevel == .normal }
             back?.makeKey()
         }
-        // VoiceOver was left on the cover that just went away
-        if !covers.isEmpty { UIAccessibility.post(notification: .screenChanged, argument: nil) }
+        var focus: Any?
+        if privacyOnly {
+            for case let editor as UIView in takenEditors.compactMap(\.value) where Self.isShowing(editor) {
+                editor.becomeFirstResponder()
+            }
+            if let view = takenFocus?.value as? UIView {
+                if Self.isShowing(view) { focus = view }
+            } else {
+                focus = takenFocus?.value
+            }
+        }
+        // VoiceOver was left on the cover that just went away. back where it was
+        // after a privacy glance, else the screen's first element
+        if !covers.isEmpty { postAccessibility(.screenChanged, focus) }
         covers.removeAll()
         previousKey.removeAll()
+        takenEditors.removeAll()
+        takenFocus = nil
+        privacyOnly = false
+    }
+
+    private static func firstResponder(in view: UIView) -> UIView? {
+        if view.isFirstResponder { return view }
+        for sub in view.subviews {
+            if let found = firstResponder(in: sub) { return found }
+        }
+        return nil
+    }
+
+    /// still on screen in an app window, not in a dismissed sheet
+    private static func isShowing(_ view: UIView) -> Bool {
+        guard let window = view.window, !window.isHidden, isUnderneath(window) else { return false }
+        return true
     }
 
     /// a late alert, a new window or a text field grabbing focus while covered
@@ -190,6 +239,11 @@ final class SecurityCoverWindows {
 private final class WeakWindow {
     weak var value: UIWindow?
     init(_ value: UIWindow) { self.value = value }
+}
+
+private final class WeakObject {
+    weak var value: AnyObject?
+    init(_ value: AnyObject) { self.value = value }
 }
 
 private final class SecurityCoverModel: ObservableObject {
