@@ -448,9 +448,15 @@ final class MapViewModel: ObservableObject {
         guard pendingPackOpen?.ticket == ticket, libraryStatus == .loaded,
               let e = library?.entry(asked.id), AdmittedPackKey(e) == AdmittedPackKey(asked) else {
             // still the newest ask but the library moved: nothing's coming for it now
-            if pendingPackOpen?.ticket == ticket { pendingPackOpen = nil }
+            let wasNewest = pendingPackOpen?.ticket == ticket
+            if wasNewest { pendingPackOpen = nil }
             src?.closeForDeletion()
             if armed { guardStore.complete(token: token) }
+            // DL-3: if this was a tap over a restore's placeholder (say the tapped
+            // entry got deleted meanwhile) the restore's result is already gone,
+            // so put something real up. Locked library = leave it, the unlock's
+            // restore reopens it
+            if wasNewest, libraryStatus == .loaded { replaceOrphanedPlaceholder() }
             return
         }
         pendingPackOpen = nil
@@ -488,7 +494,8 @@ final class MapViewModel: ObservableObject {
     }
 
     /// an activation took over from a restore that was still opening, then
-    /// didnt land (pack refused, or its write failed). The restore's result got
+    /// didnt land (pack refused, its write failed, or its entry went or changed
+    /// while it opened). The restore's result got
     /// dropped, so nothing is coming for the blank placeholder: open the restored
     /// pack again, online in memory when that can't happen or it's the very pack
     /// that just got refused. Never leave the blank up with nothing pending
