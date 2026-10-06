@@ -46,6 +46,8 @@ struct LibraryDependencies {
     var rebuild: (Set<URL>) -> LibraryState = { ImportedMapLibraryRecovery.rebuild(inFlight: $0) }
     /// S2: the rebuild's one write, never on top of unread bytes
     var writeRebuilt: (LibraryState) throws -> Void = ImportedMapLibrary.writeRebuilt
+    /// C2: picks the corrupt text, a kept copy vs a library that's just gone
+    var libraryBytesKept: () -> Bool = ImportedMapLibrary.bytesKept
     /// where the slow rebuild runs, tests make it synchronous
     var background: (@escaping () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) }
     var foreground: (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }
@@ -1028,8 +1030,12 @@ final class MapViewModel: ObservableObject {
         }
     }
 
+    /// C2 (s16.4): only promise a recovery copy when there is one. Retry is the
+    /// same S2 rebuild either way
     private func reportCorruptIssue() {
-        reportIssue(Messages.mapLibraryCorruptMessageMessage()) { [weak self] in
+        let text = libraryDependencies.libraryBytesKept()
+            ? Messages.mapLibraryCorruptMessageMessage() : Messages.mapLibraryMissingMessageMessage()
+        reportIssue(text) { [weak self] in
             self?.rebuildCorruptLibrary()
             return true
         }
