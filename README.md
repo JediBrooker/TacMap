@@ -255,10 +255,21 @@ version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
 
+### 3.0.4 (build 77), October 2026
+- Sturdier MBTiles reading: every index key is checked too, so more packs built to use too much memory are refused; a few valid packs that were refused over a table or index name now open.
+- A saved map library that is missing (no recovery copy) is reported as missing instead of mentioning a copy that doesn't exist.
+- Android: when the library goes missing while TacMap runs and maps from an earlier version are still there, the alert says Retry brings their names and calibrations back; choosing the saved pack in Layers while it is still loading no longer shows its notice twice.
+- iOS: leftovers from an interrupted import are cleaned up instead of bringing up the recovered-library notice; checking a large MBTiles pack takes far less memory.
+
+### 3.0.3 (build 76), October 2026 (iOS in App Review)
+- MBTiles: TacMap tells you when a pack can't be opened and keeps the map blank instead of loading an online map in its place; more packs built to use too much memory are refused.
+- Android: an MBTiles import interrupted by leaving the app carries on; the map library recovers in more cases; Unit Sync reconnects no longer delete an object a teammate has just edited.
+- iOS: App Review turned 3.0.2 down (guideline 2.3.10, the description named Android), so iOS goes from 3.0.0 to 3.0.3 and gets the 3.0.1 and 3.0.2 iOS fixes with it. New for iOS: deleting a map in Layers before it opened no longer leaves the map blank, imports and offline tiles that finish while locked are saved after unlock, maps are no longer listed twice after an interrupted library recovery, and the keyboard and VoiceOver come back after the privacy screen.
+
 ### 3.0.2 (build 75), October 2026
 - Sturdier MBTiles reading: a damaged or crafted pack can no longer make TacMap close at every launch (it is held back at the next start), and large packs open in the background.
 - Android: Google Play's Open button no longer opens a second map screen; if storage runs out while updating from 2.x, map names and calibrations are kept.
-- iOS: with mission data protected by Face ID or the passcode, work that finishes after you leave the app no longer asks for Face ID or stops Unit Sync. iOS went straight from 3.0.0 to 3.0.2, so it also got the 3.0.1 iOS fixes: App Lock and the privacy screen over open panels, sturdier PDF reading, MBTiles packs that store their tiles as a view, and Undo no longer overwriting a teammate's newer change.
+- iOS: with mission data protected by Face ID or the passcode, work that finishes after you leave the app no longer asks for Face ID or stops Unit Sync. The iOS 3.0.2 build also carried the 3.0.1 iOS fixes (it never shipped, see 3.0.3): App Lock and the privacy screen over open panels, sturdier PDF reading, MBTiles packs that store their tiles as a view, and Undo no longer overwriting a teammate's newer change.
 - Older-style Unit Sync rooms (2: codes): on Android, changes to objects you create reach teammates on TacMap 2 for Android again; on iOS, objects no longer disappear when a teammate on iPhone still uses TacMap 2; both explain mixed versions.
 
 ### 3.0.1 (build 74), October 2026 (Google Play only)

@@ -9,11 +9,55 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.0.4 (build 77)
+
+Text on `release/3.0.4` (`docs/store/localizations/*.json`), not released yet: put the release commit and dates here when it ships. Both stores get 3.0.4 changes only: the App Store notes list the iOS fixes, the Google Play notes the Android ones. iOS 3.0.3 was still in App Review when these were written, so if 3.0.4 replaces it there, its notes need the 3.0.3 list back.
+
+### 3.0.4: App Store, English (537 / 4,000)
+
+```
+TacMap 3.0.4: fixes and hardening
+
+• Sturdier MBTiles reading: more packs built to use too much memory are refused before they are opened, and checking a large pack now takes far less memory.
+• A few valid MBTiles packs that were refused by mistake now open.
+• If the saved map library is missing, TacMap now says so instead of mentioning a recovery copy that doesn't exist. No map files are deleted.
+• Leftovers from an interrupted map import are now cleaned up and no longer bring up the notice that saved map details couldn't be read.
+```
+
+### 3.0.4: Google Play, English (401 / 500)
+
+```
+TacMap 3.0.4
+• More MBTiles packs built to use too much memory are refused.
+• A few valid MBTiles packs that were refused by mistake now open.
+• If the saved map library is missing, TacMap now says so and tells you when map names and calibrations can be brought back.
+• Choosing your saved MBTiles pack in Layers while it is still loading no longer shows the same notice twice when it can't be opened.
+```
+
+### 3.0.4: App Store, German (710 / 4,000)
+
+```
+TacMap 3.0.4: Korrekturen und mehr Sicherheit
+
+• MBTiles werden robuster gelesen: Weitere Kartensätze, die so gebaut sind, dass sie zu viel Speicher belegen, werden abgelehnt, bevor sie geöffnet werden, und die Prüfung großer Kartensätze braucht jetzt viel weniger Speicher.
+• Einige gültige MBTiles-Kartensätze, die bisher irrtümlich abgelehnt wurden, öffnen sich jetzt.
+• Fehlt die gespeicherte Kartenbibliothek, sagt TacMap das jetzt, statt eine Wiederherstellungskopie zu erwähnen, die es nicht gibt. Es werden keine Kartendateien gelöscht.
+• Reste eines abgebrochenen Kartenimports werden jetzt aufgeräumt und lösen nicht mehr den Hinweis aus, dass gespeicherte Kartendetails nicht gelesen werden konnten.
+```
+
+### 3.0.4: Google Play, German (484 / 500)
+
+```
+TacMap 3.0.4
+• Weitere MBTiles-Kartensätze, die so gebaut sind, dass sie zu viel Speicher belegen, werden abgelehnt.
+• Einige irrtümlich abgelehnte MBTiles-Kartensätze öffnen sich jetzt.
+• Fehlt die gespeicherte Kartenbibliothek, sagt TacMap das jetzt und nennt, wann sich Namen und Kalibrierungen zurückholen lassen.
+• Wählst du unter „Ebenen“ deinen gespeicherten MBTiles-Kartensatz, während er noch geladen wird, kommt der Hinweis, dass er sich nicht öffnen lässt, nur noch einmal.
+```
+
 ## 3.0.3 (build 76)
 
-Text on `release/3.0.3` (`docs/store/localizations/*.json`), not released yet: put the release commit and dates here when it ships. Both stores get 3.0.3 changes only: the App Store notes list the iOS fixes (iOS 3.0.2 was still in App Review when these were written, so if 3.0.3 replaces it there, its notes need the 3.0.2 list back), the Google Play notes the Android ones.
-
-iOS: App Review rejected 3.0.2 (75) on 2026-10-06 under guideline 2.3.10 because the App Store description mentioned Android. iOS never shipped 3.0.1 or 3.0.2, so the App Store notes below cover every iOS change since 3.0.0, and the App Store description no longer names other platforms (the Play description gets its cross-platform line back through `descriptionReplacements`).
+Text at `1960785f` (`docs/store/localizations/*.json`). Google Play released it on 2026-10-07 (the Play notes are 3.0.3 only). The App Store build was submitted for review the same day. iOS: App Review rejected 3.0.2 (75) on 2026-10-06 under guideline 2.3.10 because the App Store description mentioned Android, so iOS never shipped 3.0.1 or 3.0.2: the App Store notes below cover every iOS change since 3.0.0, and the App Store description no longer names other platforms (the Play description gets its cross-platform line back through `descriptionReplacements`).
 
 ### 3.0.3: App Store, English (1,846 / 4,000)
 
