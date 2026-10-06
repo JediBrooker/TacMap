@@ -47,9 +47,13 @@ class MBTilesStore private constructor(
     init {
         // s14.1: nothing names tiles or metadata before the connection's hardened and the schema's checked
         val version = harden(db)
-        // MBTiles 1.3 lets either one be a view (node-mbtiles/TileMill/MapTiler dedup packs)
+        // MBTiles 1.3 lets either one be a view (node-mbtiles/TileMill/MapTiler dedup packs).
+        // SEC-M1-SHADOW: NOCASE like sqlite resolves FROM tiles, a case-exact lookup checked a dormant
+        // 'tiles' row while every read ran a live 'TILES' view. two rows in any case fail closed
         val types = listOf("metadata", "tiles").map { relation ->
-            val (type, sql) = query("SELECT type, sql FROM sqlite_master WHERE name=?", arrayOf(relation), null) { c ->
+            val (type, sql) = query(
+                "SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", arrayOf(relation), null,
+            ) { c ->
                 require(c.moveToFirst())
                 val found = c.getString(0) to (if (c.isNull(1)) null else c.getString(1))
                 require(found.first in RELATION_TYPES && !c.moveToNext())
@@ -72,13 +76,14 @@ class MBTilesStore private constructor(
         }
     }
 
-    /** exactly one ordinary table by that name (any case): not a view, not virtual, no generated column */
+    /** exactly one ordinary table by that name (any case): not a view, not virtual, no generated column, and its
+     * sql declares that very name with no IF NOT EXISTS, so it's the table sqlite loaded (SEC-M1-SHADOW) */
     private fun requireBaseTable(name: String, version: SqliteVersion) {
         query("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", arrayOf(name), null) { c ->
             require(c.moveToFirst())
             val type = c.getString(0)
             val sql = if (c.isNull(1)) null else c.getString(1)
-            require(!c.moveToNext() && type == "table" && MBTilesViewShape.isOrdinaryTableSql(sql))
+            require(!c.moveToNext() && type == "table" && MBTilesViewShape.tableDeclares(sql, name))
         }
         // older sqlite can't have generated columns, it wouldn't even parse the schema
         if (version >= GENERATED_COLUMNS_MIN_SQLITE) {

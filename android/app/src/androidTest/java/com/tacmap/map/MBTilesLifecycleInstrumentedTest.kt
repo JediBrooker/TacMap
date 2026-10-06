@@ -380,8 +380,11 @@ class MBTilesLifecycleInstrumentedTest {
         val fixture = admissionFixture()
         val cases = fixture["relationCases"]!!.jsonArray.map { it.jsonObject }
         // a generator change that drops rows shouldn't pass by testing less
-        assertTrue("only ${cases.size} relation cases", cases.size >= 34)
+        assertTrue("only ${cases.size} relation cases", cases.size >= 40)
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "nodeMbtilesDedup" })
+        // SEC-M1-SHADOW: case variant and name lie rows, they come as packBase64 (sql[] needs writable_schema)
+        for (id in listOf("tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant", "tableRowKeepsIfNotExists",
+                "baseRowNameLie")) assertTrue(id, cases.any { it["id"]!!.jsonPrimitive.content == id })
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "tilesViewEndless" })
         assertTrue(cases.any { it["id"]!!.jsonPrimitive.content == "metadataViewOversizedName" })
         val version = sqliteVersion()
@@ -391,8 +394,14 @@ class MBTilesLifecycleInstrumentedTest {
             val needs = case["minSqliteVersion"]?.jsonPrimitive?.content?.let { com.tacmap.calibration.SqliteVersion.parse(it)!! }
             if (needs != null && version < needs) return@forEach
             val file = File(context.cacheDir, "${System.nanoTime()}-relation-$id.mbtiles")
-            SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
-                case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+            val packed = case["packBase64"]?.jsonPrimitive?.content
+            if (packed != null) {
+                // the exact file the reference judged, iOS can't replay writable_schema sql
+                file.writeBytes(java.util.Base64.getDecoder().decode(packed))
+            } else {
+                SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+                    case["sql"]!!.jsonArray.forEach { db.execSQL(it.jsonPrimitive.content) }
+                }
             }
             val testBudget = case["testBudgetMs"]?.jsonPrimitive?.long
             val started = System.nanoTime()

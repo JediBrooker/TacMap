@@ -3,6 +3,7 @@ package com.tacmap.calibration
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -68,13 +69,23 @@ class MBTilesViewShapeTest {
     }
 
     @Test
-    fun onlyAnOrdinaryCreateTableIsABaseTable() {
-        assertTrue(MBTilesViewShape.isOrdinaryTableSql("CREATE TABLE tiles (zoom_level integer)"))
-        assertTrue(MBTilesViewShape.isOrdinaryTableSql(" \n create\ttable \"map\"(a)"))
-        assertFalse(MBTilesViewShape.isOrdinaryTableSql("CREATE VIRTUAL TABLE tiles USING fts4(a)"))
-        assertFalse(MBTilesViewShape.isOrdinaryTableSql("CREATE VIEW tiles AS SELECT * FROM t"))
-        assertFalse(MBTilesViewShape.isOrdinaryTableSql("CREATE"))
-        assertFalse(MBTilesViewShape.isOrdinaryTableSql(null))
+    fun everyBaseTableShapeCaseGetsTheSharedVerdict() {
+        // SEC-M1-SHADOW: a base table row has to declare its own name, the generator's table_declares()
+        val cases = admission["baseTableShape"]!!.jsonObject["cases"]!!.jsonArray.map { it.jsonObject }
+        assertTrue("only ${cases.size} cases", cases.size >= 35)
+        val verdicts = HashMap<Boolean, Int>()
+        for (case in cases) {
+            val id = case["id"]!!.jsonPrimitive.content
+            val sql = case["sql"]!!.jsonPrimitive.contentOrNull
+            val want = case["expect"]!!.jsonObject["accepted"]!!.jsonPrimitive.boolean
+            assertEquals(id, want, MBTilesViewShape.tableDeclares(sql, case["name"]!!.jsonPrimitive.content))
+            verdicts[want] = (verdicts[want] ?: 0) + 1
+        }
+        // both verdicts really show up, IF NOT EXISTS and the name lie among the refusals
+        assertTrue(verdicts.keys == setOf(true, false))
+        assertFalse(MBTilesViewShape.tableDeclares("CREATE TABLE IF NOT EXISTS tiles (a)", "tiles"))
+        assertFalse(MBTilesViewShape.tableDeclares("CREATE TABLE decoy (a)", "t"))
+        assertFalse(MBTilesViewShape.tableDeclares(null, "tiles"))
     }
 
     @Test

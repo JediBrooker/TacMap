@@ -209,12 +209,15 @@ final class MBTilesStore: @unchecked Sendable {
 
     /// Exactly one sqlite_master row by that name and it has to be a table
     /// or a view. Index, trigger, missing or anything odd fails closed.
+    /// SEC-M1-SHADOW: NOCASE, cos thats how sqlite resolves FROM tiles. a
+    /// case-exact lookup checked a dormant 'tiles' row while reads ran a live
+    /// 'TILES' view, so a second row in any case fails closed now
     private func relationType(_ name: String) -> (relation: Relation, sql: String?)? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT type, sql FROM sqlite_master WHERE name=? LIMIT 2",
+            "SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
             -1, &stmt, nil) == SQLITE_OK else { return nil }
         sqlite3_bind_text(stmt, 1, name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         guard sqlite3_step(stmt) == SQLITE_ROW,
@@ -234,7 +237,9 @@ final class MBTilesStore: @unchecked Sendable {
 
     /// a table a read touches: one sqlite_master row (NOCASE, like SQLite
     /// resolves it), a real table not CREATE VIRTUAL TABLE (module code on
-    /// every read), and no generated column (an expression on every read)
+    /// every read), and no generated column (an expression on every read).
+    /// its sql has to declare that very name too, no IF NOT EXISTS, so the
+    /// row we checked is the table sqlite loaded (SEC-M1-SHADOW)
     private func isOrdinaryTable(_ name: String) -> Bool {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
@@ -248,7 +253,7 @@ final class MBTilesStore: @unchecked Sendable {
               String(cString: typePointer) == "table",
               sqlite3_column_type(stmt, 1) == SQLITE_TEXT,
               let sqlPointer = sqlite3_column_text(stmt, 1),
-              Self.startsWithCreateTable(String(cString: sqlPointer)),
+              MBTilesViewShape.tableDeclares(sql: String(cString: sqlPointer), name: name),
               sqlite3_step(stmt) == SQLITE_DONE else { return false }
         // below 3.31 a generated column can't exist, the schema wouldnt parse
         guard sqlite3_libversion_number() >= Self.generatedColumnsMinimumSQLite else { return true }
@@ -265,25 +270,6 @@ final class MBTilesStore: @unchecked Sendable {
             let hidden = sqlite3_column_int(info, 0)
             if hidden == 2 || hidden == 3 { return false }
         }
-    }
-
-    /// first two ASCII words are CREATE and TABLE, whatever the case. Same as
-    /// the generator's regex [ \t\r\n]*([A-Za-z]+)[ \t\r\n]+([A-Za-z]+), so
-    /// CREATE/**/VIRTUAL TABLE doesnt sneak through as two words
-    static func startsWithCreateTable(_ sql: String) -> Bool {
-        let b = Array(sql.utf8)
-        var i = 0
-        func isSpace(_ c: UInt8) -> Bool { c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A }
-        func isLetter(_ c: UInt8) -> Bool { (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) }
-        func word() -> String? {
-            let start = i
-            while i < b.count, isLetter(b[i]) { i += 1 }
-            return i > start ? String(decoding: b[start..<i], as: UTF8.self).uppercased() : nil
-        }
-        while i < b.count, isSpace(b[i]) { i += 1 }
-        guard word() == "CREATE", i < b.count, isSpace(b[i]) else { return false }
-        while i < b.count, isSpace(b[i]) { i += 1 }
-        return word() == "TABLE"
     }
 
     /// Runs body with a progress handler that interrupts whatever statement

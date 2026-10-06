@@ -24,6 +24,7 @@ the same numbers.
 """
 
 import argparse
+import base64
 import math
 import os
 import re
@@ -2735,10 +2736,12 @@ def _vs_tokens(sql):
 
 def view_shape(sql, relation):
     """the base table names a plain view reads, or _ShapeReject(tooLong | token | shape). The grammar:
-    CREATE VIEW [IF NOT EXISTS] <relation> [(ident, ...)] AS SELECT col [, col ...] FROM table
+    CREATE VIEW <relation> [(ident, ...)] AS SELECT col [, col ...] FROM table
     [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON colref = colref | ON (colref = colref) | USING (ident, ...))]
     where col = * | ident.* | colref [[AS] ident], colref = ident | ident.ident, table = ident [[AS] ident],
-    ident = a bare word that isn't reserved, or a quoted identifier. Nothing may follow"""
+    ident = a bare word that isn't reserved, or a quoted identifier. Nothing may follow.
+    3.0.2 SEC-M1-SHADOW: no IF NOT EXISTS. SQLite drops it when it stores a view, so only a hand edited schema has
+    it, and the duplicate it lets SQLite skip is how a decoy row sat behind the live view admission never read"""
     if sql is None or len(sql.encode("utf-8")) > MBT_MAX_SCHEMA_SQL_BYTES:
         raise _ShapeReject("tooLong" if sql is not None else "shape")
     toks = _vs_tokens(sql)
@@ -2806,9 +2809,6 @@ def view_shape(sql, relation):
 
     need(kw("CREATE"))
     need(kw("VIEW"))
-    if kw("IF"):
-        need(kw("NOT"))
-        need(kw("EXISTS"))
     need(ident().lower() == relation)
     if punct("("):
         ident()
@@ -2853,16 +2853,45 @@ def view_shape(sql, relation):
     return tables
 
 
-def _mbt_table_kind_ok(sql):
-    """first two ASCII words of a table's sqlite_master.sql are CREATE TABLE (so not CREATE VIRTUAL TABLE)"""
+def table_declares(sql, name):
+    """True when a table's sqlite_master.sql makes exactly the ordinary table `name`: the words CREATE TABLE (first two
+    ASCII words, so not CREATE VIRTUAL TABLE), then one identifier, a viewShape quoted identifier or a word that isn't
+    reserved (a bare word needs whitespace before it), equal to name ASCII case-insensitively and not followed by a
+    quote mark or a dot. 3.0.2 SEC-M1-SHADOW: the identifier closes two ways a row admission reads could differ from
+    the object SQLite runs. IF NOT EXISTS (SQLite never stores it, only a hand edit does, and the duplicate it skips
+    sits behind a live object of the same name), and a row whose name column says one table while its sql makes
+    another, which SQLite without the schema name cross-check (older builds, older Android) loads without complaint"""
     m = re.match(r"[ \t\r\n]*([A-Za-z]+)[ \t\r\n]+([A-Za-z]+)", sql or "")
-    return bool(m) and m.group(1).upper() == "CREATE" and m.group(2).upper() == "TABLE"
+    if not m or m.group(1).upper() != "CREATE" or m.group(2).upper() != "TABLE":
+        return False
+    i, n = m.end(), len(sql)
+    spaced = i < n and sql[i] in MBT_VIEW_WHITESPACE
+    while i < n and sql[i] in MBT_VIEW_WHITESPACE:
+        i += 1
+    if i < n and sql[i] in MBT_VIEW_QUOTES:
+        j = sql.find(MBT_VIEW_QUOTES[sql[i]], i + 1)
+        ident = sql[i + 1:j] if j > i else ""
+        if j < 0 or not ident or any(not (0x20 <= ord(c) <= 0x7E) or c in '"[]`' for c in ident):
+            return False
+        end = j + 1
+    elif spaced and i < n and sql[i].isascii() and (sql[i].isalpha() or sql[i] == "_"):
+        j = i + 1
+        while j < n and sql[j].isascii() and (sql[j].isalnum() or sql[j] == "_"):
+            j += 1
+        ident, end = sql[i:j], j
+        if ident.upper() in MBT_RESERVED:
+            return False
+    else:
+        return False
+    if end < n and sql[end] in '"[]`.':
+        return False
+    return name.isascii() and ident.lower() == name.lower()
 
 
 def _mbt_base_table(conn, name):
     """what every relation a read touches has to be: one ordinary table, no generated column"""
     rows = conn.execute("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", (name,)).fetchall()
-    if len(rows) != 1 or rows[0][0] != "table" or not _mbt_table_kind_ok(rows[0][1]):
+    if len(rows) != 1 or rows[0][0] != "table" or not table_declares(rows[0][1], name):
         raise _MbtReject("base")
     # needs SQLite >= 3.26 for table_xinfo; generated columns need 3.31, older readers can't even parse them
     if any(h in (2, 3) for (h,) in conn.execute("SELECT hidden FROM pragma_table_xinfo(?)", (name,))):
@@ -2903,7 +2932,10 @@ def _mbt_blob_prefix(conn, column, rowid, characters, truncates):
 def _mbt_admit(conn, probes, start_budget):
     types = {}
     for rel in ("metadata", "tiles"):
-        found = conn.execute("SELECT type, sql FROM sqlite_master WHERE name=?", (rel,)).fetchall()
+        # 3.0.2 SEC-M1-SHADOW: NOCASE, the way SQLite resolves FROM tiles. A case variant row (TILES) is a second
+        # object by that name and fails closed, the same as base tables
+        found = conn.execute("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
+                             (rel,)).fetchall()
         if len(found) != 1 or found[0][0] not in ("table", "view"):
             raise _MbtReject("relation")
         types[rel] = found[0][0]
@@ -3014,10 +3046,8 @@ def _mbt_admit(conn, probes, start_budget):
     return out
 
 
-def mbtiles_reference(statements, probes=None):
-    """build the pack in a scratch file with Python's sqlite3, then open it again read only and hardened the way
-    both readers are (3.0.2): value and schema-statement caps, trusted_schema and automatic indexes off. A fresh
-    connection, so the schema is parsed under the cap like a real open"""
+def mbtiles_build(statements):
+    """the pack's bytes: statements in order on one fresh connection with Python's sqlite3, committed and closed"""
     with tempfile.TemporaryDirectory() as scratch:
         path = os.path.join(scratch, "pack.mbtiles")
         build = sqlite3.connect(path)
@@ -3027,6 +3057,18 @@ def mbtiles_reference(statements, probes=None):
             build.commit()
         finally:
             build.close()
+        with open(path, "rb") as fh:
+            return fh.read()
+
+
+def mbtiles_reference(statements, probes=None, pack=None):
+    """build the pack in a scratch file with Python's sqlite3 (or take its bytes as pack), then open it again read
+    only and hardened the way both readers are (3.0.2): value and schema-statement caps, trusted_schema and
+    automatic indexes off. A fresh connection, so the schema is parsed under the cap like a real open"""
+    with tempfile.TemporaryDirectory() as scratch:
+        path = os.path.join(scratch, "pack.mbtiles")
+        with open(path, "wb") as fh:
+            fh.write(mbtiles_build(statements) if pack is None else pack)
         conn = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
         try:
             conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MBT_MAX_VALUE_BYTES)
@@ -3143,6 +3185,7 @@ def mbtiles_relation_cases():
         "CREATE VIEW metadata AS SELECT name, value FROM meta_base"]
     tiles_view = base_tiles + ["CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base"]
     probes = {"tiles": [(0, 0, 0), (1, 0, 0), (1, 1, 1)]}
+    small = ["PRAGMA page_size=512"]
     rows = [
         ("tablesBaseline", meta_table + [
             "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
@@ -3336,6 +3379,70 @@ def mbtiles_relation_cases():
             "map.tile_id"],
          None, False, "a plain join with no index and automatic indexes off is a 20,000 x 20,000 nested loop: "
                       "the admission budget (views only) stops it. Tests shorten the budget with their seam"),
+        # 3.0.2 SEC-M1-SHADOW: the sqlite_master row admission checks has to be the object SQLite runs. These write
+        # sqlite_master with writable_schema so they ship packBase64 too, 512 byte pages keep that small
+        ("tilesShadowedByCaseVariant", small + meta_table + base_tiles + [
+            "CREATE VIEW TILES AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM tiles_base",
+            "PRAGMA writable_schema=ON",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'tiles', 'tiles', 0, "
+            "'CREATE VIEW IF NOT EXISTS tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the live tiles is the TILES view (loaded first, FROM tiles resolves any case); the plain row "
+                      "named exactly tiles is a dormant duplicate SQLite skips because of IF NOT EXISTS. 3.0.2 "
+                      "before this looked the relation up case-exact, checked the decoy and ran randomblob() on "
+                      "every read. Refused: two rows NOCASE"),
+        ("metadataShadowedByCaseVariant", small + ["CREATE TABLE meta_base (name text, value text)"] + meta + tiles_view + [
+            "CREATE VIEW METADATA AS SELECT name, value || hex(randomblob(4)) AS value FROM meta_base",
+            "PRAGMA writable_schema=ON",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'metadata', 'metadata', "
+            "0, 'CREATE VIEW IF NOT EXISTS metadata AS SELECT name, value FROM meta_base')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the same through metadata"),
+        ("tableRowKeepsIfNotExists", small + meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows,
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET sql = 'CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column "
+            "integer, tile_row integer, tile_data blob)' WHERE name = 'tiles'",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "harmless on its own, but SQLite never stores IF NOT EXISTS, so only a hand edit does, and on "
+                      "SQLite without the schema name cross-check the same edit hides a decoy table row behind a "
+                      "live view of that name. Refused at the base table check (baseTableShape)"),
+        # rows whose name column lies about the object their sql makes. SQLite with the init-time name cross-check
+        # (this reference, iOS, recent Android) refuses these as a malformed schema. Older builds without it (older
+        # Android) load them, and 3.0.2 before SEC-M1-SHADOW admitted them and ran the expression; the
+        # fixed readers refuse them there by viewShape or baseTableShape. Same verdict either way
+        ("viewRowNameLieBehindIfNotExists", small + meta_table + base_tiles + [
+            "CREATE VIEW zzz AS SELECT zoom_level FROM tiles_base",
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET sql = 'CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, "
+            "randomblob(16) AS tile_data FROM tiles_base' WHERE name = 'zzz'",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'tiles', 'tiles', 0, "
+            "'CREATE VIEW IF NOT EXISTS tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the live tiles comes from a row named zzz, the row named tiles is a skipped decoy"),
+        ("baseRowNameLie", small + meta_table + [
+            "CREATE TABLE decoy (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO decoy VALUES " + tiles_rows,
+            "CREATE VIEW t AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM decoy",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM t",
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET name = 't', tbl_name = 't' WHERE name = 'decoy'",
+            "UPDATE sqlite_master SET name = 'zzz', tbl_name = 'zzz' WHERE type = 'view' AND name = 't'",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "tiles is a plain view over t; the row named t is a table whose sql makes decoy, the live t "
+                      "is an expression view in a row named zzz. No IF NOT EXISTS anywhere"),
+        ("baseRowNameLieBehindIfNotExists", small + meta_table + base_tiles + [
+            "CREATE VIEW zzz AS SELECT zoom_level FROM tiles_base",
+            "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM b",
+            "PRAGMA writable_schema=ON",
+            "UPDATE sqlite_master SET sql = 'CREATE VIEW b AS SELECT zoom_level, tile_column, tile_row, "
+            "randomblob(16) AS tile_data FROM tiles_base' WHERE name = 'zzz'",
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 'b', 'b', 2, "
+            "'CREATE TABLE IF NOT EXISTS b (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)')",
+            "PRAGMA writable_schema=OFF"],
+         None, False, "the base table row b is a skipped IF NOT EXISTS decoy, the live b is an expression view in a "
+                      "row named zzz"),
     ]
     min_sqlite = {"tilesTableGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE,
                   "viewOverGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE}
@@ -3343,14 +3450,22 @@ def mbtiles_relation_cases():
                    "viewOverVirtualTable": "base", "tilesVirtualTable": "base",
                    "tilesTableGeneratedColumn": "generated", "viewOverGeneratedColumn": "generated",
                    "metadataViewOversizedName": "length", "schemaStatementTooLong": "schema",
-                   "budgetUnindexedJoin": "budget"}
+                   "budgetUnindexedJoin": "budget", "tilesShadowedByCaseVariant": "relation",
+                   "metadataShadowedByCaseVariant": "relation", "tableRowKeepsIfNotExists": "base",
+                   "viewRowNameLieBehindIfNotExists": "schema", "baseRowNameLie": "schema",
+                   "baseRowNameLieBehindIfNotExists": "schema"}
     out = []
     for cid, sql, pr, accepted, note in rows:
-        r = mbtiles_reference(sql, pr)
+        # a row that writes sqlite_master itself ships its file too: Apple's sqlite has SQLITE_DBCONFIG_DEFENSIVE on,
+        # which refuses writable_schema, so that harness can't run its sql[]. The reference judges those same bytes
+        pack = mbtiles_build(sql) if any(s.startswith("PRAGMA writable_schema") for s in sql) else None
+        r = mbtiles_reference(sql, pr, pack)
         assert r["accepted"] == accepted, (cid, r)
         if not accepted:
             assert r["rejectedAt"] == want_reason.get(cid, "shape"), (cid, r)
         row = {"id": cid, "sql": sql, "expect": r, "note": note}
+        if pack is not None:
+            row["packBase64"] = base64.b64encode(pack).decode("ascii")
         if cid == "budgetUnindexedJoin":
             row["testBudgetMs"] = 250
         if cid in min_sqlite:
@@ -3374,8 +3489,6 @@ def view_shape_cases():
     ok = [
         ("nodeMbtiles", "tiles", NODE_MBTILES_VIEW, ["map", "images"],
          "node-mbtiles/TileMill, as SQLite stores it (IF NOT EXISTS and the semicolon dropped)"),
-        ("ifNotExistsKept", "tiles", "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t", ["t"],
-         "SQLite drops IF NOT EXISTS from sqlite_master, accepted anyway"),
         ("mbutilLowercase", "tiles", DEDUP_SELECT.lower().replace("select", "create view tiles as select", 1)
          + " join images on images.tile_id = map.tile_id", ["map", "images"], "keywords are case-insensitive"),
         ("leftJoin", "tiles", "CREATE VIEW tiles AS " + DEDUP_SELECT + " LEFT JOIN images ON images.tile_id = map.tile_id",
@@ -3461,6 +3574,9 @@ def view_shape_cases():
         ("starAlias", "tiles", "CREATE VIEW tiles AS SELECT * AS x FROM t", "shape", ""),
         ("emptyColumnList", "tiles", "CREATE VIEW tiles() AS SELECT * FROM t", "shape", ""),
         ("temporaryView", "tiles", "CREATE TEMP VIEW tiles AS SELECT * FROM t", "shape", ""),
+        ("ifNotExists", "tiles", "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t", "shape",
+         "3.0.2 SEC-M1-SHADOW (3.0.2 builds before it accepted this): SQLite drops IF NOT EXISTS when it stores a "
+         "view, so only a hand edited schema has it, and the duplicate it skips is a decoy behind the live view"),
     ]
     out = []
     for cid, rel, sql, tables, note in ok:
@@ -3476,6 +3592,64 @@ def view_shape_cases():
             assert str(r) == reason, (cid, str(r), reason)
         out.append({"id": cid, "relation": rel, "sql": sql, "expect": {"accepted": False, "reason": reason},
                     "note": note})
+    assert len({r["id"] for r in out}) == len(out)
+    return out
+
+
+def table_shape_cases():
+    """3.0.2 SEC-M1-SHADOW: table_declares() on its own, no SQLite. Both readers port it and must agree"""
+    rows = [
+        ("plain", "tiles", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, "
+         "tile_data blob)", True, "what GDAL, tippecanoe and rio-mbtiles write"),
+        ("noSpaceBeforeParen", "tiles", "CREATE TABLE tiles(zoom_level, tile_column, tile_row, tile_data)", True, ""),
+        ("lowercase", "map", "create table map (zoom_level integer, tile_column integer, tile_row integer, "
+         "tile_id text)", True, "mbutil"),
+        ("withoutRowid", "tiles_shallow", "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, "
+         "tile_row integer, tile_data_id integer, primary key(zoom_level, tile_column, tile_row)) without rowid", True,
+         "planetiler; only the name is read, the rest of the text can be anything"),
+        ("renamedDoubleQuoted", "metadata_base", "CREATE TABLE \"metadata_base\" (name, value)", True,
+         "ALTER TABLE ... RENAME stores the new name double quoted"),
+        ("bracketQuoted", "map", "CREATE TABLE [map] (a)", True, ""),
+        ("backtickQuoted", "images", "CREATE TABLE `images` (a)", True, ""),
+        ("quotedNoSpace", "t", " \n create\ttable\"t\"(a)", True, "a quoted name needs no space before it"),
+        ("quotedWithSpace", "tiles base", "CREATE TABLE \"tiles base\" (a)", True, ""),
+        ("nameCaseDiffers", "tiles", "CREATE TABLE Tiles (a)", True,
+         "ASCII case-insensitive, the way SQLite resolves names"),
+        ("quotedReservedWord", "if", "CREATE TABLE \"if\" (a)", True, "a quoted reserved word is just a name"),
+        ("ifNotExists", "tiles", "CREATE TABLE IF NOT EXISTS tiles (a)", False,
+         "SQLite drops IF NOT EXISTS when it stores a table, so only a hand edit has it"),
+        ("declaresAnotherTable", "t", "CREATE TABLE decoy (a)", False,
+         "the row's name column says t while its sql makes decoy (SQLite without the name cross-check loads it)"),
+        ("virtualTable", "tiles", "CREATE VIRTUAL TABLE tiles USING fts4(a)", False, "module code on every read"),
+        ("commentedVirtual", "t", "CREATE/**/VIRTUAL TABLE t USING fts4(a)", False,
+         "a comment isn't whitespace, VIRTUAL can't pass as part of the first word"),
+        ("view", "tiles", "CREATE VIEW tiles AS SELECT * FROM t", False, ""),
+        ("temporaryTable", "tiles", "CREATE TEMP TABLE tiles (a)", False, ""),
+        ("schemaQualified", "tiles", "CREATE TABLE main.tiles (a)", False, ""),
+        ("schemaPrefixMatchesName", "main", "CREATE TABLE main.tiles (a)", False,
+         "no dot after the name, so the schema part never counts as the table"),
+        ("commentBeforeName", "t", "CREATE TABLE /**/t (a)", False, ""),
+        ("commentBetweenWords", "t", "CREATE/**/TABLE t (a)", False, ""),
+        ("glued", "t", "CREATETABLE t (a)", False, ""),
+        ("tableWordRunsOn", "_x", "CREATE TABLE_x (a)", False, "TABLE_x is one word to SQLite"),
+        ("tabBeforeName", "t", "CREATE TABLE\tt", True, ""),
+        ("bareReservedWord", "key", "CREATE TABLE key (a)", False,
+         "a reserved word is never a bare name here, which is what keeps IF out"),
+        ("doubledQuote", "x", "CREATE TABLE \"x\"\"y\" (a)", False, "SQLite's table is x\"y"),
+        ("emptyQuoted", "t", "CREATE TABLE \"\" (a)", False, ""),
+        ("unterminatedQuote", "t", "CREATE TABLE \"t (a)", False, ""),
+        ("singleQuoted", "t", "CREATE TABLE 't' (a)", False, "not one of the three identifier forms"),
+        ("nonAsciiBare", "zöom", "CREATE TABLE zöom (a)", False, "ASCII only"),
+        ("nonAsciiQuoted", "zöom", "CREATE TABLE \"zöom\" (a)", False, ""),
+        ("formFeed", "t", "CREATE\fTABLE t (a)", False, "only space, tab, CR, LF"),
+        ("wordsOnly", "t", "CREATE TABLE", False, ""),
+        ("empty", "t", "", False, ""),
+        ("noSql", "t", None, False, "a table row with NULL sql"),
+    ]
+    out = []
+    for cid, name, sql, accepted, note in rows:
+        assert table_declares(sql, name) is accepted, cid
+        out.append({"id": cid, "name": name, "sql": sql, "expect": {"accepted": accepted}, "note": note})
     assert len({r["id"] for r in out}) == len(out)
     return out
 
@@ -3502,12 +3676,15 @@ def mbtiles_connection():
             "PRAGMA trusted_schema=OFF where SQLite >= 3.31, PRAGMA automatic_index=OFF, and the value and schema "
             "caps (iOS sqlite3_limit; Android PRAGMA hard_heap_limit where SQLite >= 3.31 plus its explicit "
             "checks). Then, before any statement names tiles or metadata: each must be exactly one sqlite_master "
-            "row of type table or view. A view's sqlite_master.sql must pass viewShape (reserved words, grammar, "
-            "maxSchemaSqlBytes) and gives the base tables. Every table a read touches (tiles or metadata when a "
-            "table, each view's base tables) must be exactly one sqlite_master row (name compared NOCASE) of type "
-            "table whose sql starts with the words CREATE TABLE (not CREATE VIRTUAL TABLE) and, where SQLite >= "
-            "3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not admitted, "
-            "and a lazy open serves no tile. So no expression stored in the file is ever evaluated on a read"),
+            "row (name compared NOCASE, the way SQLite resolves it) of type table or view. A view's "
+            "sqlite_master.sql must pass viewShape (reserved words, grammar, maxSchemaSqlBytes) and gives the base "
+            "tables. Every table a read touches (tiles or metadata when a table, each view's base tables) must be "
+            "exactly one sqlite_master row (name compared NOCASE) of type table whose sql passes baseTableShape "
+            "(the words CREATE TABLE, so not CREATE VIRTUAL TABLE, then exactly that table's name) and, where "
+            "SQLite >= 3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not "
+            "admitted, and a lazy open serves no tile. Because every row checked must declare its own name with no "
+            "IF NOT EXISTS, it is the object SQLite loaded for that name (a second one would be a schema error), so "
+            "no expression stored in the file is ever evaluated on a read"),
     }
 
 
@@ -3720,8 +3897,9 @@ def mbtiles_admission():
     adm["admissionBudgetAppliesTo"] = "views"
     adm["viewQueryBudgetMs"] = 2000
     adm["relationRules"] = (
-        "Exactly one sqlite_master row named 'tiles' and one named 'metadata', each type 'table' or 'view'; "
-        "anything else (missing, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its "
+        "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared "
+        "NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case "
+        "variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its "
         "sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, "
         "not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the "
         "existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no "
@@ -3753,21 +3931,35 @@ def mbtiles_admission():
             "is ( ) , . * =. Anything else, anywhere in the text, is reason token. Text longer than maxSqlBytes "
             "(UTF-8) is reason tooLong before tokenizing"),
         "grammar": (
-            "CREATE VIEW [IF NOT EXISTS] name [( ident {, ident} )] AS SELECT column {, column} FROM table "
+            "CREATE VIEW name [( ident {, ident} )] AS SELECT column {, column} FROM table "
             "[join] <end>. name = ident equal to the relation (ASCII case-insensitive). column = * | ident . * | "
             "colref [[AS] ident]. colref = ident [. ident]. table = ident [[AS] ident]. join = [INNER | LEFT "
             "[OUTER] | CROSS] JOIN table (ON colref = colref | ON ( colref = colref ) | USING ( ident {, ident} )). "
             "ident = a quoted identifier, or a word not in reservedWords (ASCII case-insensitive). Keywords match "
-            "words only, ASCII case-insensitively. Any other token sequence is reason shape. Accepted: the base "
-            "tables, each table's ident in order (quoted ones without their marks)"),
+            "words only, ASCII case-insensitively. Any other token sequence is reason shape, IF NOT EXISTS included "
+            "(3.0.2 SEC-M1-SHADOW: SQLite never stores it, so it only turns up in a hand edited schema). Accepted: "
+            "the base tables, each table's ident in order (quoted ones without their marks)"),
         "cases": view_shape_cases(),
+    }
+    adm["baseTableShape"] = {
+        "rule": (
+            "3.0.2 SEC-M1-SHADOW, table_declares(sql, name) in the generator: a table row's sqlite_master.sql "
+            "passes when it matches [ \\t\\r\\n]*([A-Za-z]+)[ \\t\\r\\n]+([A-Za-z]+) with the two words CREATE and "
+            "TABLE (ASCII case-insensitive), then optional viewShape whitespace and one identifier: a viewShape "
+            "quoted identifier, or a word ([A-Za-z_][A-Za-z0-9_]*, ASCII, not in viewShape.reservedWords) that "
+            "has at least one whitespace character before it. The character right after the identifier may not be "
+            "\" [ ] ` or a dot, and the identifier (quoted ones without their marks) has to equal name ASCII "
+            "case-insensitively. Nothing after that is read. Any other text, and NULL, fails"),
+        "cases": table_shape_cases(),
     }
     adm["relationVariants"] = MBT_VARIANTS
     adm["variantRule"] = ("every cases[] and extensionCases[] row gives the same verdict and values after its own "
                           "setup plus metadataView or bothViews; every tileZoomCases[] row after tilesView or "
                           "bothViews. The generator proves it against its reference admission")
     adm["relationCases"] = mbtiles_relation_cases()
-    adm["relationCasesRule"] = ("run sql[] in order on an empty database file with an ordinary connection, open it "
+    adm["relationCasesRule"] = ("run sql[] in order on an empty database file with an ordinary connection (a row "
+                                "with packBase64 is that exact file instead: write the decoded bytes and skip sql[], "
+                                "which needs writable_schema and Apple's SQLite refuses that by default), open it "
                                 "with the real reader (testBudgetMs, when given, replaces admissionBudgetMs through "
                                 "the test seam) and compare expect: accepted, and when accepted minZoom, maxZoom, "
                                 "name, format, each tiles[] probe (XYZ, hex null = no tile) and extensions{}. Skip a "

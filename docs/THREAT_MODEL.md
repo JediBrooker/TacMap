@@ -741,7 +741,12 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   plain projection of one table or an equi-join of two (column names and
   aliases only, checked on its text before anything reads it, so no function,
   literal, operator, condition or subquery), and every table a read touches has
-  to be an ordinary table with no generated column and not a virtual table. The
+  to be an ordinary table with no generated column and not a virtual table.
+  These checks read the schema rows SQLite actually runs: each name is looked up
+  the way SQLite resolves it (any letter case) and has to match exactly one row
+  whose own text declares that name, without `IF NOT EXISTS` (which SQLite never
+  stores), so a hand-edited duplicate or a row that misnames its object can't
+  stand in for the live view or table. The
   plain views real tools write (node-mbtiles, TileMill, mbutil, MapTiler,
   martin, planetiler) still open; a pack whose views compute anything is
   refused. Every connection to a pack also caps a single value at 4 MiB + 64 KiB

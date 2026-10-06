@@ -238,7 +238,7 @@
     "admissionBudgetMs": 30000,
     "admissionBudgetAppliesTo": "views",
     "viewQueryBudgetMs": 2000,
-    "relationRules": "Exactly one sqlite_master row named 'tiles' and one named 'metadata', each type 'table' or 'view'; anything else (missing, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the view path a name or value over connection.maxValueBytes fails closed. Every other admission check is unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it now runs off the main thread. After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no per-read budget",
+    "relationRules": "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the view path a name or value over connection.maxValueBytes fails closed. Every other admission check is unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it now runs off the main thread. After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no per-read budget",
     "connection": {
       "maxTileBytes": 4194304,
       "maxValueBytes": 4259840,
@@ -254,7 +254,7 @@
         "explicitChecks": ["before anything else: no sqlite_master row has length(CAST(sql AS BLOB)) > maxSchemaSqlBytes", "view path: a descriptor name, a known value or a bake extension whose length(CAST(... AS BLOB)) > maxValueBytes fails closed (extension: reads as missing)"]
       },
       "generatedColumnsMinSqlite": "3.31.0",
-      "rules": "Every connection, the admission open and the lazy prevalidated open alike, before its first statement: PRAGMA trusted_schema=OFF where SQLite >= 3.31, PRAGMA automatic_index=OFF, and the value and schema caps (iOS sqlite3_limit; Android PRAGMA hard_heap_limit where SQLite >= 3.31 plus its explicit checks). Then, before any statement names tiles or metadata: each must be exactly one sqlite_master row of type table or view. A view's sqlite_master.sql must pass viewShape (reserved words, grammar, maxSchemaSqlBytes) and gives the base tables. Every table a read touches (tiles or metadata when a table, each view's base tables) must be exactly one sqlite_master row (name compared NOCASE) of type table whose sql starts with the words CREATE TABLE (not CREATE VIRTUAL TABLE) and, where SQLite >= 3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not admitted, and a lazy open serves no tile. So no expression stored in the file is ever evaluated on a read"
+      "rules": "Every connection, the admission open and the lazy prevalidated open alike, before its first statement: PRAGMA trusted_schema=OFF where SQLite >= 3.31, PRAGMA automatic_index=OFF, and the value and schema caps (iOS sqlite3_limit; Android PRAGMA hard_heap_limit where SQLite >= 3.31 plus its explicit checks). Then, before any statement names tiles or metadata: each must be exactly one sqlite_master row (name compared NOCASE, the way SQLite resolves it) of type table or view. A view's sqlite_master.sql must pass viewShape (reserved words, grammar, maxSchemaSqlBytes) and gives the base tables. Every table a read touches (tiles or metadata when a table, each view's base tables) must be exactly one sqlite_master row (name compared NOCASE) of type table whose sql passes baseTableShape (the words CREATE TABLE, so not CREATE VIRTUAL TABLE, then exactly that table's name) and, where SQLite >= 3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not admitted, and a lazy open serves no tile. Because every row checked must declare its own name with no IF NOT EXISTS, it is the object SQLite loaded for that name (a second one would be a schema error), so no expression stored in the file is ever evaluated on a read"
     },
     "viewShape": {
       "maxSqlBytes": 100000,
@@ -263,7 +263,7 @@
       "quotedIdentifiers": [["\"", "\""], ["[", "]"], ["`", "`"]],
       "reservedWords": ["ABORT", "ACTION", "ADD", "AFTER", "ALL", "ALTER", "ALWAYS", "ANALYZE", "AND", "AS", "ASC", "ATTACH", "AUTOINCREMENT", "BEFORE", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE", "CAST", "CHECK", "COLLATE", "COLUMN", "COMMIT", "CONFLICT", "CONSTRAINT", "CREATE", "CROSS", "CURRENT", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "DATABASE", "DEFAULT", "DEFERRABLE", "DEFERRED", "DELETE", "DESC", "DETACH", "DISTINCT", "DO", "DROP", "EACH", "ELSE", "END", "ESCAPE", "EXCEPT", "EXCLUDE", "EXCLUSIVE", "EXISTS", "EXPLAIN", "FAIL", "FALSE", "FILTER", "FIRST", "FOLLOWING", "FOR", "FOREIGN", "FROM", "FULL", "GENERATED", "GLOB", "GROUP", "GROUPS", "HAVING", "IF", "IGNORE", "IMMEDIATE", "IN", "INDEX", "INDEXED", "INITIALLY", "INNER", "INSERT", "INSTEAD", "INTERSECT", "INTO", "IS", "ISNULL", "JOIN", "KEY", "LAST", "LEFT", "LIKE", "LIMIT", "MATCH", "MATERIALIZED", "NATURAL", "NO", "NOT", "NOTHING", "NOTNULL", "NULL", "NULLS", "OF", "OFFSET", "ON", "OR", "ORDER", "OTHERS", "OUTER", "OVER", "PARTITION", "PLAN", "PRAGMA", "PRECEDING", "PRIMARY", "QUERY", "RAISE", "RANGE", "RECURSIVE", "REFERENCES", "REGEXP", "REINDEX", "RELEASE", "RENAME", "REPLACE", "RESTRICT", "RETURNING", "RIGHT", "ROLLBACK", "ROW", "ROWS", "SAVEPOINT", "SELECT", "SET", "TABLE", "TEMP", "TEMPORARY", "THEN", "TIES", "TO", "TRANSACTION", "TRIGGER", "TRUE", "UNBOUNDED", "UNION", "UNIQUE", "UPDATE", "USING", "VACUUM", "VALUES", "VIEW", "VIRTUAL", "WHEN", "WHERE", "WINDOW", "WITH", "WITHOUT"],
       "tokens": "ASCII whitespace separates tokens. A word is [A-Za-z_][A-Za-z0-9_]* (ASCII). A quoted identifier is one of the three pairs with a non-empty body of printable ASCII (0x20-0x7E) holding none of \" [ ] `, and the character right after its closing mark may not be one of \" [ ] ` either (SQLite reads \"a\"\"b\" as the one name a\"b; splitting it would check the wrong base table). Punctuation is ( ) , . * =. Anything else, anywhere in the text, is reason token. Text longer than maxSqlBytes (UTF-8) is reason tooLong before tokenizing",
-      "grammar": "CREATE VIEW [IF NOT EXISTS] name [( ident {, ident} )] AS SELECT column {, column} FROM table [join] <end>. name = ident equal to the relation (ASCII case-insensitive). column = * | ident . * | colref [[AS] ident]. colref = ident [. ident]. table = ident [[AS] ident]. join = [INNER | LEFT [OUTER] | CROSS] JOIN table (ON colref = colref | ON ( colref = colref ) | USING ( ident {, ident} )). ident = a quoted identifier, or a word not in reservedWords (ASCII case-insensitive). Keywords match words only, ASCII case-insensitively. Any other token sequence is reason shape. Accepted: the base tables, each table's ident in order (quoted ones without their marks)",
+      "grammar": "CREATE VIEW name [( ident {, ident} )] AS SELECT column {, column} FROM table [join] <end>. name = ident equal to the relation (ASCII case-insensitive). column = * | ident . * | colref [[AS] ident]. colref = ident [. ident]. table = ident [[AS] ident]. join = [INNER | LEFT [OUTER] | CROSS] JOIN table (ON colref = colref | ON ( colref = colref ) | USING ( ident {, ident} )). ident = a quoted identifier, or a word not in reservedWords (ASCII case-insensitive). Keywords match words only, ASCII case-insensitively. Any other token sequence is reason shape, IF NOT EXISTS included (3.0.2 SEC-M1-SHADOW: SQLite never stores it, so it only turns up in a hand edited schema). Accepted: the base tables, each table's ident in order (quoted ones without their marks)",
       "cases": [
         {
           "id": "nodeMbtiles",
@@ -271,13 +271,6 @@
           "sql": "CREATE VIEW tiles AS\n    SELECT\n        map.zoom_level AS zoom_level,\n        map.tile_column AS tile_column,\n        map.tile_row AS tile_row,\n        images.tile_data AS tile_data\n    FROM map\n    JOIN images ON images.tile_id = map.tile_id",
           "expect": {"accepted": true, "tables": ["map", "images"]},
           "note": "node-mbtiles/TileMill, as SQLite stores it (IF NOT EXISTS and the semicolon dropped)"
-        },
-        {
-          "id": "ifNotExistsKept",
-          "relation": "tiles",
-          "sql": "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t",
-          "expect": {"accepted": true, "tables": ["t"]},
-          "note": "SQLite drops IF NOT EXISTS from sqlite_master, accepted anyway"
         },
         {
           "id": "mbutilLowercase",
@@ -705,6 +698,263 @@
           "sql": "CREATE TEMP VIEW tiles AS SELECT * FROM t",
           "expect": {"accepted": false, "reason": "shape"},
           "note": ""
+        },
+        {
+          "id": "ifNotExists",
+          "relation": "tiles",
+          "sql": "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": "3.0.2 SEC-M1-SHADOW (3.0.2 builds before it accepted this): SQLite drops IF NOT EXISTS when it stores a view, so only a hand edited schema has it, and the duplicate it skips is a decoy behind the live view"
+        }
+      ]
+    },
+    "baseTableShape": {
+      "rule": "3.0.2 SEC-M1-SHADOW, table_declares(sql, name) in the generator: a table row's sqlite_master.sql passes when it matches [ \\t\\r\\n]*([A-Za-z]+)[ \\t\\r\\n]+([A-Za-z]+) with the two words CREATE and TABLE (ASCII case-insensitive), then optional viewShape whitespace and one identifier: a viewShape quoted identifier, or a word ([A-Za-z_][A-Za-z0-9_]*, ASCII, not in viewShape.reservedWords) that has at least one whitespace character before it. The character right after the identifier may not be \" [ ] ` or a dot, and the identifier (quoted ones without their marks) has to equal name ASCII case-insensitively. Nothing after that is read. Any other text, and NULL, fails",
+      "cases": [
+        {
+          "id": "plain",
+          "name": "tiles",
+          "sql": "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+          "expect": {"accepted": true},
+          "note": "what GDAL, tippecanoe and rio-mbtiles write"
+        },
+        {
+          "id": "noSpaceBeforeParen",
+          "name": "tiles",
+          "sql": "CREATE TABLE tiles(zoom_level, tile_column, tile_row, tile_data)",
+          "expect": {"accepted": true},
+          "note": ""
+        },
+        {
+          "id": "lowercase",
+          "name": "map",
+          "sql": "create table map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+          "expect": {"accepted": true},
+          "note": "mbutil"
+        },
+        {
+          "id": "withoutRowid",
+          "name": "tiles_shallow",
+          "sql": "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, tile_data_id integer, primary key(zoom_level, tile_column, tile_row)) without rowid",
+          "expect": {"accepted": true},
+          "note": "planetiler; only the name is read, the rest of the text can be anything"
+        },
+        {
+          "id": "renamedDoubleQuoted",
+          "name": "metadata_base",
+          "sql": "CREATE TABLE \"metadata_base\" (name, value)",
+          "expect": {"accepted": true},
+          "note": "ALTER TABLE ... RENAME stores the new name double quoted"
+        },
+        {
+          "id": "bracketQuoted",
+          "name": "map",
+          "sql": "CREATE TABLE [map] (a)",
+          "expect": {"accepted": true},
+          "note": ""
+        },
+        {
+          "id": "backtickQuoted",
+          "name": "images",
+          "sql": "CREATE TABLE `images` (a)",
+          "expect": {"accepted": true},
+          "note": ""
+        },
+        {
+          "id": "quotedNoSpace",
+          "name": "t",
+          "sql": " \n create\ttable\"t\"(a)",
+          "expect": {"accepted": true},
+          "note": "a quoted name needs no space before it"
+        },
+        {
+          "id": "quotedWithSpace",
+          "name": "tiles base",
+          "sql": "CREATE TABLE \"tiles base\" (a)",
+          "expect": {"accepted": true},
+          "note": ""
+        },
+        {
+          "id": "nameCaseDiffers",
+          "name": "tiles",
+          "sql": "CREATE TABLE Tiles (a)",
+          "expect": {"accepted": true},
+          "note": "ASCII case-insensitive, the way SQLite resolves names"
+        },
+        {
+          "id": "quotedReservedWord",
+          "name": "if",
+          "sql": "CREATE TABLE \"if\" (a)",
+          "expect": {"accepted": true},
+          "note": "a quoted reserved word is just a name"
+        },
+        {
+          "id": "ifNotExists",
+          "name": "tiles",
+          "sql": "CREATE TABLE IF NOT EXISTS tiles (a)",
+          "expect": {"accepted": false},
+          "note": "SQLite drops IF NOT EXISTS when it stores a table, so only a hand edit has it"
+        },
+        {
+          "id": "declaresAnotherTable",
+          "name": "t",
+          "sql": "CREATE TABLE decoy (a)",
+          "expect": {"accepted": false},
+          "note": "the row's name column says t while its sql makes decoy (SQLite without the name cross-check loads it)"
+        },
+        {
+          "id": "virtualTable",
+          "name": "tiles",
+          "sql": "CREATE VIRTUAL TABLE tiles USING fts4(a)",
+          "expect": {"accepted": false},
+          "note": "module code on every read"
+        },
+        {
+          "id": "commentedVirtual",
+          "name": "t",
+          "sql": "CREATE/**/VIRTUAL TABLE t USING fts4(a)",
+          "expect": {"accepted": false},
+          "note": "a comment isn't whitespace, VIRTUAL can't pass as part of the first word"
+        },
+        {
+          "id": "view",
+          "name": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM t",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "temporaryTable",
+          "name": "tiles",
+          "sql": "CREATE TEMP TABLE tiles (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "schemaQualified",
+          "name": "tiles",
+          "sql": "CREATE TABLE main.tiles (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "schemaPrefixMatchesName",
+          "name": "main",
+          "sql": "CREATE TABLE main.tiles (a)",
+          "expect": {"accepted": false},
+          "note": "no dot after the name, so the schema part never counts as the table"
+        },
+        {
+          "id": "commentBeforeName",
+          "name": "t",
+          "sql": "CREATE TABLE /**/t (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "commentBetweenWords",
+          "name": "t",
+          "sql": "CREATE/**/TABLE t (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "glued",
+          "name": "t",
+          "sql": "CREATETABLE t (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "tableWordRunsOn",
+          "name": "_x",
+          "sql": "CREATE TABLE_x (a)",
+          "expect": {"accepted": false},
+          "note": "TABLE_x is one word to SQLite"
+        },
+        {
+          "id": "tabBeforeName",
+          "name": "t",
+          "sql": "CREATE TABLE\tt",
+          "expect": {"accepted": true},
+          "note": ""
+        },
+        {
+          "id": "bareReservedWord",
+          "name": "key",
+          "sql": "CREATE TABLE key (a)",
+          "expect": {"accepted": false},
+          "note": "a reserved word is never a bare name here, which is what keeps IF out"
+        },
+        {
+          "id": "doubledQuote",
+          "name": "x",
+          "sql": "CREATE TABLE \"x\"\"y\" (a)",
+          "expect": {"accepted": false},
+          "note": "SQLite's table is x\"y"
+        },
+        {
+          "id": "emptyQuoted",
+          "name": "t",
+          "sql": "CREATE TABLE \"\" (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "unterminatedQuote",
+          "name": "t",
+          "sql": "CREATE TABLE \"t (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "singleQuoted",
+          "name": "t",
+          "sql": "CREATE TABLE 't' (a)",
+          "expect": {"accepted": false},
+          "note": "not one of the three identifier forms"
+        },
+        {
+          "id": "nonAsciiBare",
+          "name": "z\u00f6om",
+          "sql": "CREATE TABLE z\u00f6om (a)",
+          "expect": {"accepted": false},
+          "note": "ASCII only"
+        },
+        {
+          "id": "nonAsciiQuoted",
+          "name": "z\u00f6om",
+          "sql": "CREATE TABLE \"z\u00f6om\" (a)",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "formFeed",
+          "name": "t",
+          "sql": "CREATE\fTABLE t (a)",
+          "expect": {"accepted": false},
+          "note": "only space, tab, CR, LF"
+        },
+        {
+          "id": "wordsOnly",
+          "name": "t",
+          "sql": "CREATE TABLE",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "empty",
+          "name": "t",
+          "sql": "",
+          "expect": {"accepted": false},
+          "note": ""
+        },
+        {
+          "id": "noSql",
+          "name": "t",
+          "sql": null,
+          "expect": {"accepted": false},
+          "note": "a table row with NULL sql"
         }
       ]
     },
@@ -1079,9 +1329,51 @@
         "expect": {"accepted": false, "rejectedAt": "budget"},
         "note": "a plain join with no index and automatic indexes off is a 20,000 x 20,000 nested loop: the admission budget (views only) stops it. Tests shorten the budget with their seam",
         "testBudgetMs": 250
+      },
+      {
+        "id": "tilesShadowedByCaseVariant",
+        "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_base (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tiles_base_index ON tiles_base (zoom_level, tile_column, tile_row)", "INSERT INTO tiles_base VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "CREATE VIEW TILES AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM tiles_base", "PRAGMA writable_schema=ON", "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'tiles', 'tiles', 0, 'CREATE VIEW IF NOT EXISTS tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base')", "PRAGMA writable_schema=OFF"],
+        "expect": {"accepted": false, "rejectedAt": "relation"},
+        "note": "the live tiles is the TILES view (loaded first, FROM tiles resolves any case); the plain row named exactly tiles is a dormant duplicate SQLite skips because of IF NOT EXISTS. 3.0.2 before this looked the relation up case-exact, checked the decoy and ran randomblob() on every read. Refused: two rows NOCASE",
+        "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAYAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+wUAAAABAfsAAAAABgH7AKcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGBAYAAAAAAH0DBxctIQGBOWluZGV4dGlsZXNfYmFzZV9pbmRleHRpbGVzX2Jhc2UEQ1JFQVRFIFVOSVFVRSBJTkRFWCB0aWxlc19iYXNlX2luZGV4IE9OIHRpbGVzX2Jhc2UgKHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdymBBAIHFyEhAYFTdGFibGV0aWxlc19iYXNldGlsZXNfYmFzZQNDUkVBVEUgVEFCTEUgdGlsZXNfYmFzZSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgAAAABQMNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4BCgAAAAIB8wAB+gHzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYFCQgJAQIFBQgICAkNAAAAAwCvAAG1AS4ArwAuAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAfwQHFRcXCIFhdmlld1RJTEVTVElMRVNDUkVBVEUgVklFVyBUSUxFUyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCByYW5kb21ibG9iKDE2KSBBUyB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNlfQMHFy0hAYE5aW5kZXh0aWxlc19iYXNlX2luZGV4dGlsZXNfYmFzZQRDUkVBVEUgVU5JUVVFIElOREVYIHRpbGVzX2Jhc2VfaW5kZXggT04gdGlsZXNfYmFzZSAoem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93KYEEAgcXISEBgVN0YWJsZXRpbGVzX2Jhc2V0aWxlc19iYXNlA0NSRUFURSBUQUJMRSB0aWxlc19iYXNlICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKUkBBhcdHQFndGFibGVtZXRhZGF0YW1ldGFkYXRhAkNSRUFURSBUQUJMRSBtZXRhZGF0YSAobmFtZSB0ZXh0LCB2YWx1ZSB0ZXh0KQ0AAAACAQIAAX8BAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHsFBxUXFwiBWXZpZXd0aWxlc3RpbGVzQ1JFQVRFIFZJRVcgSUYgTk9UIEVYSVNUUyB0aWxlcyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNlfwQHFRcXCIFhdmlld1RJTEVTVElMRVNDUkVBVEUgVklFVyBUSUxFUyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCByYW5kb21ibG9iKDE2KSBBUyB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNl"
+      },
+      {
+        "id": "metadataShadowedByCaseVariant",
+        "sql": ["PRAGMA page_size=512", "CREATE TABLE meta_base (name text, value text)", "INSERT INTO meta_base VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_base (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tiles_base_index ON tiles_base (zoom_level, tile_column, tile_row)", "INSERT INTO tiles_base VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base", "CREATE VIEW METADATA AS SELECT name, value || hex(randomblob(4)) AS value FROM meta_base", "PRAGMA writable_schema=ON", "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'metadata', 'metadata', 0, 'CREATE VIEW IF NOT EXISTS metadata AS SELECT name, value FROM meta_base')", "PRAGMA writable_schema=OFF"],
+        "expect": {"accepted": false, "rejectedAt": "relation"},
+        "note": "the same through metadata",
+        "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAYAAAAAAAAAAAAAAAUAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+wUAAAABAfsAAAAABgH7AKQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGBAYAAAAAAH0DBxctIQGBOWluZGV4dGlsZXNfYmFzZV9pbmRleHRpbGVzX2Jhc2UEQ1JFQVRFIFVOSVFVRSBJTkRFWCB0aWxlc19iYXNlX2luZGV4IE9OIHRpbGVzX2Jhc2UgKHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdymBBAIHFyEhAYFTdGFibGV0aWxlc19iYXNldGlsZXNfYmFzZQNDUkVBVEUgVEFCTEUgdGlsZXNfYmFzZSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilMAQYXHx8BaXRhYmxlbWV0YV9iYXNlbWV0YV9iYXNlAkNSRUFURSBUQUJMRSBtZXRhX2Jhc2UgKG5hbWUgdGV4dCwgdmFsdWUgAAAABQMNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4BCgAAAAIB8wAB+gHzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYFCQgJAQIFBQgICAkNAAAAAwCsAAGyASsArAA9ADUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYFBgAAAAAAbQQHFRcXCIE9dmlld3RpbGVzdGlsZXNDUkVBVEUgVklFVyB0aWxlcyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNlfQMHFy0hAYE5aW5kZXh0aWxlc19iYXNlX2luZGV4dGlsZXNfYmFzZQRDUkVBVEUgVU5JUVVFIElOREVYIHRpbGVzX2Jhc2VfaW5kZXggT04gdGlsZXNfYmFzZSAoem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93KYEEAgcXISEBgVN0YWJsZXRpbGVzX2Jhc2V0aWxlc19iYXNlA0NSRUFURSBUQUJMRSB0aWxlc19iYXNlICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKUwBBhcfHwFpdGFibGVtZXRhX2Jhc2VtZXRhX2Jhc2UCQ1JFQVRFIFRBQkxFIG1ldGFfYmFzZSAobmFtZSB0ZXh0LCB2YWx1ZSB0ZXh0KQ0AAAADALgAAZEBHAC4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABiBgcVHR0IgRt2aWV3bWV0YWRhdGFtZXRhZGF0YUNSRUFURSBWSUVXIElGIE5PVCBFWElTVFMgbWV0YWRhdGEgQVMgU0VMRUNUIG5hbWUsIHZhbHVlIEZST00gbWV0YV9iYXNlcwUHFR0dCIE9dmlld01FVEFEQVRBTUVUQURBVEFDUkVBVEUgVklFVyBNRVRBREFUQSBBUyBTRUxFQ1QgbmFtZSwgdmFsdWUgfHwgaGV4KHJhbmRvbWJsb2IoNCkpIEFTIHZhbHVlIEZST00gbWV0YV9iYXNlbQQHFRcXCIE9dmlld3RpbGVzdGlsZXNDUkVBVEUgVklFVyB0aWxlcyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNl"
+      },
+      {
+        "id": "tableRowKeepsIfNotExists",
+        "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "PRAGMA writable_schema=ON", "UPDATE sqlite_master SET sql = 'CREATE TABLE IF NOT EXISTS tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)' WHERE name = 'tiles'", "PRAGMA writable_schema=OFF"],
+        "expect": {"accepted": false, "rejectedAt": "base"},
+        "note": "harmless on its own, but SQLite never stores IF NOT EXISTS, so only a hand edit does, and on SQLite without the schema name cross-check the same edit hides a decoy table row behind a live view of that name. Refused at the base table check (baseTableShape)",
+        "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAMAAAAAAAAAAAAAAAIAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+w0AAAACAS8AAbUBLwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgQMCBxcXFwGBZXRhYmxldGlsZXN0aWxlcwNDUkVBVEUgVEFCTEUgSUYgTk9UIEVYSVNUUyB0aWxlcyAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgdGV4dCkNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4B"
+      },
+      {
+        "id": "viewRowNameLieBehindIfNotExists",
+        "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_base (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tiles_base_index ON tiles_base (zoom_level, tile_column, tile_row)", "INSERT INTO tiles_base VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "CREATE VIEW zzz AS SELECT zoom_level FROM tiles_base", "PRAGMA writable_schema=ON", "UPDATE sqlite_master SET sql = 'CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM tiles_base' WHERE name = 'zzz'", "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('view', 'tiles', 'tiles', 0, 'CREATE VIEW IF NOT EXISTS tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles_base')", "PRAGMA writable_schema=OFF"],
+        "expect": {"accepted": false, "rejectedAt": "schema"},
+        "note": "the live tiles comes from a row named zzz, the row named tiles is a skipped decoy",
+        "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAYAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+wUAAAABAfsAAAAABgH7AKcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGBAYAAAAAAH0DBxctIQGBOWluZGV4dGlsZXNfYmFzZV9pbmRleHRpbGVzX2Jhc2UEQ1JFQVRFIFVOSVFVRSBJTkRFWCB0aWxlc19iYXNlX2luZGV4IE9OIHRpbGVzX2Jhc2UgKHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdymBBAIHFyEhAYFTdGFibGV0aWxlc19iYXNldGlsZXNfYmFzZQNDUkVBVEUgVEFCTEUgdGlsZXNfYmFzZSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgAAAABQMNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4BCgAAAAIB8wAB+gHzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYFCQgJAQIFBQgICAkNAAAAAwCvAAG1AS4ArwAyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHsEBxUTEwiBYXZpZXd6enp6enpDUkVBVEUgVklFVyB0aWxlcyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCByYW5kb21ibG9iKDE2KSBBUyB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNlfQMHFy0hAYE5aW5kZXh0aWxlc19iYXNlX2luZGV4dGlsZXNfYmFzZQRDUkVBVEUgVU5JUVVFIElOREVYIHRpbGVzX2Jhc2VfaW5kZXggT04gdGlsZXNfYmFzZSAoem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93KYEEAgcXISEBgVN0YWJsZXRpbGVzX2Jhc2V0aWxlc19iYXNlA0NSRUFURSBUQUJMRSB0aWxlc19iYXNlICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKUkBBhcdHQFndGFibGVtZXRhZGF0YW1ldGFkYXRhAkNSRUFURSBUQUJMRSBtZXRhZGF0YSAobmFtZSB0ZXh0LCB2YWx1ZSB0ZXh0KQ0AAAACAQYAAYMBBgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB7BQcVFxcIgVl2aWV3dGlsZXN0aWxlc0NSRUFURSBWSUVXIElGIE5PVCBFWElTVFMgdGlsZXMgQVMgU0VMRUNUIHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdywgdGlsZV9kYXRhIEZST00gdGlsZXNfYmFzZXsEBxUTEwiBYXZpZXd6enp6enpDUkVBVEUgVklFVyB0aWxlcyBBUyBTRUxFQ1Qgem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93LCByYW5kb21ibG9iKDE2KSBBUyB0aWxlX2RhdGEgRlJPTSB0aWxlc19iYXNl"
+      },
+      {
+        "id": "baseRowNameLie",
+        "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE decoy (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO decoy VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "CREATE VIEW t AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM decoy", "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM t", "PRAGMA writable_schema=ON", "UPDATE sqlite_master SET name = 't', tbl_name = 't' WHERE name = 'decoy'", "UPDATE sqlite_master SET name = 'zzz', tbl_name = 'zzz' WHERE type = 'view' AND name = 't'", "PRAGMA writable_schema=OFF"],
+        "expect": {"accepted": false, "rejectedAt": "schema"},
+        "note": "tiles is a plain view over t; the row named t is a table whose sql makes decoy, the live t is an expression view in a row named zzz. No IF NOT EXISTS anywhere",
+        "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAQAAAAAAAAAAAAAAAQAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+wUAAAAAAgAAAAAABADOAMYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgQGAAAAAABuAwcVDw8IgU92aWV3dHRDUkVBVEUgVklFVyB0IEFTIFNFTEVDVCB6b29tX2xldmVsLCB0aWxlX2NvbHVtbiwgdGlsZV9yb3csIHJhbmRvbWJsb2IoMTYpIEFTIHRpbGVfZGF0YSBGUk9NIGRlY295dQIHFxcXAYFJdGFibGVkZWNveWRlY295A0NSRUFURSBUQUJMRSBkZWNveSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgdGV4dCkNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4BDQDOAAQAaAABtQFGANIAaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGBAYAAABkBAcVFxcIgSt2aWV3dGlsZXN0aWxlc0NSRUFURSBWSUVXIHRpbGVzIEFTIFNFTEVDVCB6b29tX2xldmVsLCB0aWxlX2NvbHVtbiwgdGlsZV9yb3csIHRpbGVfZGF0YSBGUk9NIHQAAAAEcgMHFRMTCIFPdmlld3p6enp6ekNSRUFURSBWSUVXIHQgQVMgU0VMRUNUIHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdywgcmFuZG9tYmxvYigxNikgQVMgdGlsZV9kYXRhIEZST00gZGVjb3ltAgcXDw8BgUl0YWJsZXR0A0NSRUFURSBUQUJMRSBkZWNveSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgdGV4dCk="
+      },
+      {
+        "id": "baseRowNameLieBehindIfNotExists",
+        "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles_base (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "CREATE UNIQUE INDEX tiles_base_index ON tiles_base (zoom_level, tile_column, tile_row)", "INSERT INTO tiles_base VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "CREATE VIEW zzz AS SELECT zoom_level FROM tiles_base", "CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM b", "PRAGMA writable_schema=ON", "UPDATE sqlite_master SET sql = 'CREATE VIEW b AS SELECT zoom_level, tile_column, tile_row, randomblob(16) AS tile_data FROM tiles_base' WHERE name = 'zzz'", "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 'b', 'b', 2, 'CREATE TABLE IF NOT EXISTS b (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)')", "PRAGMA writable_schema=OFF"],
+        "expect": {"accepted": false, "rejectedAt": "schema"},
+        "note": "the base table row b is a skipped IF NOT EXISTS decoy, the live b is an expression view in a row named zzz",
+        "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAYAAAAAAAAAAAAAAAUAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+wUAAAABAfsAAAAABgH7AKcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGBAYAAAAAAH0DBxctIQGBOWluZGV4dGlsZXNfYmFzZV9pbmRleHRpbGVzX2Jhc2UEQ1JFQVRFIFVOSVFVRSBJTkRFWCB0aWxlc19iYXNlX2luZGV4IE9OIHRpbGVzX2Jhc2UgKHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdymBBAIHFyEhAYFTdGFibGV0aWxlc19iYXNldGlsZXNfYmFzZQNDUkVBVEUgVEFCTEUgdGlsZXNfYmFzZSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgAAAABQMNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4BCgAAAAIB8wAB+gHzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYFCQgJAQIFBQgICAkNAAAAAwCvAAG1AS4ArwBpAGEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgQGAAAAAAB9AwcXLSEBgTlpbmRleHRpbGVzX2JhBgUGAAAAAABEBAYVExMIdXZpZXd6enp6enpDUkVBVEUgVklFVyB6enogQVMgU0VMRUNUIHpvb21fbGV2ZWwgRlJPTSB0aWxlc19iYXNlfQMHFy0hAYE5aW5kZXh0aWxlc19iYXNlX2luZGV4dGlsZXNfYmFzZQRDUkVBVEUgVU5JUVVFIElOREVYIHRpbGVzX2Jhc2VfaW5kZXggT04gdGlsZXNfYmFzZSAoem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93KYEEAgcXISEBgVN0YWJsZXRpbGVzX2Jhc2V0aWxlc19iYXNlA0NSRUFURSBUQUJMRSB0aWxlc19iYXNlICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKUkBBhcdHQFndGFibGVtZXRhZGF0YW1ldGFkYXRhAkNSRUFURSBUQUJMRSBtZXRhZGF0YSAobmFtZSB0ZXh0LCB2YWx1ZSB0ZXh0KQ0BugADAGIAANsBVABiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdwYHFw8PAYFddGFibGViYgJDUkVBVEUgVEFCTEUgSUYgTk9UIEVYSVNUUyBiICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKXcEBxUTEwiBWXZpZXd6enp6enpDUkVBVEUgVklFVyBiIEFTIFNFTEVDVCB6b29tX2xldmVsLCB0aWxlX2NvbHVtbiwgdGlsZV9yb3csIHJhbmRvbWJsb2IoMTYpIEFTIHRpbGVfZGF0YSBGUk9NIHRpbGVzX2Jhc2VkBQcVFxcIgSt2aWV3dGlsZXN0aWxlc0NSRUFURSBWSUVXIHRpbGVzIEFTIFNFTEVDVCB6b29tX2xldmVsLCB0aWxlX2NvbHVtbiwgdGlsZV9yb3csIHRpbGVfZGF0YSBGUk9NIGIAAABGExMIdXZpZXd6enp6enpDUkVBVEUgVklFVyB6enogQVMgU0VMRUNUIHpvb21fbGV2ZWwgRlJPTSB0aWxlc19iYXNl"
       }
     ],
-    "relationCasesRule": "run sql[] in order on an empty database file with an ordinary connection, open it with the real reader (testBudgetMs, when given, replaces admissionBudgetMs through the test seam) and compare expect: accepted, and when accepted minZoom, maxZoom, name, format, each tiles[] probe (XYZ, hex null = no tile) and extensions{}. Skip a row whose minSqliteVersion is above the runtime sqlite_version() (it can't be built there). rejectedAt and relations are the reference's notes, not asserted"
+    "relationCasesRule": "run sql[] in order on an empty database file with an ordinary connection (a row with packBase64 is that exact file instead: write the decoded bytes and skip sql[], which needs writable_schema and Apple's SQLite refuses that by default), open it with the real reader (testBudgetMs, when given, replaces admissionBudgetMs through the test seam) and compare expect: accepted, and when accepted minZoom, maxZoom, name, format, each tiles[] probe (XYZ, hex null = no tile) and extensions{}. Skip a row whose minSqliteVersion is above the runtime sqlite_version() (it can't be built there). rejectedAt and relations are the reference's notes, not asserted"
   },
   "mbtilesOpenGuard": {
     "fileName": "mbtiles_open_guard.json",

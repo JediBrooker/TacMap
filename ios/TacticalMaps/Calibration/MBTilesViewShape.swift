@@ -50,6 +50,63 @@ enum MBTilesViewShape {
         }
     }
 
+    /// SEC-M1-SHADOW: does a table row's sqlite_master.sql make exactly the
+    /// ordinary table `name`. The words CREATE TABLE (so not CREATE VIRTUAL
+    /// TABLE), then one identifier, quoted the three ways the view tokenizer
+    /// takes or a non reserved word with whitespace before it, equal to name
+    /// ignoring ASCII case and not followed by a quote mark or a dot. That
+    /// keeps out IF NOT EXISTS (IF is reserved, sqlite never stores it anyway)
+    /// and a row whose name column says t while its sql makes some other
+    /// table, which sqlite without the schema name cross-check loads happily.
+    /// Port of table_declares() in the generator, pinned by import_limits.json
+    /// baseTableShape.cases
+    static func tableDeclares(sql: String?, name: String) -> Bool {
+        guard let sql else { return false }
+        let b = Array(sql.utf8)
+        let n = b.count
+        var i = 0
+        func isSpace(_ c: UInt8) -> Bool { c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A }
+        func isAlpha(_ c: UInt8) -> Bool { (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) }
+        func word() -> String? {
+            let start = i
+            while i < n, isAlpha(b[i]) { i += 1 }
+            return i > start ? String(decoding: b[start..<i], as: UTF8.self).uppercased() : nil
+        }
+        // same as the generator's regex [ \t\r\n]*([A-Za-z]+)[ \t\r\n]+([A-Za-z]+)
+        while i < n, isSpace(b[i]) { i += 1 }
+        guard word() == "CREATE", i < n, isSpace(b[i]) else { return false }
+        while i < n, isSpace(b[i]) { i += 1 }
+        guard word() == "TABLE" else { return false }
+        let spaced = i < n && isSpace(b[i])
+        while i < n, isSpace(b[i]) { i += 1 }
+        guard i < n else { return false }
+        let ident: ArraySlice<UInt8>
+        let c = b[i]
+        if c == UInt8(ascii: "\"") || c == UInt8(ascii: "[") || c == UInt8(ascii: "`") {
+            let close = c == UInt8(ascii: "[") ? UInt8(ascii: "]") : c
+            guard let j = b[(i + 1)...].firstIndex(of: close) else { return false }
+            ident = b[(i + 1)..<j]
+            guard !ident.isEmpty, ident.allSatisfy({ $0 >= 0x20 && $0 <= 0x7E && !isQuoteMark($0) }) else {
+                return false
+            }
+            i = j + 1
+        } else if spaced, isLetter(c) {
+            let start = i
+            i += 1
+            while i < n, isLetter(b[i]) || (b[i] >= 0x30 && b[i] <= 0x39) { i += 1 }
+            ident = b[start..<i]
+            guard !reservedWords.contains(String(decoding: ident, as: UTF8.self).uppercased()) else { return false }
+        } else {
+            return false
+        }
+        if i < n, isQuoteMark(b[i]) || b[i] == UInt8(ascii: ".") { return false }
+        // ascii fold only, a non ascii name never matches
+        func fold(_ c: UInt8) -> UInt8 { c >= 0x41 && c <= 0x5A ? c + 0x20 : c }
+        let want = Array(name.utf8)
+        return want.allSatisfy({ $0 < 0x80 }) && ident.count == want.count
+            && zip(ident, want).allSatisfy { fold($0) == fold($1) }
+    }
+
     private static func isQuoteMark(_ c: UInt8) -> Bool {
         c == UInt8(ascii: "\"") || c == UInt8(ascii: "[") || c == UInt8(ascii: "]") || c == UInt8(ascii: "`")
     }
@@ -96,9 +153,12 @@ enum MBTilesViewShape {
         return out
     }
 
-    /// CREATE VIEW [IF NOT EXISTS] <relation> [(ident, ...)] AS SELECT col [, col ...]
+    /// CREATE VIEW <relation> [(ident, ...)] AS SELECT col [, col ...]
     /// FROM table [[INNER | LEFT [OUTER] | CROSS] JOIN table (ON colref = colref |
-    /// ON (colref = colref) | USING (ident, ...))], nothing after it
+    /// ON (colref = colref) | USING (ident, ...))], nothing after it. no IF NOT
+    /// EXISTS: sqlite drops it when it stores a view, so only a hand edit has it,
+    /// and the duplicate it lets sqlite skip is how a decoy row sat behind the
+    /// live view (SEC-M1-SHADOW)
     private struct Parser {
         let tokens: [Token]
         var pos = 0
@@ -177,10 +237,6 @@ enum MBTilesViewShape {
         mutating func view(relation: String) throws -> [String] {
             try need(kw("CREATE"))
             try need(kw("VIEW"))
-            if kw("IF") {
-                try need(kw("NOT"))
-                try need(kw("EXISTS"))
-            }
             try need(try ident().lowercased() == relation)
             if punct("(") {
                 _ = try ident()

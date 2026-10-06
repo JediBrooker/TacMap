@@ -431,6 +431,19 @@ final class MBTilesStoreTests: XCTestCase {
         return url
     }
 
+    /// a relationCases row as a file. the ones that write sqlite_master come as
+    /// packBase64, our sqlite has SQLITE_DBCONFIG_DEFENSIVE on so writable_schema
+    /// is a no-op here and their sql[] can't be replayed
+    private func makeRelationPack(_ vector: [String: Any], _ id: String) throws -> URL {
+        guard let packed = vector["packBase64"] as? String else {
+            return try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("relation-\(UUID().uuidString).mbtiles")
+        try XCTUnwrap(Data(base64Encoded: packed), id).write(to: url)
+        return url
+    }
+
     private func hex(_ data: Data?) -> String? {
         data.map { $0.map { String(format: "%02x", $0) }.joined() }
     }
@@ -442,7 +455,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
         XCTAssertEqual(fixture["admissionBudgetAppliesTo"] as? String, "views")
         let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 34)
+        XCTAssertEqual(cases.count, 40)
         var seen: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
@@ -451,7 +464,7 @@ final class MBTilesStoreTests: XCTestCase {
                 continue
             }
             seen.insert(id)
-            let url = try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+            let url = try makeRelationPack(vector, id)
             defer { try? FileManager.default.removeItem(at: url) }
             let expect = try XCTUnwrap(vector["expect"] as? [String: Any], id)
             let budget = vector["testBudgetMs"] as? Int ?? MBTilesStore.admissionBudgetMs
@@ -488,7 +501,9 @@ final class MBTilesStoreTests: XCTestCase {
         }
         XCTAssertTrue(seen.isSuperset(of: ["nodeMbtilesDedup", "bothViews", "tilesViewEndless", "tilesIsAnIndex",
                                            "viewDateTrigger", "martinNormalizedLeftJoin", "dedupNoIndexOversizedImage",
-                                           "tableOversizedValues", "schemaStatementTooLong", "budgetUnindexedJoin"]))
+                                           "tableOversizedValues", "schemaStatementTooLong", "budgetUnindexedJoin",
+                                           "tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant",
+                                           "tableRowKeepsIfNotExists", "baseRowNameLie"]))
     }
 
     /// "3.31.0" -> 3031000, what sqlite3_libversion_number gives
@@ -565,18 +580,25 @@ final class MBTilesStoreTests: XCTestCase {
                 reasons[reason, default: 0] += 1
             }
         }
-        XCTAssertEqual(reasons, ["accepted": 18, "tooLong": 1, "token": 17, "shape": 27])
+        // 3.0.2 SEC-M1-SHADOW moved ifNotExists from accepted to shape
+        XCTAssertEqual(reasons, ["accepted": 17, "tooLong": 1, "token": 17, "shape": 28])
     }
 
-    func testCreateTablePrefixMatchesTheGeneratorRegex() {
-        XCTAssertTrue(MBTilesStore.startsWithCreateTable("CREATE TABLE tiles (a)"))
-        XCTAssertTrue(MBTilesStore.startsWithCreateTable(" \n create\ttable\"t\"(a)"))
-        XCTAssertFalse(MBTilesStore.startsWithCreateTable("CREATE VIRTUAL TABLE t USING fts4(a)"))
-        // a comment between the words is no whitespace, so no sneaking VIRTUAL past as one word
-        XCTAssertFalse(MBTilesStore.startsWithCreateTable("CREATE/**/VIRTUAL TABLE t USING fts4(a)"))
-        XCTAssertFalse(MBTilesStore.startsWithCreateTable("CREATE/**/ TABLE t (a)"))
-        XCTAssertFalse(MBTilesStore.startsWithCreateTable("CREATETABLE t (a)"))
-        XCTAssertFalse(MBTilesStore.startsWithCreateTable(""))
+    /// SEC-M1-SHADOW: a base table row has to declare its own name, the
+    /// generator's table_declares() verdicts
+    func testSharedBaseTableShapeCasesUseThePortedCheck() throws {
+        let shape = try XCTUnwrap(try metadataAdmissionFixture()["baseTableShape"] as? [String: Any])
+        let cases = try XCTUnwrap(shape["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 35)
+        var verdicts: [Bool: Int] = [:]
+        for c in cases {
+            let id = try XCTUnwrap(c["id"] as? String)
+            let name = try XCTUnwrap(c["name"] as? String, id)
+            let want = try XCTUnwrap((c["expect"] as? [String: Any])?["accepted"] as? Bool, id)
+            XCTAssertEqual(MBTilesViewShape.tableDeclares(sql: c["sql"] as? String, name: name), want, id)
+            verdicts[want, default: 0] += 1
+        }
+        XCTAssertEqual(verdicts, [true: 12, false: 23])
     }
 
     /// the process's resident high water mark. SQLite fills what it allocates
@@ -648,12 +670,15 @@ final class MBTilesStoreTests: XCTestCase {
     func testHostileViewIsRefusedOnTheAdmissionAndTheLazyPath() throws {
         for id in ["viewDateTrigger", "viewCallsFunction", "viewKeywordValue", "viewWhereClause", "viewOverView",
                    "viewOverVirtualTable", "tilesVirtualTable", "tilesTableGeneratedColumn", "viewOverGeneratedColumn",
-                   "schemaStatementTooLong", "tilesViewEndless", "metadataViewLargeUnknownValue"] {
+                   "schemaStatementTooLong", "tilesViewEndless", "metadataViewLargeUnknownValue",
+                   // SEC-M1-SHADOW: the row the checks read has to be the object sqlite runs
+                   "tilesShadowedByCaseVariant", "metadataShadowedByCaseVariant", "tableRowKeepsIfNotExists",
+                   "viewRowNameLieBehindIfNotExists", "baseRowNameLie", "baseRowNameLieBehindIfNotExists"] {
             let vector = try relationCase(id)
             if let min = vector["minSqliteVersion"] as? String, sqlite3_libversion_number() < Self.versionNumber(min) {
                 continue
             }
-            let url = try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+            let url = try makeRelationPack(vector, id)
             defer { try? FileManager.default.removeItem(at: url) }
             XCTAssertNil(MBTilesStore(url: url), id)
             let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(

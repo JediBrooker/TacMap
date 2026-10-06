@@ -147,13 +147,11 @@ internal object MBTilesViewShape {
             if (kw("AS")) ident() else maybeIdent()
         }
 
+        // no IF NOT EXISTS (SEC-M1-SHADOW): sqlite drops it when it stores a view, so only a hand edit has it,
+        // and the duplicate it lets sqlite skip is how a decoy row sat behind the live view
         fun view(): List<String> {
             need(kw("CREATE"))
             need(kw("VIEW"))
-            if (kw("IF")) {
-                need(kw("NOT"))
-                need(kw("EXISTS"))
-            }
             need(ident().lowercase(Locale.ROOT) == relation)
             if (punct("(")) {
                 ident()
@@ -199,11 +197,46 @@ internal object MBTilesViewShape {
         }
     }
 
-    /** the first two ascii words of a table's sql are CREATE TABLE, so not CREATE VIRTUAL TABLE */
+    /** the first two ascii words of a table's sql, they have to be CREATE TABLE so not CREATE VIRTUAL TABLE */
     private val TABLE_PREFIX = Regex("^[ \\t\\r\\n]*([A-Za-z]+)[ \\t\\r\\n]+([A-Za-z]+)")
 
-    fun isOrdinaryTableSql(sql: String?): Boolean {
+    /**
+     * SEC-M1-SHADOW: does a table row's sqlite_master.sql make exactly the ordinary table [name]. CREATE TABLE,
+     * then one identifier (the view tokenizer's quoted forms, or a non reserved word with whitespace before it)
+     * equal to name ignoring ascii case, not followed by a quote mark or a dot. keeps out IF NOT EXISTS (IF is
+     * reserved, sqlite never stores it anyway) and a row whose name column says t while its sql makes another
+     * table, which sqlite without the schema name cross-check (older android) loads fine. port of
+     * table_declares() in the generator, pinned by import_limits.json baseTableShape.cases
+     */
+    fun tableDeclares(sql: String?, name: String): Boolean {
         val m = TABLE_PREFIX.find(sql ?: return false) ?: return false
-        return m.groupValues[1].uppercase(Locale.ROOT) == "CREATE" && m.groupValues[2].uppercase(Locale.ROOT) == "TABLE"
+        if (m.groupValues[1].uppercase(Locale.ROOT) != "CREATE" || m.groupValues[2].uppercase(Locale.ROOT) != "TABLE") {
+            return false
+        }
+        val n = sql.length
+        var i = m.range.last + 1
+        val spaced = i < n && sql[i] in WHITESPACE
+        while (i < n && sql[i] in WHITESPACE) i++
+        if (i >= n) return false
+        val ident: String
+        val ch = sql[i]
+        if (ch in QUOTES) {
+            val j = sql.indexOf(QUOTES.getValue(ch), i + 1)
+            if (j < 0) return false
+            ident = sql.substring(i + 1, j)
+            if (ident.isEmpty() || ident.any { it.code !in 0x20..0x7E || it in QUOTE_MARKS }) return false
+            i = j + 1
+        } else if (spaced && isWordStart(ch)) {
+            var j = i + 1
+            while (j < n && isWordPart(sql[j])) j++
+            ident = sql.substring(i, j)
+            if (ident.uppercase(Locale.ROOT) in RESERVED_WORDS) return false
+            i = j
+        } else {
+            return false
+        }
+        if (i < n && (sql[i] in QUOTE_MARKS || sql[i] == '.')) return false
+        // ascii fold only, a non ascii name never matches
+        return name.all { it.code < 0x80 } && ident.equals(name, ignoreCase = true)
     }
 }
