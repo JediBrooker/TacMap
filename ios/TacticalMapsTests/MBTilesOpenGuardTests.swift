@@ -479,20 +479,35 @@ final class MBTilesOpenGuardTests: XCTestCase {
         try FileManager.default.moveItem(at: try makePack(), to: legacy)
         let marker = try XCTUnwrap(ImportedMapLibraryRecovery.markerURL)
         var markerAtOpen: String?
-        MBTilesStore.admissionOpenHookForTesting = { _ in markerAtOpen = try? String(contentsOf: marker, encoding: .utf8) }
+        var openedAt: URL?
+        var opaqueAtOpen: [String] = []
+        MBTilesStore.admissionOpenHookForTesting = { url in
+            markerAtOpen = try? String(contentsOf: marker, encoding: .utf8)
+            openedAt = url
+            // what a crash right here would leave behind
+            opaqueAtOpen = ((try? FileManager.default.contentsOfDirectory(atPath: imported.path)) ?? [])
+                .filter(ImportedMapLibraryRecovery.isOpaqueImportName)
+        }
         let made = try XCTUnwrap(ImportedMapLibraryMigration.mbtilesEntry(legacy, nowMs: 0))
         XCTAssertEqual(made.entry.displayName, "Sample")
         XCTAssertEqual(markerAtOpen, "Ridge.mbtiles", "keyed on the 2.x name, the opaque link is new every try")
+        XCTAssertEqual(openedAt?.lastPathComponent, "Ridge.mbtiles", "read on the 2.x file itself")
+        XCTAssertEqual(opaqueAtOpen, [], "no second name for the bytes yet, dying here leaves nothing for adopt to reopen")
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
         if let link = made.link { ImportedMapStorage.unlink(link.new) }
 
-        try Data("Ridge.mbtiles".utf8).write(to: marker)
-        var opens = 0
-        MBTilesStore.admissionOpenHookForTesting = { _ in opens += 1 }
-        let again = try XCTUnwrap(ImportedMapLibraryMigration.mbtilesEntry(legacy, nowMs: 0))
-        XCTAssertEqual(opens, 0)
-        XCTAssertEqual(again.entry.displayName, "Ridge")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+        // died in there last time (or adopt did, on another file): stem, no open,
+        // and the marker stays for the adoption that runs next to skip that file
+        for named in ["Ridge.mbtiles", "map-\(UUID().uuidString.lowercased()).mbtiles"] {
+            try Data(named.utf8).write(to: marker)
+            var opens = 0
+            MBTilesStore.admissionOpenHookForTesting = { _ in opens += 1 }
+            let again = try XCTUnwrap(ImportedMapLibraryMigration.mbtilesEntry(legacy, nowMs: 0))
+            XCTAssertEqual(opens, 0, named)
+            XCTAssertEqual(again.entry.displayName, "Ridge", named)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
+            XCTAssertEqual(try? String(contentsOf: marker, encoding: .utf8), named, "left untouched")
+            if let link = again.link { ImportedMapStorage.unlink(link.new) }
+        }
     }
 }

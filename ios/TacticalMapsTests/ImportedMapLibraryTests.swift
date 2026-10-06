@@ -1038,6 +1038,50 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         XCTAssertTrue(ImportedMapLibraryMigration.legacyPresent)
     }
 
+    private func makeMBTiles(_ url: URL, name: String) throws {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_exec(db, """
+        CREATE TABLE metadata (name TEXT, value TEXT);
+        CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB);
+        INSERT INTO metadata VALUES ('name','\(name)'),('format','png'),('bounds','-1.0,-2.0,3.0,4.0');
+        INSERT INTO tiles VALUES (0,0,0,X'01');
+        """, nil, nil, nil), SQLITE_OK)
+    }
+
+    /// 3.0.2 s14.1 rule 8 through the real salvage: last launch died while adopt
+    /// had an orphan pack open. The 2.x pack's name read runs before adopt and
+    /// used to overwrite that marker, so adopt opened the orphan again, and the
+    /// app died at every launch
+    func testSalvageNeverReopensAnOrphanPackTheLastAdoptionDiedOn() throws {
+        let imported = root.appendingPathComponent("ImportedMaps")
+        let legacy = imported.appendingPathComponent("Ridge.mbtiles")
+        try makeMBTiles(legacy, name: "Ridge pack")
+        let orphan = imported.appendingPathComponent("map-\(UUID().uuidString.lowercased()).mbtiles")
+        try makeMBTiles(orphan, name: "Orphan pack")
+        XCTAssertTrue(ActiveMapSelectionStore.save(try XCTUnwrap(OfflineTileMapSource(url: legacy))))
+        // any uncertain read salvages, an unreadable session will do
+        PDFSessionStore.defaultsProvider().set(Data("unreadable legacy session".utf8), forKey: "active_pdf_v1")
+        let marker = try XCTUnwrap(ImportedMapLibraryRecovery.markerURL)
+        try Data(orphan.lastPathComponent.utf8).write(to: marker)
+        var opened: [String] = []
+        MBTilesStore.admissionOpenHookForTesting = { opened.append($0.lastPathComponent) }
+        defer { MBTilesStore.admissionOpenHookForTesting = nil }
+
+        XCTAssertEqual(ImportedMapLibraryMigration.migrateIfNeeded(), .salvaged)
+        XCTAssertFalse(opened.contains(orphan.lastPathComponent), "reopened the pack it died on: \(opened)")
+        let lib = try loadedLibrary()
+        XCTAssertEqual(lib.entries.count, 2)
+        let adopted = try XCTUnwrap(lib.entries.first { $0.fileName.hasSuffix(orphan.lastPathComponent) })
+        XCTAssertEqual(adopted.fileModifiedAtMs, -1, "adopted unavailable, never opened")
+        let converted = try XCTUnwrap(lib.entries.first { $0.id != adopted.id })
+        XCTAssertEqual(converted.displayName, "Ridge", "a marker down means no name read, the stem stands in")
+        XCTAssertEqual(lib.active, .entry(converted.id))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: orphan.path), "never deletes")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "adopt took it off")
+    }
+
     /// L7: map files with no library and no legacy store at all
     func testOrphanMapFilesWithNoLibraryAreAdoptedNotReconciled() throws {
         let orphan = root.appendingPathComponent("ImportedMaps/map-\(UUID().uuidString.lowercased()).pdf")
