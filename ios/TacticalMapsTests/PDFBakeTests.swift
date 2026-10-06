@@ -267,6 +267,75 @@ final class PDFBakeTests: XCTestCase {
         XCTAssertTrue(finals.isEmpty)
     }
 
+    /// K1 follow-up (3.0.3): the bake finished while the auth-bound key was
+    /// relocked. Its record write can only fail behind the gate, which used to
+    /// bin the finished tiles as writeFailed. Now the file waits for the user's
+    /// unlock with no write tried before it, then goes in like any other
+    func testABakeThatFinishesBehindTheRelockWaitsForTheUnlock() throws {
+        pdf = try makePDF()
+        var relocked = false
+        var lockedAttaches = 0
+        controller.keyRelocked = { relocked }
+        // what MapViewModel.attachBake does behind the gate: the write throws
+        controller.attachRecord = { [unowned self] _, p, _ in
+            if relocked { lockedAttaches += 1; return .writeFailed }
+            self.persisted.append(p)
+            return .attached
+        }
+        let p = try proposal()
+        let partialsBefore = Set(workFiles())
+        controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
+        // left the app: the bake carries on, the key relocks
+        relocked = true
+        waitFor("bake") { controller.waitingForUnlock || !controller.isRunning }
+        XCTAssertTrue(controller.waitingForUnlock, "ended in \(controller.state) instead of waiting")
+        XCTAssertTrue(controller.isRunning)
+        XCTAssertEqual(lockedAttaches, 0, "no library write behind the lock")
+        XCTAssertNil(pdf.bake)
+        XCTAssertTrue(persisted.isEmpty)
+        XCTAssertEqual(controller.guardStore.snapshot.bakeInProgress, pdf.renderGuardToken,
+                       "a kill before the unlock still reads as an unfinished bake")
+        let parkedFiles = Set(workFiles()).subtracting(partialsBefore)
+        XCTAssertEqual(parkedFiles.count, 1, "the finished .partial waits in the work dir")
+        XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: controller.finalDirectory.path)) ?? [], [])
+        // nothing moves while it's still locked
+        controller.publishParkedBake()
+        XCTAssertTrue(controller.waitingForUnlock)
+        XCTAssertEqual(lockedAttaches, 0)
+
+        relocked = false
+        controller.publishParkedBake()
+        XCTAssertFalse(controller.waitingForUnlock)
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertTrue(controller.finishedMessage)
+        let record = try XCTUnwrap(pdf.bake)
+        XCTAssertTrue(persisted.first === pdf)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: controller.finalDirectory.appendingPathComponent(record.fileName).path))
+        XCTAssertTrue(Set(workFiles()).subtracting(partialsBefore).isEmpty)
+        XCTAssertNil(controller.guardStore.snapshot.bakeInProgress)
+    }
+
+    func testCancelWhileWaitingForTheUnlockDropsTheFinishedBake() throws {
+        pdf = try makePDF()
+        controller.keyRelocked = { true }
+        let p = try proposal()
+        let partialsBefore = Set(workFiles())
+        controller.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
+        waitFor("bake") { controller.waitingForUnlock || !controller.isRunning }
+        XCTAssertTrue(controller.waitingForUnlock)
+        controller.cancel()
+        XCTAssertFalse(controller.waitingForUnlock)
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertNil(pdf.bake)
+        XCTAssertTrue(persisted.isEmpty)
+        XCTAssertTrue(Set(workFiles()).subtracting(partialsBefore).isEmpty, "its .partial went")
+        XCTAssertNil(controller.guardStore.snapshot.bakeInProgress)
+    }
+
+    private func workFiles() -> [String] {
+        (try? FileManager.default.contentsOfDirectory(atPath: PDFBakeWorker.workDirectory.path)) ?? []
+    }
+
     func testGeorefChangeDropsTheBakeRecord() throws {
         pdf = try makePDF()
         pdf.bake = PDFBakeRecord(fileName: "x.mbtiles", bakeKey: String(repeating: "a", count: 64), minZoom: 0,

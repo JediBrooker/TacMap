@@ -328,6 +328,10 @@ final class MapViewModel: ObservableObject {
     /// S7: an import copy whose library write failed, kept (in flight) for Retry.
     /// Not Now drops it
     private var pendingImportCopy: URL?
+    /// K1 (3.0.3 DL-4): Retries of writes that hit the relock gate, oldest first.
+    /// the unlock's own restore wipes pendingRetry, so these get run again once a
+    /// restore has the library back. Not Now drops them with the copy
+    private var relockedRetries: [() -> Bool] = []
     private var rebuildInFlight = false
 
     /// F3: Retry on a locked library re-runs the migration + restore, which
@@ -839,6 +843,7 @@ final class MapViewModel: ObservableObject {
             _ = decideMBTilesLaunchGuard(restoredToken: nil)
             afterRestore(LibraryState())
             showNextLaunchNotice()
+            resumeWorkParkedBehindRelock()
             return .nothing
         case .loaded(let s):
             library = s
@@ -909,6 +914,7 @@ final class MapViewModel: ObservableObject {
             }
             afterRestore(s)
             showNextLaunchNotice()
+            resumeWorkParkedBehindRelock()
             return .restored
         case .locked:
             libraryStatus = .locked
@@ -971,6 +977,17 @@ final class MapViewModel: ObservableObject {
                 completion?(restored)
             }
         }
+    }
+
+    /// K1: the library is back (the unlock's restore, or a Retry after it). what
+    /// the relock cut off goes in now, after the restored map is up so an import
+    /// that activates still wins. Still relocked = each one just parks again, the
+    /// gate throws before any Keychain read
+    private func resumeWorkParkedBehindRelock() {
+        let parked = relockedRetries
+        relockedRetries = []
+        for retry in parked { _ = retry() }
+        bakeController.publishParkedBake()
     }
 
     private func afterRestore(_ s: LibraryState) {
@@ -1158,6 +1175,8 @@ final class MapViewModel: ObservableObject {
 
     func dismissMapSelectionPersistenceIssue() {
         pendingRetry = nil
+        // a parked commit would write an entry for the copy unlinked below
+        relockedRetries = []
         mapSelectionPersistenceIssue = nil
         // S7: Not Now on a failed import commit, its copy isn't coming back
         if let copy = pendingImportCopy {
@@ -1189,9 +1208,12 @@ final class MapViewModel: ObservableObject {
             try libraryDependencies.write(next)
         } catch {
             guard reportFailure else { return false }
-            reportIssue(Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage()) { [weak self] in
-                self?.execute(t, publish: publish) ?? false
-            }
+            let retry: () -> Bool = { [weak self] in self?.execute(t, publish: publish) ?? false }
+            // the auth-bound key relocked under this (app left the front). the
+            // unlock's restore clears the Retry below, park it so it runs after
+            // that restore instead. an import commit vanished otherwise (DL-4)
+            if DataKey.failedBehindRelock(error) { relockedRetries.append(retry) }
+            reportIssue(Messages.displayTheBasemapChoiceCouldNotBeSavedThePreviousMessage(), retry: retry)
             return false
         }
         removeKnownSupersededBakes(from: current, to: next)

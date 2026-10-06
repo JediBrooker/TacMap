@@ -750,6 +750,39 @@ final class LibraryBakeLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: tilesDir.appendingPathComponent(rec.fileName).path))
     }
 
+    /// K1 follow-up (3.0.3), through the real library and gate: a bake that
+    /// finished behind the relock used to fail its record write and lose the
+    /// tiles. It waits now, and the unlock's restore (bake sweep and all) leaves
+    /// it alone and records it
+    func testABakeFinishedBehindTheRelockIsRecordedByTheUnlocksRestore() throws {
+        let gate = DataKeyCache()
+        let key = testKey
+        try gate.unlock { key }
+        SafeStore.keyProvider = { try gate.get { key } }
+        let entry = try importedEntry()
+        let vm = viewModel()
+        let pdf = try showing(entry, in: vm)
+        let c = boundController(vm)
+        c.keyRelocked = { gate.isRelocked }
+        let p = try confirm(c, pdf)
+        c.start(maxZoom: try XCTUnwrap(p.options.first).maxZoom)
+        // the user left mid bake, RootGate relocks the auth-bound key
+        gate.lock()
+        waitUntil("bake", timeout: 120) { c.waitingForUnlock || !c.isRunning }
+        XCTAssertTrue(c.waitingForUnlock, "ended in \(c.state) instead of waiting")
+        XCTAssertNil(pdf.bake)
+        XCTAssertEqual(files(in: tilesDir), [])
+
+        XCTAssertNoThrow(try gate.unlock { key })
+        XCTAssertEqual(vm.restoreActiveMapSelection(), .restored)
+        XCTAssertFalse(c.waitingForUnlock)
+        XCTAssertEqual(c.state, .idle)
+        let rec = try XCTUnwrap(pdf.bake)
+        XCTAssertEqual(storedEntry(entry.id)?.pdf?.bake, rec)
+        XCTAssertEqual(files(in: tilesDir), [rec.fileName])
+        XCTAssertEqual(vm.library?.activeEntryID, entry.id, "the active map never changes")
+    }
+
     func testRecalibrationDuringTheBakeIsNotReverted() throws {
         let entry = try importedEntry()
         let vm = viewModel()

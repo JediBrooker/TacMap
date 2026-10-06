@@ -948,7 +948,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   unlock: a save still queued when the app left the foreground fails quietly
   instead of prompting for Face ID or passcode, re-caching the key behind the
   lock or stopping Unit Sync, and the sync revision record of a local edit it
-  carried is written after the unlock instead. The
+  carried is written after the unlock instead. Likewise an imported map or a
+  finished offline-tile bake whose library write lands behind the lock keeps
+  its file and is recorded after that unlock. The
   authorized recording-key exception and DEVICE cache policy above still apply.
   A background return needs a fresh connection and verified snapshot before
   mission frames are adopted. The background
