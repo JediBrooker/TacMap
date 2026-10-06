@@ -188,6 +188,9 @@ enum MapImportPipeline {
         try? FileManager.default.removeItem(at: m)
     }
 
+    /// test seam, runs in the sweep right after it read the marker
+    static var sweepReadMarker: (() -> Void)?
+
     /// A marker means the app died inside the PDF parser or the MBTiles
     /// admission. Remove the copy it names and the marker, don't retry.
     /// true = tell the user once. Runs at launch but also after every unlock
@@ -198,12 +201,18 @@ enum MapImportPipeline {
     static func recoverInterruptedImport() -> Bool {
         // read the marker once, a live import can take it off under us
         guard let m = markerURL, let data = try? Data(contentsOf: m) else { return false }
+        sweepReadMarker?()
         let files = interruptedImportFiles(marker: data)
         // the copy is registered before the marker goes on and stays so till
         // the import commits or drops it, so checking after the read can't
         // miss a live one
         let live = Set(InFlightImportFiles.snapshot.map(comparablePath))
         if files.contains(where: { live.contains(comparablePath($0)) }) { return false }
+        // a failed parse/admission takes its marker off before it unregisters
+        // the copy (off main), so a copy that left flight since the read shows
+        // up here as a gone or different marker. that import already said why
+        // it failed, it wasn't a crash
+        guard (try? Data(contentsOf: m)) == data else { return false }
         for url in files { try? FileManager.default.removeItem(at: url) }
         try? FileManager.default.removeItem(at: m)
         return true

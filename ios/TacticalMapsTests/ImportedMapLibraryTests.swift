@@ -490,6 +490,37 @@ final class ImportedMapLibraryTests: XCTestCase {
         XCTAssertFalse(MapImportPipeline.recoverInterruptedImport())
     }
 
+    /// 3.0.3 review: the parse fails right after the sweep read its marker. The
+    /// worker drops the marker, then unlinks + unregisters the copy (off main),
+    /// so the in-flight check misses it. That read as a crash and put "didn't
+    /// finish" up next to the import's own error, and took the next import's
+    /// marker with it
+    func testTheSweepRacingAFailedParseIsntAnInterruptedImport() throws {
+        let dir = try ImportedMapStorage.importedMapsDirectory()
+        let copy = dir.appendingPathComponent("map-\(UUID().uuidString).pdf")
+        try Data("x".utf8).write(to: copy)
+        InFlightImportFiles.register(copy)
+        defer { InFlightImportFiles.unregister(copy) }
+        MapImportPipeline.writeMarker(copy)
+        let next = dir.appendingPathComponent("map-\(UUID().uuidString).pdf")
+        defer { MapImportPipeline.sweepReadMarker = nil }
+        MapImportPipeline.sweepReadMarker = {
+            // inspectCopiedPDF's failure path, same order
+            MapImportPipeline.removeMarker()
+            ImportedMapStorage.unlink(copy)
+            InFlightImportFiles.unregister(copy)
+            // and the user's next import starts its parse
+            MapImportPipeline.writeMarker(next)
+        }
+        XCTAssertFalse(MapImportPipeline.recoverInterruptedImport(), "no interrupted alert for a parse that failed on its own")
+        MapImportPipeline.sweepReadMarker = nil
+        let marker = try XCTUnwrap(MapImportPipeline.markerURL)
+        XCTAssertEqual(try? Data(contentsOf: marker), Data(next.deletingPathExtension().lastPathComponent.utf8),
+                       "the next import keeps its marker")
+        MapImportPipeline.removeMarker()
+        XCTAssertFalse(MapImportPipeline.recoverInterruptedImport())
+    }
+
     // MARK: - drafts (s8.1)
 
     func testDraftStoreIsSealedKeyedAndBounded() throws {
