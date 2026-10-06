@@ -546,6 +546,24 @@ enum Messages {
     static func mapMigrationUncalibrated(_ name: String) -> String {
         L10n.message("id.map_migration_uncalibrated", fallback: "“%1$@” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.", name)
     }
+    static func mapPackOpenFailedMessage() -> String {
+        L10n.message("id.map_pack_open_failed_message", fallback: "The map pack may be damaged or built in a way TacMap can't open, or checking it took too long. The map on screen hasn't changed. You can try again or delete it under Imported maps in Layers.")
+    }
+    static func mapPackOpenFailedMessageMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.map_pack_open_failed_message", fallback: "The map pack may be damaged or built in a way TacMap can't open, or checking it took too long. The map on screen hasn't changed. You can try again or delete it under Imported maps in Layers.", arguments: [])
+    }
+    static func mapPackOpenFailedTitle(_ name: String) -> String {
+        L10n.message("id.map_pack_open_failed_title", fallback: "Couldn't open “%1$@”", name)
+    }
+    static func mapPackOpenFailedTitleMessage(_ name: String) -> LocalizedMessage {
+        LocalizedMessage(id: "id.map_pack_open_failed_title", fallback: "Couldn't open “%1$@”", arguments: [name])
+    }
+    static func mapPackRestoreFailedMessage() -> String {
+        L10n.message("id.map_pack_restore_failed_message", fallback: "Your saved map pack is missing, has changed or couldn't be opened, so the map stays blank. No online map was loaded in its place, and nothing was deleted. Under Imported maps in Layers you can choose another map, try again or delete it.")
+    }
+    static func mapPackRestoreFailedMessageMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.map_pack_restore_failed_message", fallback: "Your saved map pack is missing, has changed or couldn't be opened, so the map stays blank. No online map was loaded in its place, and nothing was deleted. Under Imported maps in Layers you can choose another map, try again or delete it.", arguments: [])
+    }
     static func mapPointCopy() -> String {
         L10n.message("id.map_point_copy", fallback: "Copy Coordinates")
     }
@@ -584,6 +602,9 @@ enum Messages {
     }
     static func mapStateOfflineTiles() -> String {
         L10n.message("id.map_state_offline_tiles", fallback: "Offline tiles")
+    }
+    static func mapStateOpenFailed() -> String {
+        L10n.message("id.map_state_open_failed", fallback: "Couldn't be opened – tap to try again")
     }
     static func mapStateRejected() -> String {
         L10n.message("id.map_state_rejected", fallback: "Georeferencing unreadable – tap to calibrate")
