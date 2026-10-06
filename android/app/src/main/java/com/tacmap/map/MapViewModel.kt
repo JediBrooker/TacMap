@@ -775,10 +775,17 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /** the guard's first draw window for a freshly published pack, or the end of the old one */
     private fun onPublishedForOpenGuard(source: MapSource) {
-        // replaced before it settled: done with it all the same
-        if (firstDraw != null && firstDraw?.second !== source) finishFirstDraw()
-        val pack = source as? OfflineTileMapSourceAndroid ?: return
-        val token = entryIdOf(pack)?.takeIf(mbtilesGuard::isArmed) ?: return
+        val pack = source as? OfflineTileMapSourceAndroid
+        val incoming = pack?.let(::entryIdOf)
+        val open = firstDraw
+        if (open != null && open.second !== source) {
+            // replaced before it settled: done with it all the same. unless it's the same entry
+            // as a new source (cache dropped + reopened), then the marker is the new open's
+            // and stays armed till its own first draw
+            finishFirstDraw(release = open.first != incoming)
+        }
+        if (pack == null) return
+        val token = incoming?.takeIf(mbtilesGuard::isArmed) ?: return
         firstDrawJob?.cancel()
         val watch = com.tacmap.map.render.MbtilesFirstDraw(android.os.SystemClock::elapsedRealtime)
         pack.readWatch = watch
@@ -790,13 +797,13 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun finishFirstDraw() {
+    private fun finishFirstDraw(release: Boolean = true) {
         val (token, pack) = firstDraw ?: return
         firstDraw = null
         firstDrawJob?.cancel()
         firstDrawJob = null
         pack.readWatch = null
-        releaseOpenGuard(token)
+        if (release) releaseOpenGuard(token)
     }
 
     /** Open Anyway */
@@ -1241,11 +1248,12 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         val entry = state.entry(id) ?: return false
         if (!canBeActive(entry)) return false
         if (entry.isMbtiles) {
-            val held = _pdfRecovery.value
-            if (held is CrashSuspect.Mbtiles && held.entryId == id) {
-                // picking the held back pack in Layers is Open Anyway, resolved before it's opened
+            // picking the held back pack in Layers is Open Anyway, resolved before it's opened.
+            // by what the guard holds, the alert may be long gone (Not Now keeps the suspect)
+            if (mbtilesGuard.isSuspect(id)) {
                 mbtilesGuard.resolve(com.tacmap.map.render.pdf.GuardResolution.OPEN_ANYWAY)
-                _pdfRecovery.value = null
+                val held = _pdfRecovery.value
+                if (held is CrashSuspect.Mbtiles && held.entryId == id) _pdfRecovery.value = null
             }
             // checked off main, written + up when it comes back. true = started (s14.2)
             return openMbtiles(entry, PackOpen.Activate(frame))

@@ -22,6 +22,7 @@ import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.CalibrationDraftStore
 import com.tacmap.calibration.ImportedMapEntry
 import com.tacmap.calibration.ImportedMapLibraryStore
+import com.tacmap.calibration.LibraryCommit
 import com.tacmap.calibration.LibraryLoad
 import com.tacmap.calibration.LibraryState
 import com.tacmap.calibration.OfflineTileMapSourceAndroid
@@ -267,6 +268,61 @@ class MbtilesOpenGuardInstrumentedTest {
         assertNull(suspect(again))
         assertNull(vm2.pdfRecovery.value)
         assertNull((library.load() as LibraryLoad.Loaded).state.entry(pack.id))
+    }
+
+    @Test
+    fun pickingTheHeldBackPackInLayersAfterNotNowStillClearsTheSuspect() {
+        val pack = packEntry()
+        seed(pack)
+        MbtilesOpenGuard(guardFile).arm(pack.id, foreground = true)
+        val guard = relaunch()
+        val vm = viewModel()
+        assertEquals(pack.id, vm.pdfRecovery.value?.entryId)
+        // Not Now: the alert goes, the suspect stays on disk
+        onMain { vm.dismissPdfRecovery() }
+        assertNull(vm.pdfRecovery.value)
+        assertEquals(pack.id, suspect(guard))
+
+        // then the user picks it in Layers anyway, that's an explicit open
+        var ok = false
+        onMain { ok = vm.activateImportedMap(pack.id) }
+        assertTrue(ok)
+        assertNull("suspect kept after a pick in Layers", suspect(guard))
+        waitUntil(what = "picked pack up") { vm.mapSource.value is OfflineTileMapSourceAndroid && vm.shownEntryId() == pack.id }
+        waitUntil(what = "no read settle") { armed(guard).isEmpty() }
+        // so the next launch restores it instead of asking about a map they opened
+        assertEquals(MbtilesLaunchDecision.NONE, MbtilesOpenGuard(guardFile).launchDecision(pack.id))
+    }
+
+    @Test
+    fun aPackReopenedAsANewSourceMidWindowStaysArmedTillItsOwnFirstDraw() {
+        val pack = packEntry()
+        seed(pack)
+        val guard = relaunch()
+        val vm = viewModel()
+        waitUntil(what = "restored") { vm.mapSource.value is OfflineTileMapSourceAndroid }
+        onMain { }
+        val first = vm.mapSource.value as OfflineTileMapSourceAndroid
+        // a read the map view asked for and hasn't had back yet keeps the first window open
+        val watch = requireNotNull(first.readWatch) { "no first draw window" }
+        watch.readStarted()
+        assertEquals(listOf(pack.id), armed(guard))
+
+        // another writer moves the file (same bytes, so it's reopened from the admitted cache)
+        val moved = File(files, "mbtiles/import-guard-moved-${UUID.randomUUID()}.mbtiles")
+        assertTrue(File(files, pack.fileName).renameTo(moved))
+        val current = (library.load() as LibraryLoad.Loaded).state
+        val next = current.copy(entries = current.entries.map { if (it.id == pack.id) it.copy(fileName = "mbtiles/${moved.name}") else it })
+        assertTrue(library.commit(next) is LibraryCommit.Written)
+        onMain { vm.onMissionDataUnlocked() }
+
+        val second = vm.mapSource.value
+        assertTrue("not reopened as a new source: $second", second is OfflineTileMapSourceAndroid && second !== first)
+        assertEquals("the reopen's marker went with the old window", listOf(pack.id), armed(guard))
+        assertTrue("new publication unwatched", (second as OfflineTileMapSourceAndroid).readWatch != null)
+        watch.readEnded(delivered = false)
+        // nothing asks the new one for a tile, so its own window ends it
+        waitUntil(what = "new window settled") { armed(guard).isEmpty() }
     }
 
     @Test
