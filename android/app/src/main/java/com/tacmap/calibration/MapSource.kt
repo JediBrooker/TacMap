@@ -144,3 +144,16 @@ class MbtilesPlaceholderSource(val entryId: String, override val displayName: St
     override val coverage: Wgs84Bounds? = null
     override val calibration: Calibration? = null
 }
+
+/**
+ * The saved pack couldn't be shown at a restore (file gone or changed, or its open got
+ * refused), s15.1 rule 4. Blank like the opening one but nothing's coming for it, so
+ * restoreIfLeftBlank leaves it alone. Goes when the user picks a map, a retry gets
+ * admitted or the entry's deleted. Never online in its place
+ */
+class MbtilesUnavailableSource(val entryId: String, override val displayName: String) : MapSource {
+    override val id: String = UUID.randomUUID().toString()
+    override val kind = MapSourceKind.OFFLINE_TILES
+    override val coverage: Wgs84Bounds? = null
+    override val calibration: Calibration? = null
+}

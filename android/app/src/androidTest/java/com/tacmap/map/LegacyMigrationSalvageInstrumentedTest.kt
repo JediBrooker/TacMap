@@ -249,6 +249,62 @@ class LegacyMigrationSalvageInstrumentedTest {
     }
 
     @Test
+    fun aLibraryThatGoesMissingUnderTheScreenIsSalvagedByItsRetryNotRebuilt() {
+        // L1 (3.0.2 deferral): a salvaged library with the 2.x selector frozen next to it, then
+        // the library file and its marker go while the screen's up (the ledger stays). A launch
+        // salvages that, but the in-session corrupt issue's Retry ran the S2 rebuild: the pack
+        // came back as Recovered map 1 and its old name was stuck in the selector for good
+        val pack = seed("mbtiles/import-5a5b5c5d5e5f5a5b.mbtiles", ByteArray(4096) { 7 })
+        legacySelectorRetaining(pack)
+        ledger += ImportedMapLibraryStore.LABEL
+        val vm = restored(viewModel())
+        assertRecovered(vm, listOf(pack), "first restore")
+        instrumentation.runOnMainSync { vm.dismissLaunchAlert() }
+
+        val lib = ImportedMapLibraryStore.FILE_NAME
+        assertTrue(File(files, lib).delete())
+        assertTrue(File(files, ".$lib.sealed-only-v1").delete())
+        assertEquals(LibraryLoad.Unfinished, ImportedMapLibraryStore(files).load())
+        // MapScreen coming back reads the sealed library again and finds it gone
+        instrumentation.runOnMainSync { vm.onMissionDataUnlocked() }
+        assertEquals(LibraryStatus.CORRUPT, vm.libraryStatus.value)
+        assertNotNull(vm.mapSelectionPersistenceIssue.value)
+
+        instrumentation.runOnMainSync { vm.retryMapSelectionPersistence() }
+        waitUntil(what = "retry") { vm.libraryStatus.value == LibraryStatus.LOADED }
+        restored(vm)
+        assertIntact(listOf(pack), "retry")
+        assertRecovered(vm, listOf(pack), "retry")
+        val sealed = (ImportedMapLibraryStore(files).load() as LibraryLoad.Loaded).state
+        assertEquals("import-5a5b5c5d5e5f5a5b", sealed.entries.single().displayName)
+        assertEquals(MapLaunchAlert.LibraryRecovered, vm.launchAlert.value)
+        assertTrue(File(files, "active_map_source.json").isFile)
+    }
+
+    @Test
+    fun aFreshInstallWithOnlyAKilledImportsPartialIsAFirstLaunchNotARecovery() {
+        // F4 (3.0.1 gate): the first import ever is killed mid copy and leaves only its .partial.
+        // that used to adopt nothing into a flagged library with the recovered notice, and no
+        // cleanup ever ran on the install again
+        val partial = seed("pdf_maps/import-6a6b6c6d6e6f6a6b.pdf.partial", ByteArray(2048) { 8 })
+        val sidecar = seed("mbtiles/import-7a7b7c7d7e7f7a7b.mbtiles-wal", ByteArray(512) { 9 })
+
+        val vm = restored(viewModel())
+        assertEquals(LibraryStatus.LOADED, vm.libraryStatus.value)
+        assertNull(vm.launchAlert.value)
+        assertNull(vm.mapSelectionPersistenceIssue.value)
+        // nothing written: still a first launch, and its reconcile cleared what the copy left
+        assertEquals(LibraryLoad.Empty, ImportedMapLibraryStore(files).load())
+        assertFalse(partial.exists())
+        assertFalse(sidecar.exists())
+
+        // and the next launch is a plain first launch too
+        val next = restored(viewModel())
+        assertNull(next.launchAlert.value)
+        assertEquals(LibraryLoad.Empty, ImportedMapLibraryStore(files).load())
+    }
+
+    @Test
     fun aLibraryWriteThatFailsOnAFullDiskIsPendingAndItsRetryStillMigrates() {
         // F2 through the real view model and SafeStore: the library's temp file can't be written.
         // 3.0.1 had the ledger down before that, read the library back corrupt and only offered

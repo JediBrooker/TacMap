@@ -657,7 +657,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   moves the file and writes its record as one step. It runs only on an authoritative
   read of the library: a library that loaded, or a first launch where no library was
   ever written, no legacy store is left to migrate and no map file is in the managed
-  directories (that names nothing and has nothing to delete). A library
+  directories (that names nothing; the most it can delete is what an interrupted copy left
+  behind, see below). A library
   that was written before and is gone now, or that was quarantined as unreadable (a
   `.corrupt-<time>` copy next to it), counts as unreadable, never as empty. If the library
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
@@ -714,7 +715,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   rename itself fails, while the old stores are still waiting, the next launch or Retry treats it as the
   migration it was and salvages (below:
   what converts keeps its name and calibration, every other map file is adopted, nothing is cleaned up or
-  deleted) rather than as a damaged library. On iOS, if saving the record fails after the bytes went down, the
+  deleted) rather than as a damaged library. If Android finds the library gone that way while it is running,
+  it shows the damaged-library message, and its Retry runs that same salvage instead of the rebuild. On iOS, if saving the record fails after the bytes went down, the
   library is already written. The migration then keeps the opaque links that library names, clears and
   deletes nothing, and the restore uses that library as if the app had been killed right after the write.
   If a legacy store is damaged
@@ -722,7 +724,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
-  library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
+  library. On Android an unexpected error while reading or converting the old stores, with the mission-data key
+  available, is handled the same way and converts nothing; only a key that is locked at some point of the
+  read, or a write that fails, keeps the migration waiting for Retry. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
   hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
   In a salvage those links are made before the write, so if the app is killed part way through, the links it made
   are still there on the retry. The retry lists each file once, by its file identity, and unlinks those leftover
@@ -734,7 +738,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   than being dropped; Android can't rebuild them either and brings that map back uncalibrated. A library that was
   never written, with no old stores left to migrate, while map files sit in app storage is salvaged the same way
   (every file adopted, `recoveryPreservesOrphans=true`, no cleanup), so neither a missing nor a quarantined index
-  can authorise deleting those files. When old stores that read cleanly are migrated instead, the library written from them permits
+  can authorise deleting those files. On Android, what an interrupted copy leaves behind (a `.partial` file, or
+  a SQLite `-journal`/`-wal`/`-shm` sidecar without its pack) is not a map file: on its own it doesn't turn a
+  first launch into a recovery, and that launch's cleanup deletes it (the copy never finished, so no imported
+  map is lost); iOS still counts such leftovers as map files and salvages. When old stores that read cleanly are migrated instead, the library written from them permits
   cleanup, so the reconcile after it keeps the files those stores name and removes any other map file in app
   storage, much like 2.x's own cold-start cleanup, which kept only the active and retained map. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
@@ -764,15 +771,29 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   SQLite supports that and turns off automatic indexes. Older SQLite (Android
   before 12, iOS before SQLite 3.45) loads a whole value before it checks its
   length, so before SQLite reads anything TacMap also reads the file's own
-  b-tree page headers (never a value) and refuses a pack whose schema has more
-  than 1,000 entries or 1 MiB in all, or whose metadata tables hold more than
-  64 rows or a row over 8 MiB + 128 KiB. Neither the schema load nor a metadata
-  read can then make SQLite load more than that, on any Android or iOS version,
-  and a tile stored as text instead of a blob is never read. What remains: on a
-  pack whose tiles are a view, rows of the underlying tables the view never
-  shows, and the columns it joins on, are compared while tiles are read, so on
-  that older SQLite such a value can still be loaded whole (bounded by the
-  4 GiB file); the crash guard below stops a repeat at the next launch. A view
+  b-tree page headers (never a metadata value) and refuses a pack whose schema
+  has more than 1,000 entries or 1 MiB in all, whose statistics tables (the
+  sqlite_stat1 and sqlite_stat4 that ANALYZE leaves, which SQLite reads in
+  full along with the schema) hold more than that together or aren't plain
+  tables, or whose metadata tables hold more than 64 rows or a row over
+  8 MiB + 128 KiB. To find the statistics tables it reads the schema's own
+  entries, once their size is capped. That bounds the schema load and every
+  value SQLite takes from a metadata table's rows, and a tile stored as text
+  instead of a blob is never read. What remains: indexes aren't checked, and
+  when SQLite looks a key up in an index (a metadata read by name, a view's
+  join, a tile read) it loads each index entry it compares whole, whatever the
+  length cap. So a pack carrying an index on a metadata or tiles table with a
+  huge entry (built that way on purpose, or a hand-edited index that points at
+  other data) can still make SQLite load that much, bounded by the 4 GiB file:
+  while the pack is checked (import, launch or a pick in Layers) for a
+  metadata index, while tiles are drawn for a tiles index. From Android 12 the 128 MiB heap cap
+  bounds that; Android before 12 and iOS have no such cap. Likewise, on a pack
+  whose tiles are a view, rows of the underlying tables the view never shows,
+  and the columns it joins on, are compared while tiles are read, so on older
+  SQLite (Android before 12, iOS before 3.45) such a value can still be loaded
+  whole (bounded by the 4 GiB file). A pack that kills its import is removed at
+  the next launch, and one that kills the app while it is opened or draws its
+  first screen is held back by the crash guard below. A view
   has no rowid for incremental reads, so it is read with key-addressed
   queries under the same bounds. A view's join isn't bounded by the file size
   alone, so when either relation is a view the admission queries share a 30 s
@@ -824,7 +845,11 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   parse is abandoned rather than stopped, and pdfium (Android rendering) runs in-process
   and could still crash natively on a hostile file. A marker written before parsing
   starts stops an import crash loop: if it is still there at the next launch the copy is
-  removed, the import is not retried and the user is told. Before the map is added, a
+  removed, the import is not retried and the user is told. On Android the marker sits in
+  the sealed import journal, so when mission data locks while a file is being checked
+  (leaving the app) its clear can't be written; the app remembers in memory that it set
+  that marker and the check came back, so while it keeps running that marker isn't taken
+  for a crash and the import is tried again when the map comes back. Before the map is added, a
   probe draws it once under the render crash guard; a sheet that can't be drawn is
   refused and nothing is saved. Drawing (calibration previews included) is covered by
   the same guard, so a sheet that crashes the renderer is not reopened automatically.

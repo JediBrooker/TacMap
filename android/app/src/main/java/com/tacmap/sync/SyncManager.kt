@@ -587,7 +587,7 @@ class SyncManager internal constructor(
         val stagedKinds = HashMap<String, String>()
 
         fun localKind(localId: String): String? = stagedKinds[localId] ?: before.kind(localId)
-        fun localIdOf(canonical: String): String? = before.localIdOf(canonical)
+        fun localIdOf(canonical: String): String? = before.localIdOf(canonical) ?: before.trackedIdOf(canonical)
         var peers: Map<String, PresencePeer>? = null
         var onlineMembers: Map<String, OnlineMember>? = null
         var chatRecipientsDirty = false
@@ -604,7 +604,10 @@ class SyncManager internal constructor(
         val committedLayers: List<com.tacmap.drawings.DrawingLayer>,
         /** localId -> kind at snapshot-begin, a copy the worker can read safely. */
         private val localKinds: Map<String, String>,
-        /** lowercase UUID -> stored id for objects kept in another casing, same snapshot-begin copy */
+        /**
+         * lowercase UUID -> stored id for objects kept in another casing, or the id the diff still
+         * tracks a deleted one under. same snapshot-begin copy
+         */
         private val localIdAliases: Map<String, String>,
         private val stageEligible: (SyncReplayState.AuthenticatedMutation) -> Boolean,
         parent: Job,
@@ -705,6 +708,14 @@ class SyncManager internal constructor(
 
         /** the id an object with this lowercase UUID is stored under, when that isn't lowercase */
         fun localIdOf(canonical: String): String? = caseAliases[canonical]
+
+        // diff bookkeeping as of first use, not the stores. only the live batch asks
+        private val trackedAliases: Map<String, String> by lazy(LazyThreadSafetyMode.NONE) {
+            SnapshotValidator.trackedAliases(diffTrackedIds(), { it in waypoints || it in features }, caseAliases)
+        }
+
+        /** the id the diff still tracks this UUID under while nothing stored has it */
+        fun trackedIdOf(canonical: String): String? = trackedAliases[canonical]
     }
 
     private var presenceJob: Job? = null
@@ -2744,8 +2755,7 @@ class SyncManager internal constructor(
             sends += PendingSend(id, wireId, vs, kind, content)
         }
         if (!failed) {
-            val gone = (lastContent.keys + forcedLocalDiff + outboundDeliveries.all().map { it.localId })
-                .filter { it !in current && !it.startsWith("wire:") }.distinct()
+            val gone = diffTrackedIds().filter { it !in current && !it.startsWith("wire:") }.distinct().toList()
             for (id in gone) {
                 if (isSuppressed(id)) continue
                 val pending = outboundDeliveries.pending(id)
@@ -2781,6 +2791,15 @@ class SyncManager internal constructor(
             }
         }
     }
+
+    /**
+     * Every id the v3 diff can still send something for, the sources of its gone list. A remote
+     * put for a UUID nothing stores resolves through these first (trackedAliases), so it can't
+     * add a second casing of one UUID in here.
+     */
+    private fun diffTrackedIds(): Sequence<String> =
+        lastContent.keys.asSequence() + forcedLocalDiff.asSequence() +
+            outboundDeliveries.all().asSequence().map { it.localId }
 
     /**
      * v2 frame id for our own put or del. An object that reached us under a
@@ -3629,11 +3648,14 @@ class SyncManager internal constructor(
                 val model = ModelLookup()
                 val generations = modelRevisionJournal.generationsCopy()
                 val kinds = localObjectKinds()
+                val aliases = SnapshotValidator.caseAliases(kinds.keys, kinds::containsKey)
+                // a delete we haven't sent yet keeps its id for a newer put (R1-V3-STALE-BASELINE)
+                val tracked = SnapshotValidator.trackedAliases(diffTrackedIds(), kinds::containsKey, aliases)
                 snapshotRun = SnapshotRun(
                     validator = SnapshotValidator(key, keys.roomIdRaw, keys.metadataKey, pins::get, displayDensity),
                     committedLayers = drawingStore.committedDocument.value.layers,
                     localKinds = kinds,
-                    localIdAliases = SnapshotValidator.caseAliases(kinds.keys, kinds::containsKey),
+                    localIdAliases = if (tracked.isEmpty()) aliases else aliases + tracked,
                     stageEligible = replay.snapshotStageEligibility(model::hash, { generations[it] ?: 0L }),
                     parent = managerJob,
                     dispatcher = env.validationDispatcher,

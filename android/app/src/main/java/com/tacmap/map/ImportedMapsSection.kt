@@ -137,7 +137,7 @@ internal fun ImportedMapsSection(
 @Composable
 private fun ImportedMapRow(row: ImportedMapRowUi, onTap: () -> Unit, onAction: (EntryMenuAction) -> Unit) {
     var menuOpen by remember { mutableStateOf(false) }
-    val warn = row.state == EntryState.UNAVAILABLE || row.state == EntryState.REJECTED
+    val warn = row.state == EntryState.UNAVAILABLE || row.state == EntryState.REJECTED || row.state == EntryState.OPEN_FAILED
     Row(
         modifier = Modifier
             .fillMaxWidth()

@@ -14,6 +14,13 @@ import com.tacmap.calibration.ActiveRef
 import com.tacmap.calibration.AdmittedMbtiles
 import com.tacmap.calibration.MBTilesStore
 import com.tacmap.calibration.MbtilesPlaceholderSource
+import com.tacmap.calibration.MbtilesUnavailableSource
+import com.tacmap.calibration.RefusedMbtiles
+import com.tacmap.calibration.LibraryEntryRules
+import com.tacmap.calibration.EntryState
+import com.tacmap.calibration.EntryRowTap
+import com.tacmap.calibration.EntryMenuAction
+import org.junit.Assert.assertSame
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -100,6 +107,7 @@ class MbtilesOpenGuardInstrumentedTest {
     fun setUp() {
         appGuard = app.mbtilesOpenGuard
         AdmittedMbtiles.clearForTesting()
+        RefusedMbtiles.clearForTesting()
         wasForeground = PdfRenderExecutor.foreground
         PdfRenderExecutor.foreground = true
         backup.mkdirs()
@@ -484,17 +492,241 @@ class MbtilesOpenGuardInstrumentedTest {
     }
 
     @Test
-    fun aRestoreTheAdmissionRefusesGoesOnlineInMemoryOnly() {
+    fun aRestoreTheAdmissionRefusesKeepsTheSelectionBlankAndSaysSoOnce() {
+        // s15.1 rule 4: 3.0.2 put the online map up here, which fetched the pack's area
         val pack = packEntry()
         seed(pack)
         val guard = relaunch()
-        admitMbtilesPack = { _, _ -> null }
+        val refuse = java.util.concurrent.atomic.AtomicBoolean(true)
+        admitMbtilesPack = { path, name -> if (refuse.get()) null else OfflineTileMapSourceAndroid.open(path, name) }
         val vm = viewModel()
-        waitUntil(what = "online fallback") { vm.mapSource.value is OnlineRasterMapSourceAndroid }
+        waitUntil(what = "unavailable blank") { vm.mapSource.value is MbtilesUnavailableSource }
+        onMain { }
+        val blank = vm.mapSource.value as MbtilesUnavailableSource
+        assertEquals(pack.id, blank.entryId)
+        assertNull(blank.coverage)
+        assertEquals("still the pack being shown", pack.id, vm.shownEntryId())
         assertEquals("durable selection untouched", pack.id, activeId())
         assertNull(vm.pdfRecovery.value)
+        assertEquals(listOf(PackOpenAlert("Guarded pack", restore = true)), vm.packOpenAlerts.value)
+        waitUntil(what = "notice up") { vm.packOpenAlert.value == PackOpenAlert("Guarded pack", restore = true) }
+        assertTrue("refusal not recorded", vm.packRefused(pack))
+        // the refusal completed the guard: nothing armed, nothing held back next launch
         assertEquals(emptyList<String>(), armed(guard))
         assertEquals(MbtilesLaunchDecision.NONE, MbtilesOpenGuard(guardFile).launchDecision(pack.id))
+
+        // another restore this process tries again and lands on the blank, no second notice
+        val second = viewModel()
+        waitUntil(what = "second blank") { second.mapSource.value is MbtilesUnavailableSource }
+        onMain { }
+        assertEquals(emptyList<PackOpenAlert>(), second.packOpenAlerts.value)
+
+        // the openFailed row's tap is the retry: admitted now, up, the refusal's gone
+        refuse.set(false)
+        var ok = false
+        onMain { ok = vm.activateImportedMap(pack.id) }
+        assertTrue(ok)
+        waitUntil(what = "retry up") { vm.mapSource.value is OfflineTileMapSourceAndroid }
+        assertEquals(pack.id, vm.shownEntryId())
+        assertEquals(pack.id, activeId())
+        assertFalse(vm.packRefused(pack))
+    }
+
+    @Test
+    fun aSavedPackWhoseFileIsGoneStaysBlankWithTheNoticeUntilItsDeleted() {
+        val pack = packEntry()
+        seed(pack)
+        assertTrue(File(files, pack.fileName).delete())
+        val guard = relaunch()
+        val seen = recordAdmissions({ guard })
+        val vm = viewModel()
+        val shown = vm.mapSource.value
+        assertTrue("not the unavailable blank: $shown", shown is MbtilesUnavailableSource)
+        assertEquals(pack.id, vm.shownEntryId())
+        assertEquals(pack.id, activeId())
+        assertEquals("opened a missing file", 0, seen.size)
+        assertEquals("the blank armed the guard", emptyList<String>(), armed(guard))
+        assertEquals(listOf(PackOpenAlert("Guarded pack", restore = true)), vm.packOpenAlerts.value)
+        // its row already says unavailable, a missing file isn't a refusal
+        assertFalse(vm.packRefused(pack))
+        // Delete is the way out: the durable next selection goes up
+        var ok = false
+        onMain { ok = vm.deleteImportedMap(pack.id) }
+        assertTrue(ok)
+        assertTrue(vm.mapSource.value is OnlineRasterMapSourceAndroid)
+        assertNull(activeId())
+    }
+
+    @Test
+    fun aPickedPackThatsRefusedKeepsTheMapAndSaysSoEveryTime() {
+        val a = packEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.online(BasemapStyle.OSM_TOPO.name), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(a),
+        )))
+        val guard = relaunch()
+        val refuse = java.util.concurrent.atomic.AtomicBoolean(true)
+        admitMbtilesPack = { path, name -> if (refuse.get()) null else OfflineTileMapSourceAndroid.open(path, name) }
+        val vm = viewModel()
+        val before = vm.mapSource.value as OnlineRasterMapSourceAndroid
+        var ok = false
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        waitUntil(what = "refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        onMain { }
+        assertSame("the map on screen changed", before, vm.mapSource.value)
+        assertNull("written", activeId())
+        assertEquals(listOf(PackOpenAlert("Guarded pack", restore = false)), vm.packOpenAlerts.value)
+        assertTrue(vm.packRefused(a))
+        assertEquals(emptyList<String>(), armed(guard))
+        // its row: openFailed, still pickable (that's the retry), Delete in the menu
+        val row = LibraryEntryRules.present(LibraryEntryRules.facts(a), vm.fileStatus(a), null, vm.packRefused(a))
+        assertEquals(EntryState.OPEN_FAILED, row.state)
+        assertEquals(EntryRowTap.ACTIVATE, row.rowTap)
+        assertEquals(listOf(EntryMenuAction.DELETE), row.menu)
+
+        // refused again: one alert per attempt
+        onMain { vm.activateImportedMap(a.id) }
+        waitUntil(what = "second alert") { vm.packOpenAlerts.value.size == 2 }
+        onMain { vm.dismissPackOpenAlert() }
+        assertEquals(1, vm.packOpenAlerts.value.size)
+        onMain { vm.dismissPackOpenAlert() }
+
+        // the retry that gets in: one write, up, the refusal's gone
+        refuse.set(false)
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        waitUntil(what = "picked pack up") { vm.shownEntryId() == a.id && activeId() == a.id }
+        assertFalse(vm.packRefused(a))
+        assertEquals(emptyList<PackOpenAlert>(), vm.packOpenAlerts.value)
+    }
+
+    @Test
+    fun aRetryThatsAdmittedAfterTheyPickedSomethingElseStillClearsTheRefusal() {
+        // s15.1 rule 1: an admitted open of the key drops the refusal, shown or not. only the
+        // current one did, so a superseded retry left the row on couldn't be opened for good,
+        // even once the next tap put the pack up from the admitted cache
+        val a = packEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.online(BasemapStyle.OSM_TOPO.name), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(a),
+        )))
+        relaunch()
+        val refuse = java.util.concurrent.atomic.AtomicBoolean(true)
+        val gate = CountDownLatch(1).also { gates += it }
+        val opened = Collections.synchronizedList(mutableListOf<OfflineTileMapSourceAndroid>())
+        admitMbtilesPack = { path, name ->
+            if (refuse.get()) null
+            else {
+                gate.await(5, TimeUnit.SECONDS)
+                OfflineTileMapSourceAndroid.open(path, name)?.also { opened += it }
+            }
+        }
+        val vm = viewModel()
+        var ok = false
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        waitUntil(what = "refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        onMain { vm.dismissPackOpenAlert() }
+        assertTrue(vm.packRefused(a))
+
+        // the row's retry, and while it's being checked they pick an online style instead
+        refuse.set(false)
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        onMain { ok = vm.selectBaseMap(BasemapStyle.OSM_STREET) }
+        assertTrue(ok)
+        gate.countDown()
+        waitUntil(what = "superseded admission closed") { opened.singleOrNull()?.isClosedForTesting() == true }
+        onMain { }
+        assertEquals(BasemapStyle.OSM_STREET, (vm.mapSource.value as OnlineRasterMapSourceAndroid).style)
+        assertNull(activeId())
+        assertFalse("admitted and still refused", vm.packRefused(a))
+        val row = LibraryEntryRules.present(LibraryEntryRules.facts(a), vm.fileStatus(a), null, vm.packRefused(a))
+        assertEquals(EntryState.OFFLINE_TILES, row.state)
+
+        // next tap: up from the admitted cache, no second admission, nothing refused
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        waitUntil(what = "picked pack up") { vm.shownEntryId() == a.id && activeId() == a.id }
+        assertEquals(1, opened.size)
+        assertFalse(vm.packRefused(a))
+        assertEquals(emptyList<PackOpenAlert>(), vm.packOpenAlerts.value)
+    }
+
+    @Test
+    fun theRestoreNoticeWaitsBehindALaunchAlertInsteadOfReplacingIt() {
+        val pack = packEntry()
+        seed(pack)
+        relaunch()
+        val gate = CountDownLatch(1).also { gates += it }
+        admitMbtilesPack = { _, _ -> gate.await(5, TimeUnit.SECONDS); null }
+        val vm = viewModel()
+        onMain { vm.showLaunchAlert(MapLaunchAlert.LibraryRecovered) }
+        gate.countDown()
+        waitUntil(what = "refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        onMain { }
+        assertEquals("launch alert knocked out", MapLaunchAlert.LibraryRecovered, vm.launchAlert.value)
+        assertNull("shown on top of the launch alert", vm.packOpenAlert.value)
+        onMain { vm.dismissLaunchAlert() }
+        waitUntil(what = "notice after it") { vm.packOpenAlert.value == PackOpenAlert("Guarded pack", restore = true) }
+        onMain { vm.dismissPackOpenAlert() }
+        waitUntil(what = "notice gone") { vm.packOpenAlert.value == null }
+    }
+
+    @Test
+    fun aHeldBackPackGetsTheCrashAlertNotTheNoticeAndARefusedOpenAnywayKeepsTheOnlineMap() {
+        // s15.1 rule 6
+        val pack = packEntry()
+        seed(pack)
+        MbtilesOpenGuard(guardFile).arm(pack.id, foreground = true)
+        val guard = relaunch()
+        admitMbtilesPack = { _, _ -> null }
+        val vm = viewModel()
+        assertTrue(vm.mapSource.value is OnlineRasterMapSourceAndroid)
+        assertEquals(pack.id, vm.pdfRecovery.value?.entryId)
+        assertEquals("the restore notice on a held back pack", emptyList<PackOpenAlert>(), vm.packOpenAlerts.value)
+        onMain { vm.openSuspectPdfAnyway() }
+        waitUntil(what = "refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        onMain { }
+        assertEquals(listOf(PackOpenAlert("Guarded pack", restore = false)), vm.packOpenAlerts.value)
+        assertTrue("the hold back's online map went", vm.mapSource.value is OnlineRasterMapSourceAndroid)
+        assertEquals(pack.id, activeId())
+        assertNull(suspect(guard))
+        assertEquals(emptyList<String>(), armed(guard))
+        assertTrue(vm.packRefused(pack))
+    }
+
+    @Test
+    fun aRefusedPickOverTheRestoresBlankEndsOnTheSavedPack() {
+        // s15.1 rule 4 last bullet: never the opening blank with nothing pending
+        val a = packEntry()
+        val b = packEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.entry(a.id), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(a, b),
+        )))
+        relaunch()
+        val gateA = CountDownLatch(1).also { gates += it }
+        val aTries = java.util.concurrent.atomic.AtomicInteger()
+        admitMbtilesPack = { path, name ->
+            when {
+                path.endsWith(b.fileName) -> null
+                else -> {
+                    if (aTries.getAndIncrement() == 0) gateA.await(5, TimeUnit.SECONDS)
+                    OfflineTileMapSourceAndroid.open(path, name)
+                }
+            }
+        }
+        val vm = viewModel()
+        assertTrue(vm.mapSource.value is MbtilesPlaceholderSource)
+        var ok = false
+        onMain { ok = vm.activateImportedMap(b.id) }
+        assertTrue(ok)
+        waitUntil(what = "B refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        waitUntil(what = "A back up") { vm.mapSource.value is OfflineTileMapSourceAndroid && vm.shownEntryId() == a.id }
+        gateA.countDown()
+        onMain { }
+        assertEquals(a.id, activeId())
+        assertEquals(a.id, vm.shownEntryId())
+        assertEquals(listOf(PackOpenAlert("Guarded pack", restore = false)), vm.packOpenAlerts.value)
     }
 
     @Test

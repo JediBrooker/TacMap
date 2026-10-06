@@ -139,6 +139,8 @@ internal enum class EntryState(val code: String) {
     OFFLINE_TILES("offlineTiles"),
     DERIVED("derived"),
     UNAVAILABLE("unavailable"),
+    /** an MBTiles pack whose open got refused this process, tap retries (s15.1) */
+    OPEN_FAILED("openFailed"),
 }
 
 internal enum class EntryFileStatus { OK, MISSING, MISMATCH }
@@ -191,10 +193,12 @@ internal object LibraryEntryRules {
         )
     }
 
-    fun state(f: EntryFacts, file: EntryFileStatus): EntryState = when {
+    /** [packRefused]: the pack's open was refused this process (RefusedMbtiles), MBTiles only */
+    fun state(f: EntryFacts, file: EntryFileStatus, packRefused: Boolean = false): EntryState = when {
         file != EntryFileStatus.OK -> EntryState.UNAVAILABLE
         // a corrupt-library rebuild adopted a PDF it couldn't inspect: Delete only (S2)
         f.kind == ImportedMapKind.PDF && f.pageCount < 1 -> EntryState.UNAVAILABLE
+        f.kind == ImportedMapKind.MBTILES && packRefused -> EntryState.OPEN_FAILED
         f.kind == ImportedMapKind.MBTILES -> if (f.derivedFromId != null) EntryState.DERIVED else EntryState.OFFLINE_TILES
         f.manualPoints != null -> EntryState.CALIBRATED
         f.hasEmbedded -> EntryState.GEO_PDF
@@ -204,10 +208,10 @@ internal object LibraryEntryRules {
 
     fun canBeDurableActive(state: EntryState): Boolean =
         state == EntryState.GEO_PDF || state == EntryState.CALIBRATED ||
-            state == EntryState.OFFLINE_TILES || state == EntryState.DERIVED
+            state == EntryState.OFFLINE_TILES || state == EntryState.DERIVED || state == EntryState.OPEN_FAILED
 
-    fun present(f: EntryFacts, file: EntryFileStatus, draftPoints: Int?): EntryPresentation {
-        val state = state(f, file)
+    fun present(f: EntryFacts, file: EntryFileStatus, draftPoints: Int?, packRefused: Boolean = false): EntryPresentation {
+        val state = state(f, file, packRefused)
         val effective = if (f.kind == ImportedMapKind.PDF) {
             when {
                 f.manualPoints != null -> "manual"
@@ -231,6 +235,7 @@ internal object LibraryEntryRules {
                 EntryState.OFFLINE_TILES -> StatusMessage("map_state_offline_tiles")
                 EntryState.DERIVED -> StatusMessage("map_state_derived", mapOf("name" to (f.parentName ?: "")))
                 EntryState.UNAVAILABLE -> StatusMessage("map_state_unavailable")
+                EntryState.OPEN_FAILED -> StatusMessage("map_state_open_failed")
             }
         }
         val tap = when {

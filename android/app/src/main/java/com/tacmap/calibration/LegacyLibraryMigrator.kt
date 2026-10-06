@@ -48,7 +48,7 @@ internal class LegacyLibraryMigrator(
     private fun skipped(): Set<File> =
         InFlightImportFiles.snapshot() + runCatching { interruptedImports() }.getOrDefault(emptySet())
 
-    /** s13.1 managedFiles: something in the map dirs a reconcile or the bake sweep would delete */
+    /** s13.1 managedFiles: a map file in the map dirs nobody's writing (temp residue alone isn't one, F4) */
     fun managedFiles(): Boolean = LibraryRebuild.hasManagedFiles(filesDir, skipped())
 
     /** cheap, main thread is fine: an Empty library has old stores to read or map files to adopt */
@@ -66,10 +66,53 @@ internal class LegacyLibraryMigrator(
 
     /** the hop: reads, hashes and parses. null = nothing was due after all */
     @WorkerThread
-    fun migrate(load: LibraryLoad = LibraryLoad.Empty): Outcome? = try {
-        migrateOnce(salvageOnly = load == LibraryLoad.Unfinished)
+    fun migrate(load: LibraryLoad = LibraryLoad.Empty): Outcome? {
+        val salvageOnly = load == LibraryLoad.Unfinished
+        return try {
+            migrateOnce(salvageOnly)
+        } catch (e: Exception) {
+            if (keyWentAway(e)) {
+                QuietLog.w(TAG, "legacy map migration hit a locked key (${e.javaClass.simpleName})")
+                Outcome.Blocked(LegacyLibraryState.LOCKED, managedFiles = true, writes = LibraryWrites.OK)
+            } else {
+                // used to be Blocked(LOCKED) too, so a throw that happens every time left the
+                // restore pending with the unlock text on every launch
+                QuietLog.w(TAG, "legacy map migration failed (${e.javaClass.simpleName}), salvaging")
+                salvageUnread(salvageOnly)
+            }
+        }
+    }
+
+    /**
+     * L3: locked only if the key failed somewhere in the hop or won't come out now. Anything
+     * else with the key there throws the same way next launch, waiting on Retry fixes nothing
+     */
+    private fun keyWentAway(e: Throwable): Boolean =
+        generateSequence(e) { it.cause }.take(16).any { it is com.tacmap.util.DataKey.LockedException } ||
+            !legacy.keyAvailable()
+
+    /**
+     * A read or conversion that threw with the key there is uncertain like an old store that
+     * won't read (L3), so it salvages (L5) with nothing converted: every map file adopted,
+     * flagged, the old stores frozen, no cleanup. A library that landed before the throw
+     * stands. If this throws too there's nothing safe left to write, pending like before
+     */
+    private fun salvageUnread(salvageOnly: Boolean): Outcome? = try {
+        if (library.load() is LibraryLoad.Loaded) {
+            Outcome.Superseded
+        } else {
+            val skip = skipped()
+            val managed = LibraryRebuild.hasManagedFiles(filesDir, skip)
+            when {
+                // CORRUPT only stands for "uncertain" here, it's just what plan() reads on a failed write
+                runCatching { legacy.hasLegacyState() }.getOrDefault(true) ->
+                    commit(RestoreMigration.SALVAGE, LegacyLibraryState.CORRUPT, managed, salvaged(empty(), skip))
+                managed && !salvageOnly -> adoptOrphans(skip)
+                else -> null
+            }
+        }
     } catch (e: Exception) {
-        QuietLog.w(TAG, "legacy map migration failed")
+        QuietLog.w(TAG, "legacy map salvage failed (${e.javaClass.simpleName})")
         Outcome.Blocked(LegacyLibraryState.LOCKED, managedFiles = true, writes = LibraryWrites.OK)
     }
 
