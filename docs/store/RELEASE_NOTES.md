@@ -13,17 +13,24 @@ both take the `en-US` text. Releases before 3.0.1 are in
 
 Text on `release/3.0.3` (`docs/store/localizations/*.json`), not released yet: put the release commit and dates here when it ships. Both stores get 3.0.3 changes only: the App Store notes list the iOS fixes (iOS 3.0.2 was still in App Review when these were written, so if 3.0.3 replaces it there, its notes need the 3.0.2 list back), the Google Play notes the Android ones.
 
-### 3.0.3: App Store, English (973 / 4,000)
+iOS: App Review rejected 3.0.2 (75) on 2026-10-06 under guideline 2.3.10 because the App Store description mentioned Android. iOS never shipped 3.0.1 or 3.0.2, so the App Store notes below cover every iOS change since 3.0.0, and the App Store description no longer names other platforms (the Play description gets its cross-platform line back through `descriptionReplacements`).
+
+### 3.0.3: App Store, English (1,846 / 4,000)
 
 ```
 TacMap 3.0.3: fixes and hardening
 
+• App Lock and the privacy screen now also cover open panels. After the privacy screen briefly covers the app, for example when you open Control Center, the keyboard and VoiceOver come back where you were.
+• Sturdier PDF reading, so a damaged PDF can't stop TacMap from opening.
+• Fixed rare cases where updating from TacMap 2.x could hide or remove imported maps. If TacMap was closed while recovering your map library, maps are no longer listed twice afterwards.
+• MBTiles packs that store their tiles as a view (for example from TileMill, MapTiler or tippecanoe) now open, and large packs open in the background.
+• Sturdier MBTiles reading: a damaged or crafted pack can no longer make TacMap close at every launch, and more packs built to use too much memory are refused before they are opened.
 • TacMap now tells you when an MBTiles map pack can't be opened. If your saved pack is missing, has changed or won't open, the map stays blank with a notice instead of loading an online map in its place. In Layers you can delete it, or try again if it just won't open.
-• Sturdier MBTiles reading: more packs built to use too much memory are now refused before they are opened.
-• With mission data protected by Face ID or your passcode, map imports and offline tiles that finish while TacMap is locked are now saved once you unlock, and unlocking while a map is still importing no longer removes it.
 • Choosing a map in Layers and deleting it before it opened no longer leaves the map blank.
-• If TacMap was closed while recovering your map library, maps are no longer listed twice afterwards.
-• After the privacy screen briefly covers the app, for example when you open Control Center, the keyboard and VoiceOver come back where you were.
+• With mission data protected by Face ID or your passcode, work that finishes after you leave the app no longer asks for Face ID or stops Unit Sync. Map imports and offline tiles that finish while TacMap is locked are saved once you unlock, and unlocking while a map is still importing no longer removes it.
+• Unit Sync: Undo no longer overwrites a teammate's newer change.
+• Unit Sync: in older-style rooms (join codes starting with 2:), objects no longer disappear when a teammate on iPhone still uses TacMap 2, and the room now explains that members on different app versions can see different objects.
+• Security hardening for the Unit Sync relay.
 ```
 
 ### 3.0.3: Google Play, English (383 / 500)
@@ -37,17 +44,22 @@ TacMap 3.0.3
 • Unit Sync: reconnecting no longer deletes an object a teammate has just edited.
 ```
 
-### 3.0.3: App Store, German (1,219 / 4,000)
+### 3.0.3: App Store, German (2,357 / 4,000)
 
 ```
 TacMap 3.0.3: Korrekturen und mehr Sicherheit
 
+• App-Sperre und Sichtschutz verdecken jetzt auch geöffnete Fenster. Hat der Sichtschutz die App kurz verdeckt, etwa beim Öffnen des Kontrollzentrums, kehren Tastatur und VoiceOver an die alte Stelle zurück.
+• PDFs werden robuster gelesen, damit eine beschädigte PDF TacMap nicht mehr am Starten hindert.
+• Seltene Fälle behoben, in denen ein Update von TacMap 2.x importierte Karten ausblenden oder entfernen konnte. Wurde TacMap beendet, während die Kartenbibliothek wiederhergestellt wurde, erscheinen Karten danach nicht mehr doppelt.
+• MBTiles-Kartensätze, die ihre Kacheln als Ansicht (View) speichern, etwa aus TileMill, MapTiler oder tippecanoe, öffnen sich jetzt, und große Kartensätze öffnen sich im Hintergrund.
+• MBTiles werden robuster gelesen: Ein beschädigter oder manipulierter Kartensatz kann TacMap nicht mehr bei jedem Start beenden, und weitere Kartensätze, die so gebaut sind, dass sie zu viel Speicher belegen, werden abgelehnt, bevor sie geöffnet werden.
 • TacMap sagt dir jetzt, wenn sich ein MBTiles-Kartensatz nicht öffnen lässt. Fehlt dein gespeicherter Kartensatz, wurde er geändert oder öffnet er sich nicht, bleibt die Karte mit einem Hinweis leer, statt dass an seiner Stelle eine Onlinekarte geladen wird. Unter „Ebenen“ kannst du ihn löschen oder es erneut versuchen, wenn er sich nur nicht öffnen lässt.
-• MBTiles werden robuster gelesen: Weitere Kartensätze, die so gebaut sind, dass sie zu viel Speicher belegen, werden jetzt abgelehnt, bevor sie geöffnet werden.
-• Sind Einsatzdaten mit Face ID oder deinem Code geschützt, speichert TacMap Kartenimporte und Offline-Kacheln, die fertig werden, während die App gesperrt ist, jetzt nach dem Entsperren. Entsperrst du, während eine Karte noch importiert wird, wird sie nicht mehr entfernt.
 • Wählst du unter „Ebenen“ eine Karte und löschst sie, bevor sie geöffnet ist, bleibt die Karte nicht mehr leer.
-• Wurde TacMap beendet, während die Kartenbibliothek wiederhergestellt wurde, erscheinen Karten danach nicht mehr doppelt.
-• Hat der Sichtschutz die App kurz verdeckt, etwa beim Öffnen des Kontrollzentrums, kehren Tastatur und VoiceOver an die alte Stelle zurück.
+• Sind Einsatzdaten mit Face ID oder deinem Code geschützt, fragen Vorgänge, die nach dem Verlassen der App enden, nicht mehr nach Face ID und stoppen die Einheitensynchronisierung nicht mehr. Kartenimporte und Offline-Kacheln, die fertig werden, während die App gesperrt ist, speichert TacMap nach dem Entsperren, und eine Karte, die beim Entsperren noch importiert wird, wird nicht mehr entfernt.
+• Einheitensynchronisierung: „Rückgängig“ überschreibt keine neuere Änderung eines Teammitglieds mehr.
+• Einheitensynchronisierung: In Räumen im alten Format (Beitrittscode beginnt mit 2:) verschwinden keine Objekte mehr, wenn ein Teammitglied auf dem iPhone noch TacMap 2 nutzt, und der Raum weist darauf hin, dass Mitglieder mit unterschiedlichen App-Versionen verschiedene Objekte sehen können.
+• Mehr Sicherheit für das Relay der Einheitensynchronisierung.
 ```
 
 ### 3.0.3: Google Play, German (472 / 500)

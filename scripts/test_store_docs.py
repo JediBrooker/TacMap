@@ -40,6 +40,14 @@ class StoreCopyTests(unittest.TestCase):
             if re.search(r'photo', line, re.I):
                 self.assertRegex(line, SAVED_AS_PDF)
 
+    def test_app_store_text_never_names_other_platforms(self):
+        # app review 2.3.10 bounced 3.0.2 for 'Android' in the description, keep it out of every app store field
+        for path in LOCALES:
+            data = json.loads(path.read_text())
+            for field, value in data['appStore'].items():
+                if isinstance(value, str):
+                    self.assertNotIn('android', value.lower(), f'{path.name} appStore.{field}')
+
     def test_release_notes_are_for_3_0_3(self):
         for path in LOCALES:
             data = json.loads(path.read_text())
@@ -64,7 +72,7 @@ class StoreCopyTests(unittest.TestCase):
         # all of them. if that residual ever goes, this can go too
         self.assertIn("What remains: indexes aren't checked", (ROOT / 'docs/THREAT_MODEL.md').read_text())
         words = {'en-US.json': ('too much memory', r'\b[Mm]ore\b', 'built to'),
-                 'de-DE.json': ('zu viel Speicher', r'\bWeitere\b', 'so gebaut')}
+                 'de-DE.json': ('zu viel Speicher', r'\b[Ww]eitere\b', 'so gebaut')}
         for name, (memory, partial, built) in words.items():
             data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
