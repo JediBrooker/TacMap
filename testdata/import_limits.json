@@ -238,7 +238,7 @@
     "admissionBudgetMs": 30000,
     "admissionBudgetAppliesTo": "views",
     "viewQueryBudgetMs": 2000,
-    "relationRules": "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the view path a name or value over connection.maxValueBytes fails closed. Every other admission check is unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it now runs off the main thread. After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no per-read budget",
+    "relationRules": "Exactly one sqlite_master row named 'tiles' and one named 'metadata' (3.0.2 SEC-M1-SHADOW: name compared NOCASE, the way SQLite resolves FROM tiles), each type 'table' or 'view'; anything else (missing, a case variant second row, index, trigger) fails closed. 3.0.2: a VIEW is admitted only if its sqlite_master.sql passes viewShape, and every table a read touches passes connection.rules (ordinary, not virtual, no generated column), all before any statement names tiles or metadata. A TABLE keeps the existing reads (rowid descriptors; iOS incremental blob, Android substr(CAST) by rowid). A VIEW has no rowid and no incremental blob, so it uses key-addressed bounded reads: descriptors = SELECT typeof(name), typeof(value), length(CAST(name AS BLOB)), substr(CAST(name AS BLOB), 1, 128) FROM metadata LIMIT 65; each known key present = SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, <chars*4>) FROM metadata WHERE lower(name) = ? LIMIT 2, exactly one TEXT row or fail closed; the bake extension reader the same with 512 bytes and missing on anything but exactly one TEXT row. On the view path a name or value over connection.maxValueBytes fails closed. Every other admission check is unchanged on both. 3.0.2 (F3): when tiles or metadata is a view, every admission statement after the relation checks shares one deadline of admissionBudgetMs; on expiry the statement is interrupted (iOS sqlite3_progress_handler, Android CancellationSignal) and the pack is not admitted. Two tables get no admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it now runs off the main thread. After admission, statements against a relation that is a VIEW (tile reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing extension. Tables get no per-read budget. 3.0.3 U2: recordProbe's schema probe runs on the file before SQLite opens it, and its metadata probe on each table the metadata relation reads right after the relation and base table checks, before the budget starts and before any metadata read. Either refusing means not admitted (a lazy open serves nothing). Every tile length read is CASE WHEN typeof(tile_data)='blob' THEN length(tile_data) END, so a TEXT tile_data is no tile and never loaded",
     "connection": {
       "maxTileBytes": 4194304,
       "maxValueBytes": 4259840,
@@ -838,6 +838,48 @@
           "sql": "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t",
           "expect": {"accepted": false, "reason": "shape"},
           "note": "3.0.2 SEC-M1-SHADOW (3.0.2 builds before it accepted this): SQLite drops IF NOT EXISTS when it stores a view, so only a hand edited schema has it, and the duplicate it skips is a decoy behind the live view"
+        },
+        {
+          "id": "onIs",
+          "relation": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k IS a.k",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": "only = joins columns"
+        },
+        {
+          "id": "onIsNot",
+          "relation": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k IS NOT a.k",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": ""
+        },
+        {
+          "id": "commaJoinWhereIs",
+          "relation": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k IS b.k",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": "the comma join's WHERE the same"
+        },
+        {
+          "id": "commaJoinUsing",
+          "relation": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM a, b USING (k)",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": "a comma join takes WHERE equalities, never USING"
+        },
+        {
+          "id": "onEmptyParens",
+          "relation": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON ()",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": "parens round nothing"
+        },
+        {
+          "id": "commaJoinWhereEmptyParens",
+          "relation": "tiles",
+          "sql": "CREATE VIEW tiles AS SELECT * FROM a, b WHERE ()",
+          "expect": {"accepted": false, "reason": "shape"},
+          "note": ""
         }
       ]
     },
@@ -1100,6 +1142,398 @@
       }
     ],
     "variantRule": "every cases[] and extensionCases[] row gives the same verdict and values after its own setup plus metadataView or bothViews; every tileZoomCases[] row after tilesView or bothViews. The generator proves it against its reference admission",
+    "recordProbe": {
+      "maxSchemaRows": 1000,
+      "maxSchemaBytes": 1048576,
+      "maxMetadataRows": 64,
+      "maxMetadataRecordBytes": 8519680,
+      "maxDepth": 20,
+      "maxPages": 4096,
+      "why": "3.0.3 U2 (SEC-M1-ANDROID-OLDSQLITE-OOM). SQLite loads the whole of a TEXT value into memory before length() or substr(CAST(... AS BLOB)) sees it, and only SQLite 3.45+ checks SQLITE_LIMIT_LENGTH before that load. Android below 12 (SQLite 3.18-3.28) has neither a length limit nor a heap cap, iOS 16-18 ship SQLite older than 3.45, and the schema load at the first statement reads every schema row before any check of ours. A cell's first varint is its whole record size, so nothing SQLite reads from that row can be bigger. Reading only page headers, cell pointers and that varint bounds what SQLite can be made to load, on every platform and SQLite version, without reading a value",
+      "header": "the file is at least 100 bytes and starts with 'SQLite format 3' and a NUL. Page size = big endian 16 bit at offset 16, 1 meaning 65536, a power of two from 512 to 65536. Usable size U = page size - the byte at offset 20 (reserved), at least 480. Page count = file size / page size, rounded down. Any failure: reason header. Only the main file is read: packs are opened read only and nothing writes a -wal next to them, so it is what SQLite reads",
+      "walk": "walk(root, maxRows, maxRecord, maxTotal?): pages in b-tree order from root (depth 0), as a stack: each interior page's children are its cells' left child pointers in cell pointer order, then its right most pointer, and they're visited in that order before the next sibling (pre-order). Visiting page p at depth d: structure unless 1 <= p <= page count, p not visited before in this walk, d < maxDepth and fewer than maxPages pages visited so far. The page's b-tree header is at byte 100 on page 1, else at 0 (cell offsets always count from the start of the page). Byte 0 of it is the type: 0x05 interior table, 0x0D leaf table, anything else pageType. n = big endian 16 bit at header + 3. Interior: the pointer array starts at header + 12, header + 12 + 2n > U is structure, each cell offset o needs header + 12 + 2n <= o and o + 4 <= U (else structure) and its first 4 bytes are the left child, the right most pointer is the 4 bytes at header + 8. Leaf: the pointer array starts at header + 8, header + 8 + 2n > U is structure, each cell offset o needs header + 8 + 2n <= o < U (else structure), and the varint at o (SQLite's: up to 8 bytes of 7 bits with the high bit meaning more, a 9th byte giving all 8, unsigned 64 bit) has to end before U (else structure). That varint is the row's record size. Per row, in order: the row count so far > maxRows is rows, the record size > maxRecord is recordBytes, the running total > maxTotal (when given) is totalBytes. The first problem in walk order is the reason. Nothing else is read: no overflow page, no record header, no value",
+      "schemaProbe": "walk(1, maxSchemaRows, maxSchemaBytes, maxSchemaBytes) on the file, before SQLite opens it (the schema load is SQLite's first act on the first statement). Every MBTiles open: admission, the lazy prevalidated open, import, the library rebuild and migration name reads",
+      "metadataProbe": "walk(rootpage, maxMetadataRows, maxMetadataRecordBytes) for each table the metadata relation reads (metadata itself when it is a table, else its view's base tables), rootpage from the sqlite_master row the relation and base table checks already found (exactly one, type table; a rootpage that isn't an integer fails closed). Runs after those checks and before the admission budget starts and anything reads metadata; the lazy prevalidated open runs it too, before the bake extension reader's first read. The tiles relation is not walked (millions of rows): tile_data is length-checked as a BLOB before it is read (a TEXT tile_data is no tile) and zoom, column and row are type-checked by the aggregate",
+      "casesRule": "sql[] rows: build the pack with the platform SQLite (as relationCases), look each metadataTables[].table up with SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE, then run the probe on the file. packBase64 rows: hand made page images only the probe reads (no SQLite), metadataTables[].root is the page. schema is the schema probe's result, each metadataTables[] entry the metadata probe's on that root. Compare ok and reason exactly",
+      "cases": [
+        {
+          "id": "realPack",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "a plain pack: one leaf each",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+        },
+        {
+          "id": "smallPagesManyLevels",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "512 byte pages: 64 metadata rows that spill to overflow pages under an interior root, and 41 schema rows that make page 1 an interior page. Overflow pages are never read",
+          "sql": ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)", "CREATE TABLE extra_0 (a)", "CREATE TABLE extra_1 (a)", "CREATE TABLE extra_2 (a)", "CREATE TABLE extra_3 (a)", "CREATE TABLE extra_4 (a)", "CREATE TABLE extra_5 (a)", "CREATE TABLE extra_6 (a)", "CREATE TABLE extra_7 (a)", "CREATE TABLE extra_8 (a)", "CREATE TABLE extra_9 (a)", "CREATE TABLE extra_10 (a)", "CREATE TABLE extra_11 (a)", "CREATE TABLE extra_12 (a)", "CREATE TABLE extra_13 (a)", "CREATE TABLE extra_14 (a)", "CREATE TABLE extra_15 (a)", "CREATE TABLE extra_16 (a)", "CREATE TABLE extra_17 (a)", "CREATE TABLE extra_18 (a)", "CREATE TABLE extra_19 (a)", "CREATE TABLE extra_20 (a)", "CREATE TABLE extra_21 (a)", "CREATE TABLE extra_22 (a)", "CREATE TABLE extra_23 (a)", "CREATE TABLE extra_24 (a)", "CREATE TABLE extra_25 (a)", "CREATE TABLE extra_26 (a)", "CREATE TABLE extra_27 (a)", "CREATE TABLE extra_28 (a)", "CREATE TABLE extra_29 (a)", "CREATE TABLE extra_30 (a)", "CREATE TABLE extra_31 (a)", "CREATE TABLE extra_32 (a)", "CREATE TABLE extra_33 (a)", "CREATE TABLE extra_34 (a)", "CREATE TABLE extra_35 (a)", "CREATE TABLE extra_36 (a)", "CREATE TABLE extra_37 (a)", "CREATE TABLE extra_38 (a)", "CREATE TABLE extra_39 (a)", "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 64) INSERT INTO metadata SELECT 'key_' || i, replace(hex(zeroblob(300)), '0', 'v') FROM n"]
+        },
+        {
+          "id": "largestPageSize",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "65536 byte pages: the header stores 1",
+          "sql": ["PRAGMA page_size=65536", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+        },
+        {
+          "id": "autoVacuum",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "pointer map pages sit between the tables, the walk never reaches them",
+          "sql": ["PRAGMA auto_vacuum=FULL", "CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+        },
+        {
+          "id": "metadata65Rows",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": false, "reason": "rows"}
+            }
+          ],
+          "note": "65 rows, one over maxMetadataRows",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 65) INSERT INTO metadata SELECT 'key_' || i, 'v' FROM n"]
+        },
+        {
+          "id": "schemaTooManyObjects",
+          "schema": {"ok": false, "reason": "rows"},
+          "metadataTables": [],
+          "note": "1,001 schema rows, one over maxSchemaRows",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01')", "CREATE TABLE t0 (a)", "CREATE TABLE t1 (a)", "CREATE TABLE t2 (a)", "CREATE TABLE t3 (a)", "CREATE TABLE t4 (a)", "CREATE TABLE t5 (a)", "CREATE TABLE t6 (a)", "CREATE TABLE t7 (a)", "CREATE TABLE t8 (a)", "CREATE TABLE t9 (a)", "CREATE TABLE t10 (a)", "CREATE TABLE t11 (a)", "CREATE TABLE t12 (a)", "CREATE TABLE t13 (a)", "CREATE TABLE t14 (a)", "CREATE TABLE t15 (a)", "CREATE TABLE t16 (a)", "CREATE TABLE t17 (a)", "CREATE TABLE t18 (a)", "CREATE TABLE t19 (a)", "CREATE TABLE t20 (a)", "CREATE TABLE t21 (a)", "CREATE TABLE t22 (a)", "CREATE TABLE t23 (a)", "CREATE TABLE t24 (a)", "CREATE TABLE t25 (a)", "CREATE TABLE t26 (a)", "CREATE TABLE t27 (a)", "CREATE TABLE t28 (a)", "CREATE TABLE t29 (a)", "CREATE TABLE t30 (a)", "CREATE TABLE t31 (a)", "CREATE TABLE t32 (a)", "CREATE TABLE t33 (a)", "CREATE TABLE t34 (a)", "CREATE TABLE t35 (a)", "CREATE TABLE t36 (a)", "CREATE TABLE t37 (a)", "CREATE TABLE t38 (a)", "CREATE TABLE t39 (a)", "CREATE TABLE t40 (a)", "CREATE TABLE t41 (a)", "CREATE TABLE t42 (a)", "CREATE TABLE t43 (a)", "CREATE TABLE t44 (a)", "CREATE TABLE t45 (a)", "CREATE TABLE t46 (a)", "CREATE TABLE t47 (a)", "CREATE TABLE t48 (a)", "CREATE TABLE t49 (a)", "CREATE TABLE t50 (a)", "CREATE TABLE t51 (a)", "CREATE TABLE t52 (a)", "CREATE TABLE t53 (a)", "CREATE TABLE t54 (a)", "CREATE TABLE t55 (a)", "CREATE TABLE t56 (a)", "CREATE TABLE t57 (a)", "CREATE TABLE t58 (a)", "CREATE TABLE t59 (a)", "CREATE TABLE t60 (a)", "CREATE TABLE t61 (a)", "CREATE TABLE t62 (a)", "CREATE TABLE t63 (a)", "CREATE TABLE t64 (a)", "CREATE TABLE t65 (a)", "CREATE TABLE t66 (a)", "CREATE TABLE t67 (a)", "CREATE TABLE t68 (a)", "CREATE TABLE t69 (a)", "CREATE TABLE t70 (a)", "CREATE TABLE t71 (a)", "CREATE TABLE t72 (a)", "CREATE TABLE t73 (a)", "CREATE TABLE t74 (a)", "CREATE TABLE t75 (a)", "CREATE TABLE t76 (a)", "CREATE TABLE t77 (a)", "CREATE TABLE t78 (a)", "CREATE TABLE t79 (a)", "CREATE TABLE t80 (a)", "CREATE TABLE t81 (a)", "CREATE TABLE t82 (a)", "CREATE TABLE t83 (a)", "CREATE TABLE t84 (a)", "CREATE TABLE t85 (a)", "CREATE TABLE t86 (a)", "CREATE TABLE t87 (a)", "CREATE TABLE t88 (a)", "CREATE TABLE t89 (a)", "CREATE TABLE t90 (a)", "CREATE TABLE t91 (a)", "CREATE TABLE t92 (a)", "CREATE TABLE t93 (a)", "CREATE TABLE t94 (a)", "CREATE TABLE t95 (a)", "CREATE TABLE t96 (a)", "CREATE TABLE t97 (a)", "CREATE TABLE t98 (a)", "CREATE TABLE t99 (a)", "CREATE TABLE t100 (a)", "CREATE TABLE t101 (a)", "CREATE TABLE t102 (a)", "CREATE TABLE t103 (a)", "CREATE TABLE t104 (a)", "CREATE TABLE t105 (a)", "CREATE TABLE t106 (a)", "CREATE TABLE t107 (a)", "CREATE TABLE t108 (a)", "CREATE TABLE t109 (a)", "CREATE TABLE t110 (a)", "CREATE TABLE t111 (a)", "CREATE TABLE t112 (a)", "CREATE TABLE t113 (a)", "CREATE TABLE t114 (a)", "CREATE TABLE t115 (a)", "CREATE TABLE t116 (a)", "CREATE TABLE t117 (a)", "CREATE TABLE t118 (a)", "CREATE TABLE t119 (a)", "CREATE TABLE t120 (a)", "CREATE TABLE t121 (a)", "CREATE TABLE t122 (a)", "CREATE TABLE t123 (a)", "CREATE TABLE t124 (a)", "CREATE TABLE t125 (a)", "CREATE TABLE t126 (a)", "CREATE TABLE t127 (a)", "CREATE TABLE t128 (a)", "CREATE TABLE t129 (a)", "CREATE TABLE t130 (a)", "CREATE TABLE t131 (a)", "CREATE TABLE t132 (a)", "CREATE TABLE t133 (a)", "CREATE TABLE t134 (a)", "CREATE TABLE t135 (a)", "CREATE TABLE t136 (a)", "CREATE TABLE t137 (a)", "CREATE TABLE t138 (a)", "CREATE TABLE t139 (a)", "CREATE TABLE t140 (a)", "CREATE TABLE t141 (a)", "CREATE TABLE t142 (a)", "CREATE TABLE t143 (a)", "CREATE TABLE t144 (a)", "CREATE TABLE t145 (a)", "CREATE TABLE t146 (a)", "CREATE TABLE t147 (a)", "CREATE TABLE t148 (a)", "CREATE TABLE t149 (a)", "CREATE TABLE t150 (a)", "CREATE TABLE t151 (a)", "CREATE TABLE t152 (a)", "CREATE TABLE t153 (a)", "CREATE TABLE t154 (a)", "CREATE TABLE t155 (a)", "CREATE TABLE t156 (a)", "CREATE TABLE t157 (a)", "CREATE TABLE t158 (a)", "CREATE TABLE t159 (a)", "CREATE TABLE t160 (a)", "CREATE TABLE t161 (a)", "CREATE TABLE t162 (a)", "CREATE TABLE t163 (a)", "CREATE TABLE t164 (a)", "CREATE TABLE t165 (a)", "CREATE TABLE t166 (a)", "CREATE TABLE t167 (a)", "CREATE TABLE t168 (a)", "CREATE TABLE t169 (a)", "CREATE TABLE t170 (a)", "CREATE TABLE t171 (a)", "CREATE TABLE t172 (a)", "CREATE TABLE t173 (a)", "CREATE TABLE t174 (a)", "CREATE TABLE t175 (a)", "CREATE TABLE t176 (a)", "CREATE TABLE t177 (a)", "CREATE TABLE t178 (a)", "CREATE TABLE t179 (a)", "CREATE TABLE t180 (a)", "CREATE TABLE t181 (a)", "CREATE TABLE t182 (a)", "CREATE TABLE t183 (a)", "CREATE TABLE t184 (a)", "CREATE TABLE t185 (a)", "CREATE TABLE t186 (a)", "CREATE TABLE t187 (a)", "CREATE TABLE t188 (a)", "CREATE TABLE t189 (a)", "CREATE TABLE t190 (a)", "CREATE TABLE t191 (a)", "CREATE TABLE t192 (a)", "CREATE TABLE t193 (a)", "CREATE TABLE t194 (a)", "CREATE TABLE t195 (a)", "CREATE TABLE t196 (a)", "CREATE TABLE t197 (a)", "CREATE TABLE t198 (a)", "CREATE TABLE t199 (a)", "CREATE TABLE t200 (a)", "CREATE TABLE t201 (a)", "CREATE TABLE t202 (a)", "CREATE TABLE t203 (a)", "CREATE TABLE t204 (a)", "CREATE TABLE t205 (a)", "CREATE TABLE t206 (a)", "CREATE TABLE t207 (a)", "CREATE TABLE t208 (a)", "CREATE TABLE t209 (a)", "CREATE TABLE t210 (a)", "CREATE TABLE t211 (a)", "CREATE TABLE t212 (a)", "CREATE TABLE t213 (a)", "CREATE TABLE t214 (a)", "CREATE TABLE t215 (a)", "CREATE TABLE t216 (a)", "CREATE TABLE t217 (a)", "CREATE TABLE t218 (a)", "CREATE TABLE t219 (a)", "CREATE TABLE t220 (a)", "CREATE TABLE t221 (a)", "CREATE TABLE t222 (a)", "CREATE TABLE t223 (a)", "CREATE TABLE t224 (a)", "CREATE TABLE t225 (a)", "CREATE TABLE t226 (a)", "CREATE TABLE t227 (a)", "CREATE TABLE t228 (a)", "CREATE TABLE t229 (a)", "CREATE TABLE t230 (a)", "CREATE TABLE t231 (a)", "CREATE TABLE t232 (a)", "CREATE TABLE t233 (a)", "CREATE TABLE t234 (a)", "CREATE TABLE t235 (a)", "CREATE TABLE t236 (a)", "CREATE TABLE t237 (a)", "CREATE TABLE t238 (a)", "CREATE TABLE t239 (a)", "CREATE TABLE t240 (a)", "CREATE TABLE t241 (a)", "CREATE TABLE t242 (a)", "CREATE TABLE t243 (a)", "CREATE TABLE t244 (a)", "CREATE TABLE t245 (a)", "CREATE TABLE t246 (a)", "CREATE TABLE t247 (a)", "CREATE TABLE t248 (a)", "CREATE TABLE t249 (a)", "CREATE TABLE t250 (a)", "CREATE TABLE t251 (a)", "CREATE TABLE t252 (a)", "CREATE TABLE t253 (a)", "CREATE TABLE t254 (a)", "CREATE TABLE t255 (a)", "CREATE TABLE t256 (a)", "CREATE TABLE t257 (a)", "CREATE TABLE t258 (a)", "CREATE TABLE t259 (a)", "CREATE TABLE t260 (a)", "CREATE TABLE t261 (a)", "CREATE TABLE t262 (a)", "CREATE TABLE t263 (a)", "CREATE TABLE t264 (a)", "CREATE TABLE t265 (a)", "CREATE TABLE t266 (a)", "CREATE TABLE t267 (a)", "CREATE TABLE t268 (a)", "CREATE TABLE t269 (a)", "CREATE TABLE t270 (a)", "CREATE TABLE t271 (a)", "CREATE TABLE t272 (a)", "CREATE TABLE t273 (a)", "CREATE TABLE t274 (a)", "CREATE TABLE t275 (a)", "CREATE TABLE t276 (a)", "CREATE TABLE t277 (a)", "CREATE TABLE t278 (a)", "CREATE TABLE t279 (a)", "CREATE TABLE t280 (a)", "CREATE TABLE t281 (a)", "CREATE TABLE t282 (a)", "CREATE TABLE t283 (a)", "CREATE TABLE t284 (a)", "CREATE TABLE t285 (a)", "CREATE TABLE t286 (a)", "CREATE TABLE t287 (a)", "CREATE TABLE t288 (a)", "CREATE TABLE t289 (a)", "CREATE TABLE t290 (a)", "CREATE TABLE t291 (a)", "CREATE TABLE t292 (a)", "CREATE TABLE t293 (a)", "CREATE TABLE t294 (a)", "CREATE TABLE t295 (a)", "CREATE TABLE t296 (a)", "CREATE TABLE t297 (a)", "CREATE TABLE t298 (a)", "CREATE TABLE t299 (a)", "CREATE TABLE t300 (a)", "CREATE TABLE t301 (a)", "CREATE TABLE t302 (a)", "CREATE TABLE t303 (a)", "CREATE TABLE t304 (a)", "CREATE TABLE t305 (a)", "CREATE TABLE t306 (a)", "CREATE TABLE t307 (a)", "CREATE TABLE t308 (a)", "CREATE TABLE t309 (a)", "CREATE TABLE t310 (a)", "CREATE TABLE t311 (a)", "CREATE TABLE t312 (a)", "CREATE TABLE t313 (a)", "CREATE TABLE t314 (a)", "CREATE TABLE t315 (a)", "CREATE TABLE t316 (a)", "CREATE TABLE t317 (a)", "CREATE TABLE t318 (a)", "CREATE TABLE t319 (a)", "CREATE TABLE t320 (a)", "CREATE TABLE t321 (a)", "CREATE TABLE t322 (a)", "CREATE TABLE t323 (a)", "CREATE TABLE t324 (a)", "CREATE TABLE t325 (a)", "CREATE TABLE t326 (a)", "CREATE TABLE t327 (a)", "CREATE TABLE t328 (a)", "CREATE TABLE t329 (a)", "CREATE TABLE t330 (a)", "CREATE TABLE t331 (a)", "CREATE TABLE t332 (a)", "CREATE TABLE t333 (a)", "CREATE TABLE t334 (a)", "CREATE TABLE t335 (a)", "CREATE TABLE t336 (a)", "CREATE TABLE t337 (a)", "CREATE TABLE t338 (a)", "CREATE TABLE t339 (a)", "CREATE TABLE t340 (a)", "CREATE TABLE t341 (a)", "CREATE TABLE t342 (a)", "CREATE TABLE t343 (a)", "CREATE TABLE t344 (a)", "CREATE TABLE t345 (a)", "CREATE TABLE t346 (a)", "CREATE TABLE t347 (a)", "CREATE TABLE t348 (a)", "CREATE TABLE t349 (a)", "CREATE TABLE t350 (a)", "CREATE TABLE t351 (a)", "CREATE TABLE t352 (a)", "CREATE TABLE t353 (a)", "CREATE TABLE t354 (a)", "CREATE TABLE t355 (a)", "CREATE TABLE t356 (a)", "CREATE TABLE t357 (a)", "CREATE TABLE t358 (a)", "CREATE TABLE t359 (a)", "CREATE TABLE t360 (a)", "CREATE TABLE t361 (a)", "CREATE TABLE t362 (a)", "CREATE TABLE t363 (a)", "CREATE TABLE t364 (a)", "CREATE TABLE t365 (a)", "CREATE TABLE t366 (a)", "CREATE TABLE t367 (a)", "CREATE TABLE t368 (a)", "CREATE TABLE t369 (a)", "CREATE TABLE t370 (a)", "CREATE TABLE t371 (a)", "CREATE TABLE t372 (a)", "CREATE TABLE t373 (a)", "CREATE TABLE t374 (a)", "CREATE TABLE t375 (a)", "CREATE TABLE t376 (a)", "CREATE TABLE t377 (a)", "CREATE TABLE t378 (a)", "CREATE TABLE t379 (a)", "CREATE TABLE t380 (a)", "CREATE TABLE t381 (a)", "CREATE TABLE t382 (a)", "CREATE TABLE t383 (a)", "CREATE TABLE t384 (a)", "CREATE TABLE t385 (a)", "CREATE TABLE t386 (a)", "CREATE TABLE t387 (a)", "CREATE TABLE t388 (a)", "CREATE TABLE t389 (a)", "CREATE TABLE t390 (a)", "CREATE TABLE t391 (a)", "CREATE TABLE t392 (a)", "CREATE TABLE t393 (a)", "CREATE TABLE t394 (a)", "CREATE TABLE t395 (a)", "CREATE TABLE t396 (a)", "CREATE TABLE t397 (a)", "CREATE TABLE t398 (a)", "CREATE TABLE t399 (a)", "CREATE TABLE t400 (a)", "CREATE TABLE t401 (a)", "CREATE TABLE t402 (a)", "CREATE TABLE t403 (a)", "CREATE TABLE t404 (a)", "CREATE TABLE t405 (a)", "CREATE TABLE t406 (a)", "CREATE TABLE t407 (a)", "CREATE TABLE t408 (a)", "CREATE TABLE t409 (a)", "CREATE TABLE t410 (a)", "CREATE TABLE t411 (a)", "CREATE TABLE t412 (a)", "CREATE TABLE t413 (a)", "CREATE TABLE t414 (a)", "CREATE TABLE t415 (a)", "CREATE TABLE t416 (a)", "CREATE TABLE t417 (a)", "CREATE TABLE t418 (a)", "CREATE TABLE t419 (a)", "CREATE TABLE t420 (a)", "CREATE TABLE t421 (a)", "CREATE TABLE t422 (a)", "CREATE TABLE t423 (a)", "CREATE TABLE t424 (a)", "CREATE TABLE t425 (a)", "CREATE TABLE t426 (a)", "CREATE TABLE t427 (a)", "CREATE TABLE t428 (a)", "CREATE TABLE t429 (a)", "CREATE TABLE t430 (a)", "CREATE TABLE t431 (a)", "CREATE TABLE t432 (a)", "CREATE TABLE t433 (a)", "CREATE TABLE t434 (a)", "CREATE TABLE t435 (a)", "CREATE TABLE t436 (a)", "CREATE TABLE t437 (a)", "CREATE TABLE t438 (a)", "CREATE TABLE t439 (a)", "CREATE TABLE t440 (a)", "CREATE TABLE t441 (a)", "CREATE TABLE t442 (a)", "CREATE TABLE t443 (a)", "CREATE TABLE t444 (a)", "CREATE TABLE t445 (a)", "CREATE TABLE t446 (a)", "CREATE TABLE t447 (a)", "CREATE TABLE t448 (a)", "CREATE TABLE t449 (a)", "CREATE TABLE t450 (a)", "CREATE TABLE t451 (a)", "CREATE TABLE t452 (a)", "CREATE TABLE t453 (a)", "CREATE TABLE t454 (a)", "CREATE TABLE t455 (a)", "CREATE TABLE t456 (a)", "CREATE TABLE t457 (a)", "CREATE TABLE t458 (a)", "CREATE TABLE t459 (a)", "CREATE TABLE t460 (a)", "CREATE TABLE t461 (a)", "CREATE TABLE t462 (a)", "CREATE TABLE t463 (a)", "CREATE TABLE t464 (a)", "CREATE TABLE t465 (a)", "CREATE TABLE t466 (a)", "CREATE TABLE t467 (a)", "CREATE TABLE t468 (a)", "CREATE TABLE t469 (a)", "CREATE TABLE t470 (a)", "CREATE TABLE t471 (a)", "CREATE TABLE t472 (a)", "CREATE TABLE t473 (a)", "CREATE TABLE t474 (a)", "CREATE TABLE t475 (a)", "CREATE TABLE t476 (a)", "CREATE TABLE t477 (a)", "CREATE TABLE t478 (a)", "CREATE TABLE t479 (a)", "CREATE TABLE t480 (a)", "CREATE TABLE t481 (a)", "CREATE TABLE t482 (a)", "CREATE TABLE t483 (a)", "CREATE TABLE t484 (a)", "CREATE TABLE t485 (a)", "CREATE TABLE t486 (a)", "CREATE TABLE t487 (a)", "CREATE TABLE t488 (a)", "CREATE TABLE t489 (a)", "CREATE TABLE t490 (a)", "CREATE TABLE t491 (a)", "CREATE TABLE t492 (a)", "CREATE TABLE t493 (a)", "CREATE TABLE t494 (a)", "CREATE TABLE t495 (a)", "CREATE TABLE t496 (a)", "CREATE TABLE t497 (a)", "CREATE TABLE t498 (a)", "CREATE TABLE t499 (a)", "CREATE TABLE t500 (a)", "CREATE TABLE t501 (a)", "CREATE TABLE t502 (a)", "CREATE TABLE t503 (a)", "CREATE TABLE t504 (a)", "CREATE TABLE t505 (a)", "CREATE TABLE t506 (a)", "CREATE TABLE t507 (a)", "CREATE TABLE t508 (a)", "CREATE TABLE t509 (a)", "CREATE TABLE t510 (a)", "CREATE TABLE t511 (a)", "CREATE TABLE t512 (a)", "CREATE TABLE t513 (a)", "CREATE TABLE t514 (a)", "CREATE TABLE t515 (a)", "CREATE TABLE t516 (a)", "CREATE TABLE t517 (a)", "CREATE TABLE t518 (a)", "CREATE TABLE t519 (a)", "CREATE TABLE t520 (a)", "CREATE TABLE t521 (a)", "CREATE TABLE t522 (a)", "CREATE TABLE t523 (a)", "CREATE TABLE t524 (a)", "CREATE TABLE t525 (a)", "CREATE TABLE t526 (a)", "CREATE TABLE t527 (a)", "CREATE TABLE t528 (a)", "CREATE TABLE t529 (a)", "CREATE TABLE t530 (a)", "CREATE TABLE t531 (a)", "CREATE TABLE t532 (a)", "CREATE TABLE t533 (a)", "CREATE TABLE t534 (a)", "CREATE TABLE t535 (a)", "CREATE TABLE t536 (a)", "CREATE TABLE t537 (a)", "CREATE TABLE t538 (a)", "CREATE TABLE t539 (a)", "CREATE TABLE t540 (a)", "CREATE TABLE t541 (a)", "CREATE TABLE t542 (a)", "CREATE TABLE t543 (a)", "CREATE TABLE t544 (a)", "CREATE TABLE t545 (a)", "CREATE TABLE t546 (a)", "CREATE TABLE t547 (a)", "CREATE TABLE t548 (a)", "CREATE TABLE t549 (a)", "CREATE TABLE t550 (a)", "CREATE TABLE t551 (a)", "CREATE TABLE t552 (a)", "CREATE TABLE t553 (a)", "CREATE TABLE t554 (a)", "CREATE TABLE t555 (a)", "CREATE TABLE t556 (a)", "CREATE TABLE t557 (a)", "CREATE TABLE t558 (a)", "CREATE TABLE t559 (a)", "CREATE TABLE t560 (a)", "CREATE TABLE t561 (a)", "CREATE TABLE t562 (a)", "CREATE TABLE t563 (a)", "CREATE TABLE t564 (a)", "CREATE TABLE t565 (a)", "CREATE TABLE t566 (a)", "CREATE TABLE t567 (a)", "CREATE TABLE t568 (a)", "CREATE TABLE t569 (a)", "CREATE TABLE t570 (a)", "CREATE TABLE t571 (a)", "CREATE TABLE t572 (a)", "CREATE TABLE t573 (a)", "CREATE TABLE t574 (a)", "CREATE TABLE t575 (a)", "CREATE TABLE t576 (a)", "CREATE TABLE t577 (a)", "CREATE TABLE t578 (a)", "CREATE TABLE t579 (a)", "CREATE TABLE t580 (a)", "CREATE TABLE t581 (a)", "CREATE TABLE t582 (a)", "CREATE TABLE t583 (a)", "CREATE TABLE t584 (a)", "CREATE TABLE t585 (a)", "CREATE TABLE t586 (a)", "CREATE TABLE t587 (a)", "CREATE TABLE t588 (a)", "CREATE TABLE t589 (a)", "CREATE TABLE t590 (a)", "CREATE TABLE t591 (a)", "CREATE TABLE t592 (a)", "CREATE TABLE t593 (a)", "CREATE TABLE t594 (a)", "CREATE TABLE t595 (a)", "CREATE TABLE t596 (a)", "CREATE TABLE t597 (a)", "CREATE TABLE t598 (a)", "CREATE TABLE t599 (a)", "CREATE TABLE t600 (a)", "CREATE TABLE t601 (a)", "CREATE TABLE t602 (a)", "CREATE TABLE t603 (a)", "CREATE TABLE t604 (a)", "CREATE TABLE t605 (a)", "CREATE TABLE t606 (a)", "CREATE TABLE t607 (a)", "CREATE TABLE t608 (a)", "CREATE TABLE t609 (a)", "CREATE TABLE t610 (a)", "CREATE TABLE t611 (a)", "CREATE TABLE t612 (a)", "CREATE TABLE t613 (a)", "CREATE TABLE t614 (a)", "CREATE TABLE t615 (a)", "CREATE TABLE t616 (a)", "CREATE TABLE t617 (a)", "CREATE TABLE t618 (a)", "CREATE TABLE t619 (a)", "CREATE TABLE t620 (a)", "CREATE TABLE t621 (a)", "CREATE TABLE t622 (a)", "CREATE TABLE t623 (a)", "CREATE TABLE t624 (a)", "CREATE TABLE t625 (a)", "CREATE TABLE t626 (a)", "CREATE TABLE t627 (a)", "CREATE TABLE t628 (a)", "CREATE TABLE t629 (a)", "CREATE TABLE t630 (a)", "CREATE TABLE t631 (a)", "CREATE TABLE t632 (a)", "CREATE TABLE t633 (a)", "CREATE TABLE t634 (a)", "CREATE TABLE t635 (a)", "CREATE TABLE t636 (a)", "CREATE TABLE t637 (a)", "CREATE TABLE t638 (a)", "CREATE TABLE t639 (a)", "CREATE TABLE t640 (a)", "CREATE TABLE t641 (a)", "CREATE TABLE t642 (a)", "CREATE TABLE t643 (a)", "CREATE TABLE t644 (a)", "CREATE TABLE t645 (a)", "CREATE TABLE t646 (a)", "CREATE TABLE t647 (a)", "CREATE TABLE t648 (a)", "CREATE TABLE t649 (a)", "CREATE TABLE t650 (a)", "CREATE TABLE t651 (a)", "CREATE TABLE t652 (a)", "CREATE TABLE t653 (a)", "CREATE TABLE t654 (a)", "CREATE TABLE t655 (a)", "CREATE TABLE t656 (a)", "CREATE TABLE t657 (a)", "CREATE TABLE t658 (a)", "CREATE TABLE t659 (a)", "CREATE TABLE t660 (a)", "CREATE TABLE t661 (a)", "CREATE TABLE t662 (a)", "CREATE TABLE t663 (a)", "CREATE TABLE t664 (a)", "CREATE TABLE t665 (a)", "CREATE TABLE t666 (a)", "CREATE TABLE t667 (a)", "CREATE TABLE t668 (a)", "CREATE TABLE t669 (a)", "CREATE TABLE t670 (a)", "CREATE TABLE t671 (a)", "CREATE TABLE t672 (a)", "CREATE TABLE t673 (a)", "CREATE TABLE t674 (a)", "CREATE TABLE t675 (a)", "CREATE TABLE t676 (a)", "CREATE TABLE t677 (a)", "CREATE TABLE t678 (a)", "CREATE TABLE t679 (a)", "CREATE TABLE t680 (a)", "CREATE TABLE t681 (a)", "CREATE TABLE t682 (a)", "CREATE TABLE t683 (a)", "CREATE TABLE t684 (a)", "CREATE TABLE t685 (a)", "CREATE TABLE t686 (a)", "CREATE TABLE t687 (a)", "CREATE TABLE t688 (a)", "CREATE TABLE t689 (a)", "CREATE TABLE t690 (a)", "CREATE TABLE t691 (a)", "CREATE TABLE t692 (a)", "CREATE TABLE t693 (a)", "CREATE TABLE t694 (a)", "CREATE TABLE t695 (a)", "CREATE TABLE t696 (a)", "CREATE TABLE t697 (a)", "CREATE TABLE t698 (a)", "CREATE TABLE t699 (a)", "CREATE TABLE t700 (a)", "CREATE TABLE t701 (a)", "CREATE TABLE t702 (a)", "CREATE TABLE t703 (a)", "CREATE TABLE t704 (a)", "CREATE TABLE t705 (a)", "CREATE TABLE t706 (a)", "CREATE TABLE t707 (a)", "CREATE TABLE t708 (a)", "CREATE TABLE t709 (a)", "CREATE TABLE t710 (a)", "CREATE TABLE t711 (a)", "CREATE TABLE t712 (a)", "CREATE TABLE t713 (a)", "CREATE TABLE t714 (a)", "CREATE TABLE t715 (a)", "CREATE TABLE t716 (a)", "CREATE TABLE t717 (a)", "CREATE TABLE t718 (a)", "CREATE TABLE t719 (a)", "CREATE TABLE t720 (a)", "CREATE TABLE t721 (a)", "CREATE TABLE t722 (a)", "CREATE TABLE t723 (a)", "CREATE TABLE t724 (a)", "CREATE TABLE t725 (a)", "CREATE TABLE t726 (a)", "CREATE TABLE t727 (a)", "CREATE TABLE t728 (a)", "CREATE TABLE t729 (a)", "CREATE TABLE t730 (a)", "CREATE TABLE t731 (a)", "CREATE TABLE t732 (a)", "CREATE TABLE t733 (a)", "CREATE TABLE t734 (a)", "CREATE TABLE t735 (a)", "CREATE TABLE t736 (a)", "CREATE TABLE t737 (a)", "CREATE TABLE t738 (a)", "CREATE TABLE t739 (a)", "CREATE TABLE t740 (a)", "CREATE TABLE t741 (a)", "CREATE TABLE t742 (a)", "CREATE TABLE t743 (a)", "CREATE TABLE t744 (a)", "CREATE TABLE t745 (a)", "CREATE TABLE t746 (a)", "CREATE TABLE t747 (a)", "CREATE TABLE t748 (a)", "CREATE TABLE t749 (a)", "CREATE TABLE t750 (a)", "CREATE TABLE t751 (a)", "CREATE TABLE t752 (a)", "CREATE TABLE t753 (a)", "CREATE TABLE t754 (a)", "CREATE TABLE t755 (a)", "CREATE TABLE t756 (a)", "CREATE TABLE t757 (a)", "CREATE TABLE t758 (a)", "CREATE TABLE t759 (a)", "CREATE TABLE t760 (a)", "CREATE TABLE t761 (a)", "CREATE TABLE t762 (a)", "CREATE TABLE t763 (a)", "CREATE TABLE t764 (a)", "CREATE TABLE t765 (a)", "CREATE TABLE t766 (a)", "CREATE TABLE t767 (a)", "CREATE TABLE t768 (a)", "CREATE TABLE t769 (a)", "CREATE TABLE t770 (a)", "CREATE TABLE t771 (a)", "CREATE TABLE t772 (a)", "CREATE TABLE t773 (a)", "CREATE TABLE t774 (a)", "CREATE TABLE t775 (a)", "CREATE TABLE t776 (a)", "CREATE TABLE t777 (a)", "CREATE TABLE t778 (a)", "CREATE TABLE t779 (a)", "CREATE TABLE t780 (a)", "CREATE TABLE t781 (a)", "CREATE TABLE t782 (a)", "CREATE TABLE t783 (a)", "CREATE TABLE t784 (a)", "CREATE TABLE t785 (a)", "CREATE TABLE t786 (a)", "CREATE TABLE t787 (a)", "CREATE TABLE t788 (a)", "CREATE TABLE t789 (a)", "CREATE TABLE t790 (a)", "CREATE TABLE t791 (a)", "CREATE TABLE t792 (a)", "CREATE TABLE t793 (a)", "CREATE TABLE t794 (a)", "CREATE TABLE t795 (a)", "CREATE TABLE t796 (a)", "CREATE TABLE t797 (a)", "CREATE TABLE t798 (a)", "CREATE TABLE t799 (a)", "CREATE TABLE t800 (a)", "CREATE TABLE t801 (a)", "CREATE TABLE t802 (a)", "CREATE TABLE t803 (a)", "CREATE TABLE t804 (a)", "CREATE TABLE t805 (a)", "CREATE TABLE t806 (a)", "CREATE TABLE t807 (a)", "CREATE TABLE t808 (a)", "CREATE TABLE t809 (a)", "CREATE TABLE t810 (a)", "CREATE TABLE t811 (a)", "CREATE TABLE t812 (a)", "CREATE TABLE t813 (a)", "CREATE TABLE t814 (a)", "CREATE TABLE t815 (a)", "CREATE TABLE t816 (a)", "CREATE TABLE t817 (a)", "CREATE TABLE t818 (a)", "CREATE TABLE t819 (a)", "CREATE TABLE t820 (a)", "CREATE TABLE t821 (a)", "CREATE TABLE t822 (a)", "CREATE TABLE t823 (a)", "CREATE TABLE t824 (a)", "CREATE TABLE t825 (a)", "CREATE TABLE t826 (a)", "CREATE TABLE t827 (a)", "CREATE TABLE t828 (a)", "CREATE TABLE t829 (a)", "CREATE TABLE t830 (a)", "CREATE TABLE t831 (a)", "CREATE TABLE t832 (a)", "CREATE TABLE t833 (a)", "CREATE TABLE t834 (a)", "CREATE TABLE t835 (a)", "CREATE TABLE t836 (a)", "CREATE TABLE t837 (a)", "CREATE TABLE t838 (a)", "CREATE TABLE t839 (a)", "CREATE TABLE t840 (a)", "CREATE TABLE t841 (a)", "CREATE TABLE t842 (a)", "CREATE TABLE t843 (a)", "CREATE TABLE t844 (a)", "CREATE TABLE t845 (a)", "CREATE TABLE t846 (a)", "CREATE TABLE t847 (a)", "CREATE TABLE t848 (a)", "CREATE TABLE t849 (a)", "CREATE TABLE t850 (a)", "CREATE TABLE t851 (a)", "CREATE TABLE t852 (a)", "CREATE TABLE t853 (a)", "CREATE TABLE t854 (a)", "CREATE TABLE t855 (a)", "CREATE TABLE t856 (a)", "CREATE TABLE t857 (a)", "CREATE TABLE t858 (a)", "CREATE TABLE t859 (a)", "CREATE TABLE t860 (a)", "CREATE TABLE t861 (a)", "CREATE TABLE t862 (a)", "CREATE TABLE t863 (a)", "CREATE TABLE t864 (a)", "CREATE TABLE t865 (a)", "CREATE TABLE t866 (a)", "CREATE TABLE t867 (a)", "CREATE TABLE t868 (a)", "CREATE TABLE t869 (a)", "CREATE TABLE t870 (a)", "CREATE TABLE t871 (a)", "CREATE TABLE t872 (a)", "CREATE TABLE t873 (a)", "CREATE TABLE t874 (a)", "CREATE TABLE t875 (a)", "CREATE TABLE t876 (a)", "CREATE TABLE t877 (a)", "CREATE TABLE t878 (a)", "CREATE TABLE t879 (a)", "CREATE TABLE t880 (a)", "CREATE TABLE t881 (a)", "CREATE TABLE t882 (a)", "CREATE TABLE t883 (a)", "CREATE TABLE t884 (a)", "CREATE TABLE t885 (a)", "CREATE TABLE t886 (a)", "CREATE TABLE t887 (a)", "CREATE TABLE t888 (a)", "CREATE TABLE t889 (a)", "CREATE TABLE t890 (a)", "CREATE TABLE t891 (a)", "CREATE TABLE t892 (a)", "CREATE TABLE t893 (a)", "CREATE TABLE t894 (a)", "CREATE TABLE t895 (a)", "CREATE TABLE t896 (a)", "CREATE TABLE t897 (a)", "CREATE TABLE t898 (a)", "CREATE TABLE t899 (a)", "CREATE TABLE t900 (a)", "CREATE TABLE t901 (a)", "CREATE TABLE t902 (a)", "CREATE TABLE t903 (a)", "CREATE TABLE t904 (a)", "CREATE TABLE t905 (a)", "CREATE TABLE t906 (a)", "CREATE TABLE t907 (a)", "CREATE TABLE t908 (a)", "CREATE TABLE t909 (a)", "CREATE TABLE t910 (a)", "CREATE TABLE t911 (a)", "CREATE TABLE t912 (a)", "CREATE TABLE t913 (a)", "CREATE TABLE t914 (a)", "CREATE TABLE t915 (a)", "CREATE TABLE t916 (a)", "CREATE TABLE t917 (a)", "CREATE TABLE t918 (a)", "CREATE TABLE t919 (a)", "CREATE TABLE t920 (a)", "CREATE TABLE t921 (a)", "CREATE TABLE t922 (a)", "CREATE TABLE t923 (a)", "CREATE TABLE t924 (a)", "CREATE TABLE t925 (a)", "CREATE TABLE t926 (a)", "CREATE TABLE t927 (a)", "CREATE TABLE t928 (a)", "CREATE TABLE t929 (a)", "CREATE TABLE t930 (a)", "CREATE TABLE t931 (a)", "CREATE TABLE t932 (a)", "CREATE TABLE t933 (a)", "CREATE TABLE t934 (a)", "CREATE TABLE t935 (a)", "CREATE TABLE t936 (a)", "CREATE TABLE t937 (a)", "CREATE TABLE t938 (a)", "CREATE TABLE t939 (a)", "CREATE TABLE t940 (a)", "CREATE TABLE t941 (a)", "CREATE TABLE t942 (a)", "CREATE TABLE t943 (a)", "CREATE TABLE t944 (a)", "CREATE TABLE t945 (a)", "CREATE TABLE t946 (a)", "CREATE TABLE t947 (a)", "CREATE TABLE t948 (a)", "CREATE TABLE t949 (a)", "CREATE TABLE t950 (a)", "CREATE TABLE t951 (a)", "CREATE TABLE t952 (a)", "CREATE TABLE t953 (a)", "CREATE TABLE t954 (a)", "CREATE TABLE t955 (a)", "CREATE TABLE t956 (a)", "CREATE TABLE t957 (a)", "CREATE TABLE t958 (a)", "CREATE TABLE t959 (a)", "CREATE TABLE t960 (a)", "CREATE TABLE t961 (a)", "CREATE TABLE t962 (a)", "CREATE TABLE t963 (a)", "CREATE TABLE t964 (a)", "CREATE TABLE t965 (a)", "CREATE TABLE t966 (a)", "CREATE TABLE t967 (a)", "CREATE TABLE t968 (a)", "CREATE TABLE t969 (a)", "CREATE TABLE t970 (a)", "CREATE TABLE t971 (a)", "CREATE TABLE t972 (a)", "CREATE TABLE t973 (a)", "CREATE TABLE t974 (a)", "CREATE TABLE t975 (a)", "CREATE TABLE t976 (a)", "CREATE TABLE t977 (a)", "CREATE TABLE t978 (a)", "CREATE TABLE t979 (a)", "CREATE TABLE t980 (a)", "CREATE TABLE t981 (a)", "CREATE TABLE t982 (a)", "CREATE TABLE t983 (a)", "CREATE TABLE t984 (a)", "CREATE TABLE t985 (a)", "CREATE TABLE t986 (a)", "CREATE TABLE t987 (a)", "CREATE TABLE t988 (a)", "CREATE TABLE t989 (a)", "CREATE TABLE t990 (a)", "CREATE TABLE t991 (a)", "CREATE TABLE t992 (a)", "CREATE TABLE t993 (a)", "CREATE TABLE t994 (a)", "CREATE TABLE t995 (a)", "CREATE TABLE t996 (a)", "CREATE TABLE t997 (a)", "CREATE TABLE t998 (a)"]
+        },
+        {
+          "id": "metadataRecordUnderCap",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "an 8,000,000 byte value: under the cap, still fine",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('vendor', replace(hex(zeroblob(4000000)), '0', 'v'))"]
+        },
+        {
+          "id": "metadataRecordOverCap",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "table": "metadata",
+              "expect": {"ok": false, "reason": "recordBytes"}
+            }
+          ],
+          "note": "an 8,600,000 byte value: one row over the cap",
+          "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('vendor', replace(hex(zeroblob(4300000)), '0', 'v'))"]
+        },
+        {
+          "id": "badMagic",
+          "schema": {"ok": false, "reason": "header"},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "header"}
+            }
+          ],
+          "note": "not an SQLite 3 file",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAyAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "truncatedHeader",
+          "schema": {"ok": false, "reason": "header"},
+          "metadataTables": [],
+          "note": "shorter than the 100 byte header",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAB"
+        },
+        {
+          "id": "pageSizeNotPowerOfTwo",
+          "schema": {"ok": false, "reason": "header"},
+          "metadataTables": [],
+          "note": "1000 isn't a power of two",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAPoAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "pageSizeTooSmall",
+          "schema": {"ok": false, "reason": "header"},
+          "metadataTables": [],
+          "note": "256 is under 512",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAEAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "usableTooSmall",
+          "schema": {"ok": false, "reason": "header"},
+          "metadataTables": [],
+          "note": "512 - 40 reserved = 472 usable bytes, SQLite needs 480",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEoQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQHWAAHWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        {
+          "id": "reservedBytes",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "32 reserved bytes per page: cells sit below the usable size",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEgQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAeAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAgHcAAHeAdwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQCCgEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        {
+          "id": "emptyMetadata",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "no rows at all is fine here",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        {
+          "id": "indexPageAsRoot",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "pageType"}
+            }
+          ],
+          "note": "an index leaf where a table b-tree has to be (a WITHOUT ROWID table)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAAAAAQH9AAH9AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMBAQ=="
+        },
+        {
+          "id": "zeroPageType",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "pageType"}
+            }
+          ],
+          "note": "a page of zeros",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        {
+          "id": "rootPastTheEnd",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 3,
+              "expect": {"ok": false, "reason": "structure"}
+            },
+            {
+              "root": 0,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "page 3 of a 2 page file, and page 0",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "childCycle",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "an interior page that lists itself as its right child",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAQH7AAAAAAIB+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAQ0AAAABAf4AAf4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoB"
+        },
+        {
+          "id": "childPastTheEnd",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "a right child past the end of the file",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAQH7AAAAAAkB+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAQ0AAAABAf4AAf4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoB"
+        },
+        {
+          "id": "tooDeep",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            },
+            {
+              "root": 3,
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "a chain of interior pages: from page 2 the leaf is at depth 20 (maxDepth levels are 0 to 19), from page 3 at depth 19",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAABYAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAACAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAACAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAAAkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAACgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAACAAAAAAALAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAADQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAACAAAAAAAOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAAA8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAACAAAAAAARAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAABIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAAEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAACAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIAAAAAABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAgAAAAAAFgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQAAAAEB/gAB/gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACgE="
+        },
+        {
+          "id": "pointerArrayPastPage",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "300 cell pointers don't fit in a 512 byte page",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAABLAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
+        {
+          "id": "interiorPointerArrayPastPage",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "the same on an interior page",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAABLAIAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAf4AAf4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoB"
+        },
+        {
+          "id": "cellPointerPastUsable",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "a cell pointer at the end of the page",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "cellPointerIntoHeader",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "a cell pointer into the page header",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAQ=="
+        },
+        {
+          "id": "varintRunsOffPage",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "structure"}
+            }
+          ],
+          "note": "a record size varint that never ends inside the usable area",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//w=="
+        },
+        {
+          "id": "recordAtCap",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": true}
+            }
+          ],
+          "note": "exactly maxMetadataRecordBytes",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH7AAH7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACEiIAAAQ=="
+        },
+        {
+          "id": "recordOverCap",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "recordBytes"}
+            }
+          ],
+          "note": "one byte over",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH7AAH7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACEiIABAQ=="
+        },
+        {
+          "id": "nineByteVarint",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "recordBytes"}
+            }
+          ],
+          "note": "the 9 byte form, 2^64 - 1 unsigned (a signed reader sees -1)",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAAAQH2AAH2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA////////////AQ=="
+        },
+        {
+          "id": "rowsAcrossLeaves",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "rows"}
+            }
+          ],
+          "note": "40 + 25 rows under one interior page: the 65th row is one too many",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAQH7AAAAAAQB+wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADKA0AAAAoAbAAAf4B/AH6AfgB9gH0AfIB8AHuAewB6gHoAeYB5AHiAeAB3gHcAdoB2AHWAdQB0gHQAc4BzAHKAcgBxgHEAcIBwAG+AbwBugG4AbYBtAGyAbAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAooCicKJgolCiQKIwoiCiEKIAofCh4KHQocChsKGgoZChgKFwoWChUKFAoTChIKEQoQCg8KDgoNCgwKCwoKCgkKCAoHCgYKBQoECgMKAgoBDQAAABkBzgAB/gH8AfoB+AH2AfQB8gHwAe4B7AHqAegB5gHkAeIB4AHeAdwB2gHYAdYB1AHSAdABzgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAChkKGAoXChYKFQoUChMKEgoRChAKDwoOCg0KDAoLCgoKCQoICgcKBgoFCgQKAwoCCgE="
+        },
+        {
+          "id": "firstProblemWins",
+          "schema": {"ok": true},
+          "metadataTables": [
+            {
+              "root": 2,
+              "expect": {"ok": false, "reason": "recordBytes"}
+            }
+          ],
+          "note": "70 rows with the 4th over the cap: the 4th row is reached first",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAARgFxAAH+AfwB+gH1AfMB8QHvAe0B6wHpAecB5QHjAeEB3wHdAdsB2QHXAdUB0wHRAc8BzQHLAckBxwHFAcMBwQG/Ab0BuwG5AbcBtQGzAbEBrwGtAasBqQGnAaUBowGhAZ8BnQGbAZkBlwGVAZMBkQGPAY0BiwGJAYcBhQGDAYEBfwF9AXsBeQF3AXUBcwFxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKRgpFCkQKQwpCCkEKQAo/Cj4KPQo8CjsKOgo5CjgKNwo2CjUKNAozCjIKMQowCi8KLgotCiwKKwoqCikKKAonCiYKJQokCiMKIgohCiAKHwoeCh0KHAobChoKGQoYChcKFgoVChQKEwoSChEKEAoPCg4KDQoMCgsKCgoJCggKBwoGCgWEiIABBAoDCgIKAQ=="
+        },
+        {
+          "id": "schemaRecordOverCap",
+          "schema": {"ok": false, "reason": "recordBytes"},
+          "metadataTables": [],
+          "note": "one schema record over maxSchemaBytes",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAABAfwAAfwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMCAAQE="
+        },
+        {
+          "id": "schemaTotalOverCap",
+          "schema": {"ok": false, "reason": "totalBytes"},
+          "metadataTables": [],
+          "note": "three 400,000 byte schema records: 1,200,000 in all",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0AAAADAfQAAfwB+AH0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYtQADmLUAApi1AAE="
+        },
+        {
+          "id": "schemaInteriorFirstPage",
+          "schema": {"ok": true},
+          "metadataTables": [],
+          "note": "page 1 as an interior page: its header starts at byte 100, cell offsets from the page start",
+          "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAABAfsAAAAAAwH7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgENAAAAAQH+AAH+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABkAQ0AAAACAfwAAf4B/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABkAmQB"
+        }
+      ]
+    },
     "relationCases": [
       {
         "id": "tablesBaseline",
@@ -1547,6 +1981,60 @@
         "expect": {"accepted": false, "rejectedAt": "schema"},
         "note": "the base table row b is a skipped IF NOT EXISTS decoy, the live b is an expression view in a row named zzz",
         "packBase64": "U1FMaXRlIGZvcm1hdCAzAAIAAQEAQCAgAAAAAgAAAAYAAAAAAAAAAAAAAAUAAAAEAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAC6N+wUAAAABAfsAAAAABgH7AKcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGBAYAAAAAAH0DBxctIQGBOWluZGV4dGlsZXNfYmFzZV9pbmRleHRpbGVzX2Jhc2UEQ1JFQVRFIFVOSVFVRSBJTkRFWCB0aWxlc19iYXNlX2luZGV4IE9OIHRpbGVzX2Jhc2UgKHpvb21fbGV2ZWwsIHRpbGVfY29sdW1uLCB0aWxlX3JvdymBBAIHFyEhAYFTdGFibGV0aWxlc19iYXNldGlsZXNfYmFzZQNDUkVBVEUgVEFCTEUgdGlsZXNfYmFzZSAoem9vbV9sZXZlbCBpbnRlZ2VyLCB0aWxlX2NvbHVtbiBpbnRlZ2VyLCB0aWxlX3JvdyBpbnRlZ2VyLCB0aWxlX2RhdGEgYmxvYilJAQYXHR0BZ3RhYmxlbWV0YWRhdGFtZXRhZGF0YQJDUkVBVEUgVEFCTEUgbWV0YWRhdGEgKG5hbWUgdGV4dCwgdmFsdWUgAAAABQMNAAAAAgHjAAHxAeMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAgMZE2Zvcm1hdHBuZw0BAxUZbmFtZVNhbXBsZQ0AAAACAe8AAfgB7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcCBQkICRACAwYBBQgICA4BCgAAAAIB8wAB+gHzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYFCQgJAQIFBQgICAkNAAAAAwCvAAG1AS4ArwBpAGEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABgQGAAAAAAB9AwcXLSEBgTlpbmRleHRpbGVzX2JhBgUGAAAAAABEBAYVExMIdXZpZXd6enp6enpDUkVBVEUgVklFVyB6enogQVMgU0VMRUNUIHpvb21fbGV2ZWwgRlJPTSB0aWxlc19iYXNlfQMHFy0hAYE5aW5kZXh0aWxlc19iYXNlX2luZGV4dGlsZXNfYmFzZQRDUkVBVEUgVU5JUVVFIElOREVYIHRpbGVzX2Jhc2VfaW5kZXggT04gdGlsZXNfYmFzZSAoem9vbV9sZXZlbCwgdGlsZV9jb2x1bW4sIHRpbGVfcm93KYEEAgcXISEBgVN0YWJsZXRpbGVzX2Jhc2V0aWxlc19iYXNlA0NSRUFURSBUQUJMRSB0aWxlc19iYXNlICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKUkBBhcdHQFndGFibGVtZXRhZGF0YW1ldGFkYXRhAkNSRUFURSBUQUJMRSBtZXRhZGF0YSAobmFtZSB0ZXh0LCB2YWx1ZSB0ZXh0KQ0BugADAGIAANsBVABiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdwYHFw8PAYFddGFibGViYgJDUkVBVEUgVEFCTEUgSUYgTk9UIEVYSVNUUyBiICh6b29tX2xldmVsIGludGVnZXIsIHRpbGVfY29sdW1uIGludGVnZXIsIHRpbGVfcm93IGludGVnZXIsIHRpbGVfZGF0YSBibG9iKXcEBxUTEwiBWXZpZXd6enp6enpDUkVBVEUgVklFVyBiIEFTIFNFTEVDVCB6b29tX2xldmVsLCB0aWxlX2NvbHVtbiwgdGlsZV9yb3csIHJhbmRvbWJsb2IoMTYpIEFTIHRpbGVfZGF0YSBGUk9NIHRpbGVzX2Jhc2VkBQcVFxcIgSt2aWV3dGlsZXN0aWxlc0NSRUFURSBWSUVXIHRpbGVzIEFTIFNFTEVDVCB6b29tX2xldmVsLCB0aWxlX2NvbHVtbiwgdGlsZV9yb3csIHRpbGVfZGF0YSBGUk9NIGIAAABGExMIdXZpZXd6enp6enpDUkVBVEUgVklFVyB6enogQVMgU0VMRUNUIHpvb21fbGV2ZWwgRlJPTSB0aWxlc19iYXNl"
+      },
+      {
+        "id": "metadataLargeRecordUnderProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png'), ('vendor', replace(hex(zeroblob(4000000)), '0', 'v'))", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"],
+        "expect": {
+          "accepted": true,
+          "minZoom": 0,
+          "maxZoom": 1,
+          "name": "Sample",
+          "format": "png",
+          "tiles": [
+            {"z": 0, "x": 0, "y": 0, "hex": "01"},
+            {"z": 1, "x": 0, "y": 0, "hex": "0203"},
+            {"z": 1, "x": 1, "y": 1, "hex": null}
+          ],
+          "relations": {"metadata": "table", "tiles": "table"}
+        },
+        "note": "an 8,000,000 byte unknown value: under maxMetadataRecordBytes, never read, the pack opens"
+      },
+      {
+        "id": "metadataRecordOverProbeCap",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png'), ('vendor', replace(hex(zeroblob(4300000)), '0', 'v'))", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "an 8,600,000 byte row in metadata: the metadata probe refuses it before any metadata read. A name or value that size would be loaded whole by SQLite before Android's own length check (3.0.2 opened this one, its value is never read)"
+      },
+      {
+        "id": "metadataViewJoinBaseRows",
+        "sql": ["CREATE TABLE keys (id integer, name text)", "CREATE TABLE vals (id integer, value text)", "INSERT INTO keys VALUES (1, 'name'), (2, 'format')", "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 70) INSERT INTO vals SELECT i, CASE i WHEN 1 THEN 'Sample' WHEN 2 THEN 'png' ELSE 'unused' END FROM n", "CREATE VIEW metadata AS SELECT keys.name AS name, vals.value AS value FROM keys JOIN vals ON vals.id = keys.id", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "the view gives 2 rows but its base table vals holds 70: the probe walks each base table the metadata relation reads, at most maxMetadataRows rows each (the join compares every one of them)"
+      },
+      {
+        "id": "schemaTooManyObjects",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')", "CREATE TABLE t0 (a)", "CREATE TABLE t1 (a)", "CREATE TABLE t2 (a)", "CREATE TABLE t3 (a)", "CREATE TABLE t4 (a)", "CREATE TABLE t5 (a)", "CREATE TABLE t6 (a)", "CREATE TABLE t7 (a)", "CREATE TABLE t8 (a)", "CREATE TABLE t9 (a)", "CREATE TABLE t10 (a)", "CREATE TABLE t11 (a)", "CREATE TABLE t12 (a)", "CREATE TABLE t13 (a)", "CREATE TABLE t14 (a)", "CREATE TABLE t15 (a)", "CREATE TABLE t16 (a)", "CREATE TABLE t17 (a)", "CREATE TABLE t18 (a)", "CREATE TABLE t19 (a)", "CREATE TABLE t20 (a)", "CREATE TABLE t21 (a)", "CREATE TABLE t22 (a)", "CREATE TABLE t23 (a)", "CREATE TABLE t24 (a)", "CREATE TABLE t25 (a)", "CREATE TABLE t26 (a)", "CREATE TABLE t27 (a)", "CREATE TABLE t28 (a)", "CREATE TABLE t29 (a)", "CREATE TABLE t30 (a)", "CREATE TABLE t31 (a)", "CREATE TABLE t32 (a)", "CREATE TABLE t33 (a)", "CREATE TABLE t34 (a)", "CREATE TABLE t35 (a)", "CREATE TABLE t36 (a)", "CREATE TABLE t37 (a)", "CREATE TABLE t38 (a)", "CREATE TABLE t39 (a)", "CREATE TABLE t40 (a)", "CREATE TABLE t41 (a)", "CREATE TABLE t42 (a)", "CREATE TABLE t43 (a)", "CREATE TABLE t44 (a)", "CREATE TABLE t45 (a)", "CREATE TABLE t46 (a)", "CREATE TABLE t47 (a)", "CREATE TABLE t48 (a)", "CREATE TABLE t49 (a)", "CREATE TABLE t50 (a)", "CREATE TABLE t51 (a)", "CREATE TABLE t52 (a)", "CREATE TABLE t53 (a)", "CREATE TABLE t54 (a)", "CREATE TABLE t55 (a)", "CREATE TABLE t56 (a)", "CREATE TABLE t57 (a)", "CREATE TABLE t58 (a)", "CREATE TABLE t59 (a)", "CREATE TABLE t60 (a)", "CREATE TABLE t61 (a)", "CREATE TABLE t62 (a)", "CREATE TABLE t63 (a)", "CREATE TABLE t64 (a)", "CREATE TABLE t65 (a)", "CREATE TABLE t66 (a)", "CREATE TABLE t67 (a)", "CREATE TABLE t68 (a)", "CREATE TABLE t69 (a)", "CREATE TABLE t70 (a)", "CREATE TABLE t71 (a)", "CREATE TABLE t72 (a)", "CREATE TABLE t73 (a)", "CREATE TABLE t74 (a)", "CREATE TABLE t75 (a)", "CREATE TABLE t76 (a)", "CREATE TABLE t77 (a)", "CREATE TABLE t78 (a)", "CREATE TABLE t79 (a)", "CREATE TABLE t80 (a)", "CREATE TABLE t81 (a)", "CREATE TABLE t82 (a)", "CREATE TABLE t83 (a)", "CREATE TABLE t84 (a)", "CREATE TABLE t85 (a)", "CREATE TABLE t86 (a)", "CREATE TABLE t87 (a)", "CREATE TABLE t88 (a)", "CREATE TABLE t89 (a)", "CREATE TABLE t90 (a)", "CREATE TABLE t91 (a)", "CREATE TABLE t92 (a)", "CREATE TABLE t93 (a)", "CREATE TABLE t94 (a)", "CREATE TABLE t95 (a)", "CREATE TABLE t96 (a)", "CREATE TABLE t97 (a)", "CREATE TABLE t98 (a)", "CREATE TABLE t99 (a)", "CREATE TABLE t100 (a)", "CREATE TABLE t101 (a)", "CREATE TABLE t102 (a)", "CREATE TABLE t103 (a)", "CREATE TABLE t104 (a)", "CREATE TABLE t105 (a)", "CREATE TABLE t106 (a)", "CREATE TABLE t107 (a)", "CREATE TABLE t108 (a)", "CREATE TABLE t109 (a)", "CREATE TABLE t110 (a)", "CREATE TABLE t111 (a)", "CREATE TABLE t112 (a)", "CREATE TABLE t113 (a)", "CREATE TABLE t114 (a)", "CREATE TABLE t115 (a)", "CREATE TABLE t116 (a)", "CREATE TABLE t117 (a)", "CREATE TABLE t118 (a)", "CREATE TABLE t119 (a)", "CREATE TABLE t120 (a)", "CREATE TABLE t121 (a)", "CREATE TABLE t122 (a)", "CREATE TABLE t123 (a)", "CREATE TABLE t124 (a)", "CREATE TABLE t125 (a)", "CREATE TABLE t126 (a)", "CREATE TABLE t127 (a)", "CREATE TABLE t128 (a)", "CREATE TABLE t129 (a)", "CREATE TABLE t130 (a)", "CREATE TABLE t131 (a)", "CREATE TABLE t132 (a)", "CREATE TABLE t133 (a)", "CREATE TABLE t134 (a)", "CREATE TABLE t135 (a)", "CREATE TABLE t136 (a)", "CREATE TABLE t137 (a)", "CREATE TABLE t138 (a)", "CREATE TABLE t139 (a)", "CREATE TABLE t140 (a)", "CREATE TABLE t141 (a)", "CREATE TABLE t142 (a)", "CREATE TABLE t143 (a)", "CREATE TABLE t144 (a)", "CREATE TABLE t145 (a)", "CREATE TABLE t146 (a)", "CREATE TABLE t147 (a)", "CREATE TABLE t148 (a)", "CREATE TABLE t149 (a)", "CREATE TABLE t150 (a)", "CREATE TABLE t151 (a)", "CREATE TABLE t152 (a)", "CREATE TABLE t153 (a)", "CREATE TABLE t154 (a)", "CREATE TABLE t155 (a)", "CREATE TABLE t156 (a)", "CREATE TABLE t157 (a)", "CREATE TABLE t158 (a)", "CREATE TABLE t159 (a)", "CREATE TABLE t160 (a)", "CREATE TABLE t161 (a)", "CREATE TABLE t162 (a)", "CREATE TABLE t163 (a)", "CREATE TABLE t164 (a)", "CREATE TABLE t165 (a)", "CREATE TABLE t166 (a)", "CREATE TABLE t167 (a)", "CREATE TABLE t168 (a)", "CREATE TABLE t169 (a)", "CREATE TABLE t170 (a)", "CREATE TABLE t171 (a)", "CREATE TABLE t172 (a)", "CREATE TABLE t173 (a)", "CREATE TABLE t174 (a)", "CREATE TABLE t175 (a)", "CREATE TABLE t176 (a)", "CREATE TABLE t177 (a)", "CREATE TABLE t178 (a)", "CREATE TABLE t179 (a)", "CREATE TABLE t180 (a)", "CREATE TABLE t181 (a)", "CREATE TABLE t182 (a)", "CREATE TABLE t183 (a)", "CREATE TABLE t184 (a)", "CREATE TABLE t185 (a)", "CREATE TABLE t186 (a)", "CREATE TABLE t187 (a)", "CREATE TABLE t188 (a)", "CREATE TABLE t189 (a)", "CREATE TABLE t190 (a)", "CREATE TABLE t191 (a)", "CREATE TABLE t192 (a)", "CREATE TABLE t193 (a)", "CREATE TABLE t194 (a)", "CREATE TABLE t195 (a)", "CREATE TABLE t196 (a)", "CREATE TABLE t197 (a)", "CREATE TABLE t198 (a)", "CREATE TABLE t199 (a)", "CREATE TABLE t200 (a)", "CREATE TABLE t201 (a)", "CREATE TABLE t202 (a)", "CREATE TABLE t203 (a)", "CREATE TABLE t204 (a)", "CREATE TABLE t205 (a)", "CREATE TABLE t206 (a)", "CREATE TABLE t207 (a)", "CREATE TABLE t208 (a)", "CREATE TABLE t209 (a)", "CREATE TABLE t210 (a)", "CREATE TABLE t211 (a)", "CREATE TABLE t212 (a)", "CREATE TABLE t213 (a)", "CREATE TABLE t214 (a)", "CREATE TABLE t215 (a)", "CREATE TABLE t216 (a)", "CREATE TABLE t217 (a)", "CREATE TABLE t218 (a)", "CREATE TABLE t219 (a)", "CREATE TABLE t220 (a)", "CREATE TABLE t221 (a)", "CREATE TABLE t222 (a)", "CREATE TABLE t223 (a)", "CREATE TABLE t224 (a)", "CREATE TABLE t225 (a)", "CREATE TABLE t226 (a)", "CREATE TABLE t227 (a)", "CREATE TABLE t228 (a)", "CREATE TABLE t229 (a)", "CREATE TABLE t230 (a)", "CREATE TABLE t231 (a)", "CREATE TABLE t232 (a)", "CREATE TABLE t233 (a)", "CREATE TABLE t234 (a)", "CREATE TABLE t235 (a)", "CREATE TABLE t236 (a)", "CREATE TABLE t237 (a)", "CREATE TABLE t238 (a)", "CREATE TABLE t239 (a)", "CREATE TABLE t240 (a)", "CREATE TABLE t241 (a)", "CREATE TABLE t242 (a)", "CREATE TABLE t243 (a)", "CREATE TABLE t244 (a)", "CREATE TABLE t245 (a)", "CREATE TABLE t246 (a)", "CREATE TABLE t247 (a)", "CREATE TABLE t248 (a)", "CREATE TABLE t249 (a)", "CREATE TABLE t250 (a)", "CREATE TABLE t251 (a)", "CREATE TABLE t252 (a)", "CREATE TABLE t253 (a)", "CREATE TABLE t254 (a)", "CREATE TABLE t255 (a)", "CREATE TABLE t256 (a)", "CREATE TABLE t257 (a)", "CREATE TABLE t258 (a)", "CREATE TABLE t259 (a)", "CREATE TABLE t260 (a)", "CREATE TABLE t261 (a)", "CREATE TABLE t262 (a)", "CREATE TABLE t263 (a)", "CREATE TABLE t264 (a)", "CREATE TABLE t265 (a)", "CREATE TABLE t266 (a)", "CREATE TABLE t267 (a)", "CREATE TABLE t268 (a)", "CREATE TABLE t269 (a)", "CREATE TABLE t270 (a)", "CREATE TABLE t271 (a)", "CREATE TABLE t272 (a)", "CREATE TABLE t273 (a)", "CREATE TABLE t274 (a)", "CREATE TABLE t275 (a)", "CREATE TABLE t276 (a)", "CREATE TABLE t277 (a)", "CREATE TABLE t278 (a)", "CREATE TABLE t279 (a)", "CREATE TABLE t280 (a)", "CREATE TABLE t281 (a)", "CREATE TABLE t282 (a)", "CREATE TABLE t283 (a)", "CREATE TABLE t284 (a)", "CREATE TABLE t285 (a)", "CREATE TABLE t286 (a)", "CREATE TABLE t287 (a)", "CREATE TABLE t288 (a)", "CREATE TABLE t289 (a)", "CREATE TABLE t290 (a)", "CREATE TABLE t291 (a)", "CREATE TABLE t292 (a)", "CREATE TABLE t293 (a)", "CREATE TABLE t294 (a)", "CREATE TABLE t295 (a)", "CREATE TABLE t296 (a)", "CREATE TABLE t297 (a)", "CREATE TABLE t298 (a)", "CREATE TABLE t299 (a)", "CREATE TABLE t300 (a)", "CREATE TABLE t301 (a)", "CREATE TABLE t302 (a)", "CREATE TABLE t303 (a)", "CREATE TABLE t304 (a)", "CREATE TABLE t305 (a)", "CREATE TABLE t306 (a)", "CREATE TABLE t307 (a)", "CREATE TABLE t308 (a)", "CREATE TABLE t309 (a)", "CREATE TABLE t310 (a)", "CREATE TABLE t311 (a)", "CREATE TABLE t312 (a)", "CREATE TABLE t313 (a)", "CREATE TABLE t314 (a)", "CREATE TABLE t315 (a)", "CREATE TABLE t316 (a)", "CREATE TABLE t317 (a)", "CREATE TABLE t318 (a)", "CREATE TABLE t319 (a)", "CREATE TABLE t320 (a)", "CREATE TABLE t321 (a)", "CREATE TABLE t322 (a)", "CREATE TABLE t323 (a)", "CREATE TABLE t324 (a)", "CREATE TABLE t325 (a)", "CREATE TABLE t326 (a)", "CREATE TABLE t327 (a)", "CREATE TABLE t328 (a)", "CREATE TABLE t329 (a)", "CREATE TABLE t330 (a)", "CREATE TABLE t331 (a)", "CREATE TABLE t332 (a)", "CREATE TABLE t333 (a)", "CREATE TABLE t334 (a)", "CREATE TABLE t335 (a)", "CREATE TABLE t336 (a)", "CREATE TABLE t337 (a)", "CREATE TABLE t338 (a)", "CREATE TABLE t339 (a)", "CREATE TABLE t340 (a)", "CREATE TABLE t341 (a)", "CREATE TABLE t342 (a)", "CREATE TABLE t343 (a)", "CREATE TABLE t344 (a)", "CREATE TABLE t345 (a)", "CREATE TABLE t346 (a)", "CREATE TABLE t347 (a)", "CREATE TABLE t348 (a)", "CREATE TABLE t349 (a)", "CREATE TABLE t350 (a)", "CREATE TABLE t351 (a)", "CREATE TABLE t352 (a)", "CREATE TABLE t353 (a)", "CREATE TABLE t354 (a)", "CREATE TABLE t355 (a)", "CREATE TABLE t356 (a)", "CREATE TABLE t357 (a)", "CREATE TABLE t358 (a)", "CREATE TABLE t359 (a)", "CREATE TABLE t360 (a)", "CREATE TABLE t361 (a)", "CREATE TABLE t362 (a)", "CREATE TABLE t363 (a)", "CREATE TABLE t364 (a)", "CREATE TABLE t365 (a)", "CREATE TABLE t366 (a)", "CREATE TABLE t367 (a)", "CREATE TABLE t368 (a)", "CREATE TABLE t369 (a)", "CREATE TABLE t370 (a)", "CREATE TABLE t371 (a)", "CREATE TABLE t372 (a)", "CREATE TABLE t373 (a)", "CREATE TABLE t374 (a)", "CREATE TABLE t375 (a)", "CREATE TABLE t376 (a)", "CREATE TABLE t377 (a)", "CREATE TABLE t378 (a)", "CREATE TABLE t379 (a)", "CREATE TABLE t380 (a)", "CREATE TABLE t381 (a)", "CREATE TABLE t382 (a)", "CREATE TABLE t383 (a)", "CREATE TABLE t384 (a)", "CREATE TABLE t385 (a)", "CREATE TABLE t386 (a)", "CREATE TABLE t387 (a)", "CREATE TABLE t388 (a)", "CREATE TABLE t389 (a)", "CREATE TABLE t390 (a)", "CREATE TABLE t391 (a)", "CREATE TABLE t392 (a)", "CREATE TABLE t393 (a)", "CREATE TABLE t394 (a)", "CREATE TABLE t395 (a)", "CREATE TABLE t396 (a)", "CREATE TABLE t397 (a)", "CREATE TABLE t398 (a)", "CREATE TABLE t399 (a)", "CREATE TABLE t400 (a)", "CREATE TABLE t401 (a)", "CREATE TABLE t402 (a)", "CREATE TABLE t403 (a)", "CREATE TABLE t404 (a)", "CREATE TABLE t405 (a)", "CREATE TABLE t406 (a)", "CREATE TABLE t407 (a)", "CREATE TABLE t408 (a)", "CREATE TABLE t409 (a)", "CREATE TABLE t410 (a)", "CREATE TABLE t411 (a)", "CREATE TABLE t412 (a)", "CREATE TABLE t413 (a)", "CREATE TABLE t414 (a)", "CREATE TABLE t415 (a)", "CREATE TABLE t416 (a)", "CREATE TABLE t417 (a)", "CREATE TABLE t418 (a)", "CREATE TABLE t419 (a)", "CREATE TABLE t420 (a)", "CREATE TABLE t421 (a)", "CREATE TABLE t422 (a)", "CREATE TABLE t423 (a)", "CREATE TABLE t424 (a)", "CREATE TABLE t425 (a)", "CREATE TABLE t426 (a)", "CREATE TABLE t427 (a)", "CREATE TABLE t428 (a)", "CREATE TABLE t429 (a)", "CREATE TABLE t430 (a)", "CREATE TABLE t431 (a)", "CREATE TABLE t432 (a)", "CREATE TABLE t433 (a)", "CREATE TABLE t434 (a)", "CREATE TABLE t435 (a)", "CREATE TABLE t436 (a)", "CREATE TABLE t437 (a)", "CREATE TABLE t438 (a)", "CREATE TABLE t439 (a)", "CREATE TABLE t440 (a)", "CREATE TABLE t441 (a)", "CREATE TABLE t442 (a)", "CREATE TABLE t443 (a)", "CREATE TABLE t444 (a)", "CREATE TABLE t445 (a)", "CREATE TABLE t446 (a)", "CREATE TABLE t447 (a)", "CREATE TABLE t448 (a)", "CREATE TABLE t449 (a)", "CREATE TABLE t450 (a)", "CREATE TABLE t451 (a)", "CREATE TABLE t452 (a)", "CREATE TABLE t453 (a)", "CREATE TABLE t454 (a)", "CREATE TABLE t455 (a)", "CREATE TABLE t456 (a)", "CREATE TABLE t457 (a)", "CREATE TABLE t458 (a)", "CREATE TABLE t459 (a)", "CREATE TABLE t460 (a)", "CREATE TABLE t461 (a)", "CREATE TABLE t462 (a)", "CREATE TABLE t463 (a)", "CREATE TABLE t464 (a)", "CREATE TABLE t465 (a)", "CREATE TABLE t466 (a)", "CREATE TABLE t467 (a)", "CREATE TABLE t468 (a)", "CREATE TABLE t469 (a)", "CREATE TABLE t470 (a)", "CREATE TABLE t471 (a)", "CREATE TABLE t472 (a)", "CREATE TABLE t473 (a)", "CREATE TABLE t474 (a)", "CREATE TABLE t475 (a)", "CREATE TABLE t476 (a)", "CREATE TABLE t477 (a)", "CREATE TABLE t478 (a)", "CREATE TABLE t479 (a)", "CREATE TABLE t480 (a)", "CREATE TABLE t481 (a)", "CREATE TABLE t482 (a)", "CREATE TABLE t483 (a)", "CREATE TABLE t484 (a)", "CREATE TABLE t485 (a)", "CREATE TABLE t486 (a)", "CREATE TABLE t487 (a)", "CREATE TABLE t488 (a)", "CREATE TABLE t489 (a)", "CREATE TABLE t490 (a)", "CREATE TABLE t491 (a)", "CREATE TABLE t492 (a)", "CREATE TABLE t493 (a)", "CREATE TABLE t494 (a)", "CREATE TABLE t495 (a)", "CREATE TABLE t496 (a)", "CREATE TABLE t497 (a)", "CREATE TABLE t498 (a)", "CREATE TABLE t499 (a)", "CREATE TABLE t500 (a)", "CREATE TABLE t501 (a)", "CREATE TABLE t502 (a)", "CREATE TABLE t503 (a)", "CREATE TABLE t504 (a)", "CREATE TABLE t505 (a)", "CREATE TABLE t506 (a)", "CREATE TABLE t507 (a)", "CREATE TABLE t508 (a)", "CREATE TABLE t509 (a)", "CREATE TABLE t510 (a)", "CREATE TABLE t511 (a)", "CREATE TABLE t512 (a)", "CREATE TABLE t513 (a)", "CREATE TABLE t514 (a)", "CREATE TABLE t515 (a)", "CREATE TABLE t516 (a)", "CREATE TABLE t517 (a)", "CREATE TABLE t518 (a)", "CREATE TABLE t519 (a)", "CREATE TABLE t520 (a)", "CREATE TABLE t521 (a)", "CREATE TABLE t522 (a)", "CREATE TABLE t523 (a)", "CREATE TABLE t524 (a)", "CREATE TABLE t525 (a)", "CREATE TABLE t526 (a)", "CREATE TABLE t527 (a)", "CREATE TABLE t528 (a)", "CREATE TABLE t529 (a)", "CREATE TABLE t530 (a)", "CREATE TABLE t531 (a)", "CREATE TABLE t532 (a)", "CREATE TABLE t533 (a)", "CREATE TABLE t534 (a)", "CREATE TABLE t535 (a)", "CREATE TABLE t536 (a)", "CREATE TABLE t537 (a)", "CREATE TABLE t538 (a)", "CREATE TABLE t539 (a)", "CREATE TABLE t540 (a)", "CREATE TABLE t541 (a)", "CREATE TABLE t542 (a)", "CREATE TABLE t543 (a)", "CREATE TABLE t544 (a)", "CREATE TABLE t545 (a)", "CREATE TABLE t546 (a)", "CREATE TABLE t547 (a)", "CREATE TABLE t548 (a)", "CREATE TABLE t549 (a)", "CREATE TABLE t550 (a)", "CREATE TABLE t551 (a)", "CREATE TABLE t552 (a)", "CREATE TABLE t553 (a)", "CREATE TABLE t554 (a)", "CREATE TABLE t555 (a)", "CREATE TABLE t556 (a)", "CREATE TABLE t557 (a)", "CREATE TABLE t558 (a)", "CREATE TABLE t559 (a)", "CREATE TABLE t560 (a)", "CREATE TABLE t561 (a)", "CREATE TABLE t562 (a)", "CREATE TABLE t563 (a)", "CREATE TABLE t564 (a)", "CREATE TABLE t565 (a)", "CREATE TABLE t566 (a)", "CREATE TABLE t567 (a)", "CREATE TABLE t568 (a)", "CREATE TABLE t569 (a)", "CREATE TABLE t570 (a)", "CREATE TABLE t571 (a)", "CREATE TABLE t572 (a)", "CREATE TABLE t573 (a)", "CREATE TABLE t574 (a)", "CREATE TABLE t575 (a)", "CREATE TABLE t576 (a)", "CREATE TABLE t577 (a)", "CREATE TABLE t578 (a)", "CREATE TABLE t579 (a)", "CREATE TABLE t580 (a)", "CREATE TABLE t581 (a)", "CREATE TABLE t582 (a)", "CREATE TABLE t583 (a)", "CREATE TABLE t584 (a)", "CREATE TABLE t585 (a)", "CREATE TABLE t586 (a)", "CREATE TABLE t587 (a)", "CREATE TABLE t588 (a)", "CREATE TABLE t589 (a)", "CREATE TABLE t590 (a)", "CREATE TABLE t591 (a)", "CREATE TABLE t592 (a)", "CREATE TABLE t593 (a)", "CREATE TABLE t594 (a)", "CREATE TABLE t595 (a)", "CREATE TABLE t596 (a)", "CREATE TABLE t597 (a)", "CREATE TABLE t598 (a)", "CREATE TABLE t599 (a)", "CREATE TABLE t600 (a)", "CREATE TABLE t601 (a)", "CREATE TABLE t602 (a)", "CREATE TABLE t603 (a)", "CREATE TABLE t604 (a)", "CREATE TABLE t605 (a)", "CREATE TABLE t606 (a)", "CREATE TABLE t607 (a)", "CREATE TABLE t608 (a)", "CREATE TABLE t609 (a)", "CREATE TABLE t610 (a)", "CREATE TABLE t611 (a)", "CREATE TABLE t612 (a)", "CREATE TABLE t613 (a)", "CREATE TABLE t614 (a)", "CREATE TABLE t615 (a)", "CREATE TABLE t616 (a)", "CREATE TABLE t617 (a)", "CREATE TABLE t618 (a)", "CREATE TABLE t619 (a)", "CREATE TABLE t620 (a)", "CREATE TABLE t621 (a)", "CREATE TABLE t622 (a)", "CREATE TABLE t623 (a)", "CREATE TABLE t624 (a)", "CREATE TABLE t625 (a)", "CREATE TABLE t626 (a)", "CREATE TABLE t627 (a)", "CREATE TABLE t628 (a)", "CREATE TABLE t629 (a)", "CREATE TABLE t630 (a)", "CREATE TABLE t631 (a)", "CREATE TABLE t632 (a)", "CREATE TABLE t633 (a)", "CREATE TABLE t634 (a)", "CREATE TABLE t635 (a)", "CREATE TABLE t636 (a)", "CREATE TABLE t637 (a)", "CREATE TABLE t638 (a)", "CREATE TABLE t639 (a)", "CREATE TABLE t640 (a)", "CREATE TABLE t641 (a)", "CREATE TABLE t642 (a)", "CREATE TABLE t643 (a)", "CREATE TABLE t644 (a)", "CREATE TABLE t645 (a)", "CREATE TABLE t646 (a)", "CREATE TABLE t647 (a)", "CREATE TABLE t648 (a)", "CREATE TABLE t649 (a)", "CREATE TABLE t650 (a)", "CREATE TABLE t651 (a)", "CREATE TABLE t652 (a)", "CREATE TABLE t653 (a)", "CREATE TABLE t654 (a)", "CREATE TABLE t655 (a)", "CREATE TABLE t656 (a)", "CREATE TABLE t657 (a)", "CREATE TABLE t658 (a)", "CREATE TABLE t659 (a)", "CREATE TABLE t660 (a)", "CREATE TABLE t661 (a)", "CREATE TABLE t662 (a)", "CREATE TABLE t663 (a)", "CREATE TABLE t664 (a)", "CREATE TABLE t665 (a)", "CREATE TABLE t666 (a)", "CREATE TABLE t667 (a)", "CREATE TABLE t668 (a)", "CREATE TABLE t669 (a)", "CREATE TABLE t670 (a)", "CREATE TABLE t671 (a)", "CREATE TABLE t672 (a)", "CREATE TABLE t673 (a)", "CREATE TABLE t674 (a)", "CREATE TABLE t675 (a)", "CREATE TABLE t676 (a)", "CREATE TABLE t677 (a)", "CREATE TABLE t678 (a)", "CREATE TABLE t679 (a)", "CREATE TABLE t680 (a)", "CREATE TABLE t681 (a)", "CREATE TABLE t682 (a)", "CREATE TABLE t683 (a)", "CREATE TABLE t684 (a)", "CREATE TABLE t685 (a)", "CREATE TABLE t686 (a)", "CREATE TABLE t687 (a)", "CREATE TABLE t688 (a)", "CREATE TABLE t689 (a)", "CREATE TABLE t690 (a)", "CREATE TABLE t691 (a)", "CREATE TABLE t692 (a)", "CREATE TABLE t693 (a)", "CREATE TABLE t694 (a)", "CREATE TABLE t695 (a)", "CREATE TABLE t696 (a)", "CREATE TABLE t697 (a)", "CREATE TABLE t698 (a)", "CREATE TABLE t699 (a)", "CREATE TABLE t700 (a)", "CREATE TABLE t701 (a)", "CREATE TABLE t702 (a)", "CREATE TABLE t703 (a)", "CREATE TABLE t704 (a)", "CREATE TABLE t705 (a)", "CREATE TABLE t706 (a)", "CREATE TABLE t707 (a)", "CREATE TABLE t708 (a)", "CREATE TABLE t709 (a)", "CREATE TABLE t710 (a)", "CREATE TABLE t711 (a)", "CREATE TABLE t712 (a)", "CREATE TABLE t713 (a)", "CREATE TABLE t714 (a)", "CREATE TABLE t715 (a)", "CREATE TABLE t716 (a)", "CREATE TABLE t717 (a)", "CREATE TABLE t718 (a)", "CREATE TABLE t719 (a)", "CREATE TABLE t720 (a)", "CREATE TABLE t721 (a)", "CREATE TABLE t722 (a)", "CREATE TABLE t723 (a)", "CREATE TABLE t724 (a)", "CREATE TABLE t725 (a)", "CREATE TABLE t726 (a)", "CREATE TABLE t727 (a)", "CREATE TABLE t728 (a)", "CREATE TABLE t729 (a)", "CREATE TABLE t730 (a)", "CREATE TABLE t731 (a)", "CREATE TABLE t732 (a)", "CREATE TABLE t733 (a)", "CREATE TABLE t734 (a)", "CREATE TABLE t735 (a)", "CREATE TABLE t736 (a)", "CREATE TABLE t737 (a)", "CREATE TABLE t738 (a)", "CREATE TABLE t739 (a)", "CREATE TABLE t740 (a)", "CREATE TABLE t741 (a)", "CREATE TABLE t742 (a)", "CREATE TABLE t743 (a)", "CREATE TABLE t744 (a)", "CREATE TABLE t745 (a)", "CREATE TABLE t746 (a)", "CREATE TABLE t747 (a)", "CREATE TABLE t748 (a)", "CREATE TABLE t749 (a)", "CREATE TABLE t750 (a)", "CREATE TABLE t751 (a)", "CREATE TABLE t752 (a)", "CREATE TABLE t753 (a)", "CREATE TABLE t754 (a)", "CREATE TABLE t755 (a)", "CREATE TABLE t756 (a)", "CREATE TABLE t757 (a)", "CREATE TABLE t758 (a)", "CREATE TABLE t759 (a)", "CREATE TABLE t760 (a)", "CREATE TABLE t761 (a)", "CREATE TABLE t762 (a)", "CREATE TABLE t763 (a)", "CREATE TABLE t764 (a)", "CREATE TABLE t765 (a)", "CREATE TABLE t766 (a)", "CREATE TABLE t767 (a)", "CREATE TABLE t768 (a)", "CREATE TABLE t769 (a)", "CREATE TABLE t770 (a)", "CREATE TABLE t771 (a)", "CREATE TABLE t772 (a)", "CREATE TABLE t773 (a)", "CREATE TABLE t774 (a)", "CREATE TABLE t775 (a)", "CREATE TABLE t776 (a)", "CREATE TABLE t777 (a)", "CREATE TABLE t778 (a)", "CREATE TABLE t779 (a)", "CREATE TABLE t780 (a)", "CREATE TABLE t781 (a)", "CREATE TABLE t782 (a)", "CREATE TABLE t783 (a)", "CREATE TABLE t784 (a)", "CREATE TABLE t785 (a)", "CREATE TABLE t786 (a)", "CREATE TABLE t787 (a)", "CREATE TABLE t788 (a)", "CREATE TABLE t789 (a)", "CREATE TABLE t790 (a)", "CREATE TABLE t791 (a)", "CREATE TABLE t792 (a)", "CREATE TABLE t793 (a)", "CREATE TABLE t794 (a)", "CREATE TABLE t795 (a)", "CREATE TABLE t796 (a)", "CREATE TABLE t797 (a)", "CREATE TABLE t798 (a)", "CREATE TABLE t799 (a)", "CREATE TABLE t800 (a)", "CREATE TABLE t801 (a)", "CREATE TABLE t802 (a)", "CREATE TABLE t803 (a)", "CREATE TABLE t804 (a)", "CREATE TABLE t805 (a)", "CREATE TABLE t806 (a)", "CREATE TABLE t807 (a)", "CREATE TABLE t808 (a)", "CREATE TABLE t809 (a)", "CREATE TABLE t810 (a)", "CREATE TABLE t811 (a)", "CREATE TABLE t812 (a)", "CREATE TABLE t813 (a)", "CREATE TABLE t814 (a)", "CREATE TABLE t815 (a)", "CREATE TABLE t816 (a)", "CREATE TABLE t817 (a)", "CREATE TABLE t818 (a)", "CREATE TABLE t819 (a)", "CREATE TABLE t820 (a)", "CREATE TABLE t821 (a)", "CREATE TABLE t822 (a)", "CREATE TABLE t823 (a)", "CREATE TABLE t824 (a)", "CREATE TABLE t825 (a)", "CREATE TABLE t826 (a)", "CREATE TABLE t827 (a)", "CREATE TABLE t828 (a)", "CREATE TABLE t829 (a)", "CREATE TABLE t830 (a)", "CREATE TABLE t831 (a)", "CREATE TABLE t832 (a)", "CREATE TABLE t833 (a)", "CREATE TABLE t834 (a)", "CREATE TABLE t835 (a)", "CREATE TABLE t836 (a)", "CREATE TABLE t837 (a)", "CREATE TABLE t838 (a)", "CREATE TABLE t839 (a)", "CREATE TABLE t840 (a)", "CREATE TABLE t841 (a)", "CREATE TABLE t842 (a)", "CREATE TABLE t843 (a)", "CREATE TABLE t844 (a)", "CREATE TABLE t845 (a)", "CREATE TABLE t846 (a)", "CREATE TABLE t847 (a)", "CREATE TABLE t848 (a)", "CREATE TABLE t849 (a)", "CREATE TABLE t850 (a)", "CREATE TABLE t851 (a)", "CREATE TABLE t852 (a)", "CREATE TABLE t853 (a)", "CREATE TABLE t854 (a)", "CREATE TABLE t855 (a)", "CREATE TABLE t856 (a)", "CREATE TABLE t857 (a)", "CREATE TABLE t858 (a)", "CREATE TABLE t859 (a)", "CREATE TABLE t860 (a)", "CREATE TABLE t861 (a)", "CREATE TABLE t862 (a)", "CREATE TABLE t863 (a)", "CREATE TABLE t864 (a)", "CREATE TABLE t865 (a)", "CREATE TABLE t866 (a)", "CREATE TABLE t867 (a)", "CREATE TABLE t868 (a)", "CREATE TABLE t869 (a)", "CREATE TABLE t870 (a)", "CREATE TABLE t871 (a)", "CREATE TABLE t872 (a)", "CREATE TABLE t873 (a)", "CREATE TABLE t874 (a)", "CREATE TABLE t875 (a)", "CREATE TABLE t876 (a)", "CREATE TABLE t877 (a)", "CREATE TABLE t878 (a)", "CREATE TABLE t879 (a)", "CREATE TABLE t880 (a)", "CREATE TABLE t881 (a)", "CREATE TABLE t882 (a)", "CREATE TABLE t883 (a)", "CREATE TABLE t884 (a)", "CREATE TABLE t885 (a)", "CREATE TABLE t886 (a)", "CREATE TABLE t887 (a)", "CREATE TABLE t888 (a)", "CREATE TABLE t889 (a)", "CREATE TABLE t890 (a)", "CREATE TABLE t891 (a)", "CREATE TABLE t892 (a)", "CREATE TABLE t893 (a)", "CREATE TABLE t894 (a)", "CREATE TABLE t895 (a)", "CREATE TABLE t896 (a)", "CREATE TABLE t897 (a)", "CREATE TABLE t898 (a)", "CREATE TABLE t899 (a)", "CREATE TABLE t900 (a)", "CREATE TABLE t901 (a)", "CREATE TABLE t902 (a)", "CREATE TABLE t903 (a)", "CREATE TABLE t904 (a)", "CREATE TABLE t905 (a)", "CREATE TABLE t906 (a)", "CREATE TABLE t907 (a)", "CREATE TABLE t908 (a)", "CREATE TABLE t909 (a)", "CREATE TABLE t910 (a)", "CREATE TABLE t911 (a)", "CREATE TABLE t912 (a)", "CREATE TABLE t913 (a)", "CREATE TABLE t914 (a)", "CREATE TABLE t915 (a)", "CREATE TABLE t916 (a)", "CREATE TABLE t917 (a)", "CREATE TABLE t918 (a)", "CREATE TABLE t919 (a)", "CREATE TABLE t920 (a)", "CREATE TABLE t921 (a)", "CREATE TABLE t922 (a)", "CREATE TABLE t923 (a)", "CREATE TABLE t924 (a)", "CREATE TABLE t925 (a)", "CREATE TABLE t926 (a)", "CREATE TABLE t927 (a)", "CREATE TABLE t928 (a)", "CREATE TABLE t929 (a)", "CREATE TABLE t930 (a)", "CREATE TABLE t931 (a)", "CREATE TABLE t932 (a)", "CREATE TABLE t933 (a)", "CREATE TABLE t934 (a)", "CREATE TABLE t935 (a)", "CREATE TABLE t936 (a)", "CREATE TABLE t937 (a)", "CREATE TABLE t938 (a)", "CREATE TABLE t939 (a)", "CREATE TABLE t940 (a)", "CREATE TABLE t941 (a)", "CREATE TABLE t942 (a)", "CREATE TABLE t943 (a)", "CREATE TABLE t944 (a)", "CREATE TABLE t945 (a)", "CREATE TABLE t946 (a)", "CREATE TABLE t947 (a)", "CREATE TABLE t948 (a)", "CREATE TABLE t949 (a)", "CREATE TABLE t950 (a)", "CREATE TABLE t951 (a)", "CREATE TABLE t952 (a)", "CREATE TABLE t953 (a)", "CREATE TABLE t954 (a)", "CREATE TABLE t955 (a)", "CREATE TABLE t956 (a)", "CREATE TABLE t957 (a)", "CREATE TABLE t958 (a)", "CREATE TABLE t959 (a)", "CREATE TABLE t960 (a)", "CREATE TABLE t961 (a)", "CREATE TABLE t962 (a)", "CREATE TABLE t963 (a)", "CREATE TABLE t964 (a)", "CREATE TABLE t965 (a)", "CREATE TABLE t966 (a)", "CREATE TABLE t967 (a)", "CREATE TABLE t968 (a)", "CREATE TABLE t969 (a)", "CREATE TABLE t970 (a)", "CREATE TABLE t971 (a)", "CREATE TABLE t972 (a)", "CREATE TABLE t973 (a)", "CREATE TABLE t974 (a)", "CREATE TABLE t975 (a)", "CREATE TABLE t976 (a)", "CREATE TABLE t977 (a)", "CREATE TABLE t978 (a)", "CREATE TABLE t979 (a)", "CREATE TABLE t980 (a)", "CREATE TABLE t981 (a)", "CREATE TABLE t982 (a)", "CREATE TABLE t983 (a)", "CREATE TABLE t984 (a)", "CREATE TABLE t985 (a)", "CREATE TABLE t986 (a)", "CREATE TABLE t987 (a)", "CREATE TABLE t988 (a)", "CREATE TABLE t989 (a)", "CREATE TABLE t990 (a)", "CREATE TABLE t991 (a)", "CREATE TABLE t992 (a)", "CREATE TABLE t993 (a)", "CREATE TABLE t994 (a)", "CREATE TABLE t995 (a)", "CREATE TABLE t996 (a)", "CREATE TABLE t997 (a)", "CREATE TABLE t998 (a)"],
+        "expect": {"accepted": false, "rejectedAt": "probe"},
+        "note": "1,001 schema rows: the schema probe refuses the file before SQLite opens it"
+      },
+      {
+        "id": "textTileData",
+        "sql": ["CREATE TABLE metadata (name text, value text)", "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')", "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)", "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, CAST('abc' AS TEXT)), (1, 1, 0, X'0203')"],
+        "expect": {
+          "accepted": true,
+          "minZoom": 0,
+          "maxZoom": 1,
+          "name": "Sample",
+          "format": "png",
+          "tiles": [
+            {"z": 0, "x": 0, "y": 0, "hex": "01"},
+            {"z": 1, "x": 0, "y": 0, "hex": null},
+            {"z": 1, "x": 1, "y": 1, "hex": "0203"}
+          ],
+          "relations": {"metadata": "table", "tiles": "table"}
+        },
+        "note": "a TEXT tile_data is no tile: both readers take its length only when it is a BLOB, so a huge TEXT tile is never loaded (iOS since 3.0.1, Android from 3.0.3). The aggregate never reads tile_data, so the pack opens"
       }
     ],
     "relationCasesRule": "run sql[] in order on an empty database file with an ordinary connection (a row with packBase64 is that exact file instead: write the decoded bytes and skip sql[], which needs writable_schema and Apple's SQLite refuses that by default), open it with the real reader (testBudgetMs, when given, replaces admissionBudgetMs through the test seam) and compare expect: accepted, and when accepted minZoom, maxZoom, name, format, each tiles[] probe (XYZ, hex null = no tile) and extensions{}. Skip a row whose minSqliteVersion is above the runtime sqlite_version() (it can't be built there). rejectedAt and relations are the reference's notes, not asserted"
@@ -1856,7 +2344,7 @@
     "inspection": "s9.5 in order: can't open -> invalidPdf; encrypted and the empty password doesn't open it -> password; pages > maxPages -> tooManyPages {limit}; any page's MediaBox or CropBox (CropBox defaults to MediaBox) with a side outside [pageSideMinPt, pageSideMaxPt] -> pageSize. Watchdog past parseTimeoutMs, and on Android OutOfMemoryError / StackOverflowError at the inspector boundary, -> tooComplex",
     "decision": "s9.4 + s9.6, see decisions[]. pages[] lists the scanned pages only (georefScanPages); page in an outcome is 0-based, the toast args are 1-based",
     "reasonText": "map_import_georef_rejected {reason} gets a georefRejectReasons code; the contract has no per-reason copy yet",
-    "entryStates": "s8.2 derived state: unavailable (file missing or size/mtime mismatch) overrides; mbtiles -> offlineTiles or derived; manual -> calibrated; embedded -> geoPDF; embeddedIssue -> rejected; else needsCalibration. effective georef = manual ?? embedded. Subtitle: unavailable, else a draft's map_state_draft, else the state's. rowTap: activate when it can be the durable active selection, calibrate for the other PDFs, nothing when unavailable (the start precondition needs the file). Menu ids are the map_action_* keys plus generateOfflineTiles (WP2) for entries with an effective georef; unavailable rows only offer delete"
+    "entryStates": "s8.2 derived state: unavailable (file missing or size/mtime mismatch) overrides; 3.0.3 (s15.1): then an mbtiles entry with packRefused (this process's open of these bytes was refused) -> openFailed (durable, row tap = a fresh guarded open, Delete); mbtiles -> offlineTiles or derived; manual -> calibrated; embedded -> geoPDF; embeddedIssue -> rejected; else needsCalibration. effective georef = manual ?? embedded. Subtitle: unavailable, else a draft's map_state_draft, else the state's. rowTap: activate when it can be the durable active selection, calibrate for the other PDFs, nothing when unavailable (the start precondition needs the file). Menu ids are the map_action_* keys plus generateOfflineTiles (WP2) for entries with an effective georef; unavailable rows only offer delete"
   },
   "prechecks": [
     {"id": "ok", "library": "loaded", "entryCount": 3, "kind": "pdf", "sizeBytes": 41943040, "freeBytes": 107374182400, "expect": null, "note": "nothing in the way"},
@@ -2413,6 +2901,7 @@
         "pdf": {"pageCount": 1, "embedded": true, "embeddedIssue": null, "manual": null}
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "geoPDF",
@@ -2439,6 +2928,7 @@
         }
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "calibrated",
@@ -2465,6 +2955,7 @@
         }
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "calibrated",
@@ -2491,6 +2982,7 @@
         }
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "calibrated",
@@ -2512,6 +3004,7 @@
         "pdf": {"pageCount": 1, "embedded": false, "embeddedIssue": "rmsGate", "manual": null}
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "rejected",
@@ -2533,6 +3026,7 @@
         "pdf": {"pageCount": 1, "embedded": false, "embeddedIssue": null, "manual": null}
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "needsCalibration",
@@ -2554,6 +3048,7 @@
         "pdf": {"pageCount": 1, "embedded": false, "embeddedIssue": null, "manual": null}
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": 2,
       "expect": {
         "state": "needsCalibration",
@@ -2580,6 +3075,7 @@
         }
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": 6,
       "expect": {
         "state": "calibrated",
@@ -2601,6 +3097,7 @@
         "pdf": {"pageCount": 1, "embedded": true, "embeddedIssue": null, "manual": null}
       },
       "fileStatus": "missing",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "unavailable",
@@ -2627,6 +3124,7 @@
         }
       },
       "fileStatus": "sizeOrMtimeMismatch",
+      "packRefused": false,
       "draftPoints": 3,
       "expect": {
         "state": "unavailable",
@@ -2648,6 +3146,7 @@
         "pdf": {"pageCount": 0, "embedded": false, "embeddedIssue": null, "manual": null}
       },
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "unavailable",
@@ -2666,6 +3165,7 @@
       "id": "mbtiles",
       "entry": {"kind": "mbtiles", "derivedFromId": null},
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "offlineTiles",
@@ -2684,6 +3184,7 @@
       "id": "baked_tiles",
       "entry": {"kind": "mbtiles", "derivedFromId": "6f1c2d3e-0000-4000-8000-000000000001", "parentName": "Sydney 1:25k"},
       "fileStatus": "ok",
+      "packRefused": false,
       "draftPoints": null,
       "expect": {
         "state": "derived",
@@ -2697,6 +3198,104 @@
         "menu": ["map_action_delete"]
       },
       "note": "tiles baked from a PDF entry"
+    },
+    {
+      "id": "mbtiles_open_failed",
+      "entry": {"kind": "mbtiles", "derivedFromId": null},
+      "fileStatus": "ok",
+      "packRefused": true,
+      "draftPoints": null,
+      "expect": {
+        "state": "openFailed",
+        "effectiveGeoref": null,
+        "canBeDurableActive": true,
+        "subtitle": {
+          "key": "map_state_open_failed",
+          "args": {}
+        },
+        "rowTap": "activate",
+        "menu": ["map_action_delete"]
+      },
+      "note": "the pack's open was refused this process: tap tries again, Delete in the menu"
+    },
+    {
+      "id": "baked_tiles_open_failed",
+      "entry": {"kind": "mbtiles", "derivedFromId": "6f1c2d3e-0000-4000-8000-000000000001", "parentName": "Sydney 1:25k"},
+      "fileStatus": "ok",
+      "packRefused": true,
+      "draftPoints": null,
+      "expect": {
+        "state": "openFailed",
+        "effectiveGeoref": null,
+        "canBeDurableActive": true,
+        "subtitle": {
+          "key": "map_state_open_failed",
+          "args": {}
+        },
+        "rowTap": "activate",
+        "menu": ["map_action_delete"]
+      },
+      "note": "a migrated derived pack the same way"
+    },
+    {
+      "id": "mbtiles_missing_file",
+      "entry": {"kind": "mbtiles", "derivedFromId": null},
+      "fileStatus": "missing",
+      "packRefused": false,
+      "draftPoints": null,
+      "expect": {
+        "state": "unavailable",
+        "effectiveGeoref": null,
+        "canBeDurableActive": false,
+        "subtitle": {
+          "key": "map_state_unavailable",
+          "args": {}
+        },
+        "rowTap": "none",
+        "menu": ["map_action_delete"]
+      },
+      "note": "a missing pack file: unavailable, nothing to retry"
+    },
+    {
+      "id": "mbtiles_missing_and_refused",
+      "entry": {"kind": "mbtiles", "derivedFromId": null},
+      "fileStatus": "sizeOrMtimeMismatch",
+      "packRefused": true,
+      "draftPoints": null,
+      "expect": {
+        "state": "unavailable",
+        "effectiveGeoref": null,
+        "canBeDurableActive": false,
+        "subtitle": {
+          "key": "map_state_unavailable",
+          "args": {}
+        },
+        "rowTap": "none",
+        "menu": ["map_action_delete"]
+      },
+      "note": "unavailable still wins over openFailed"
+    },
+    {
+      "id": "pdf_ignores_pack_refused",
+      "entry": {
+        "kind": "pdf",
+        "pdf": {"pageCount": 1, "embedded": true, "embeddedIssue": null, "manual": null}
+      },
+      "fileStatus": "ok",
+      "packRefused": true,
+      "draftPoints": null,
+      "expect": {
+        "state": "geoPDF",
+        "effectiveGeoref": "embedded",
+        "canBeDurableActive": true,
+        "subtitle": {
+          "key": "map_state_geopdf",
+          "args": {}
+        },
+        "rowTap": "activate",
+        "menu": ["map_action_calibrate", "generateOfflineTiles", "map_action_delete"]
+      },
+      "note": "packRefused is about MBTiles only, a PDF's failures are the WP2 couldn't-draw state"
     }
   ],
   "lifecycle": {

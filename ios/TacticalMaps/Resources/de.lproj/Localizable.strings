@@ -163,6 +163,9 @@
 "id.map_library_recovered_notice" = "Einige gespeicherte Kartendetails konnten nicht gelesen werden. Jede Kartendatei auf diesem Gerät wurde behalten und steht unter „Importierte Karten“, möglicherweise fehlen aber Namen oder Kalibrierungen. Prüfe deine Karten und kalibriere sie bei Bedarf neu. Es wurde nichts gelöscht.";
 "id.map_library_section" = "Importierte Karten";
 "id.map_migration_uncalibrated" = "„%1$@“ war nie georeferenziert und wird daher nicht mehr als Grundkarte angezeigt. Kalibriere sie über „Ebenen“.";
+"id.map_pack_open_failed_message" = "Das Kartenpaket ist möglicherweise beschädigt oder so aufgebaut, dass TacMap es nicht öffnen kann, oder die Prüfung hat zu lange gedauert. Die angezeigte Karte wurde nicht geändert. Unter „Importierte Karten“ in „Ebenen“ kannst du es erneut versuchen oder das Kartenpaket löschen.";
+"id.map_pack_open_failed_title" = "„%1$@“ konnte nicht geöffnet werden";
+"id.map_pack_restore_failed_message" = "Dein gespeichertes Kartenpaket fehlt, wurde geändert oder konnte nicht geöffnet werden. Deshalb bleibt die Karte leer. Stattdessen wurde keine Onlinekarte geladen, und es wurde nichts gelöscht. Unter „Importierte Karten“ in „Ebenen“ kannst du eine andere Karte wählen, es erneut versuchen oder das Kartenpaket löschen.";
 "id.map_point_copy" = "Koordinaten kopieren";
 "id.map_point_measure" = "Von hier messen";
 "id.map_point_place_symbol" = "Symbol hier platzieren";
@@ -176,6 +179,7 @@
 "id.map_state_geopdf" = "GeoPDF";
 "id.map_state_needs_calibration" = "Nicht georeferenziert – zum Kalibrieren tippen";
 "id.map_state_offline_tiles" = "Offline-Kacheln";
+"id.map_state_open_failed" = "Konnte nicht geöffnet werden – tippe, um es erneut zu versuchen";
 "id.map_state_rejected" = "Georeferenzierung nicht lesbar – zum Kalibrieren tippen";
 "id.map_state_unavailable" = "Datei fehlt oder wurde geändert – lösche sie und importiere sie erneut";
 "id.map_use_embedded_confirm" = "Deine Kalibrierung entfernen und die im PDF gespeicherte Georeferenzierung verwenden?";
@@ -334,7 +338,7 @@
 "id.sync_background_paused" = "Die Standortfreigabe im Hintergrund wurde um %1$@ pausiert, weil die Verbindung verloren ging. Öffne TacMap, um fortzufahren.";
 "id.sync_configured_relay_unavailable" = "Unit Sync konnte den konfigurierten Relay-Server nicht verwenden. Starte TacMap neu oder aktualisiere die App und versuche es erneut.";
 "id.sync_identity_rejected" = "Das Relay hat die signierte Unit-Sync-Identität dieses Geräts abgelehnt, daher wurde die Synchronisierung beendet. Verlasse den Raum und tritt erneut bei. Wenn das weiterhin passiert, erstelle einen neuen Beitrittscode.";
-"id.sync_legacy_room_mixed_versions" = "Älterer Raumtyp: Wenn Mitglieder unterschiedliche TacMap-Versionen verwenden, sehen manche möglicherweise nicht dieselben Wegpunkte und Zeichnungen, und manche Änderungen oder Löschungen erreichen nicht alle. Um das zu vermeiden, erstelle einen neuen Beitrittscode (er beginnt mit 3:) und lass alle in den neuen Raum wechseln.";
+"id.sync_legacy_room_mixed_versions" = "Älterer Raumtyp: Wenn Mitglieder unterschiedliche TacMap-Versionen verwenden, sehen manche möglicherweise nicht dieselben Wegpunkte und Zeichnungen, und manche Änderungen oder Löschungen erreichen unter Umständen nicht alle. Um das zu vermeiden, erstelle einen neuen Beitrittscode (er beginnt mit 3:) und lass alle in den neuen Raum wechseln.";
 "id.sync_object_too_large" = "Ein Objekt ist zu groß für die Synchronisierung und bleibt nur auf diesem Gerät. Vereinfache es oder zerlege es in kleinere Teile, um es zu teilen.";
 "id.sync_records_skipped_unsupported" = "Einige synchronisierte Objekte verwenden ein Format, das diese TacMap-Version nicht anzeigen kann, und wurden übersprungen (Anzahl: %1$@). Aktualisiere TacMap, um sie zu sehen.";
 "id.sync_records_skipped_unverified" = "Einige synchronisierte Objekte haben die Prüfung nicht bestanden und wurden ignoriert (Anzahl: %1$@). Deine übrigen Daten sind nicht betroffen. Wenn das weiterhin passiert, erstelle einen neuen Beitrittscode.";

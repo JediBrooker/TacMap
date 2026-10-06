@@ -71,15 +71,22 @@ photo of a paper map" without that qualifier; fixed in the 3.0.1 copy.
 The source of truth is `docs/store/localizations/en-US.json` and `de-DE.json`
 (`appStore.whatsNew` / `googlePlay.releaseNotes`); run
 `scripts/export_store_localizations.py` to check limits. The JSON only holds
-the current release, so copy the notes into the history below when a version
-ships.
+the release being prepared, so when a version ships copy its notes, English and
+German, into [`store/RELEASE_NOTES.md`](store/RELEASE_NOTES.md). That file has
+every release from 3.0.1 on; the older ones are below.
+
+### 3.0.2 (build 75)
+Bug-fix release. The App Store notes also carry the 3.0.1 iOS fixes (iOS
+3.0.1 was replaced in review, so iOS goes from 3.0.0 to 3.0.2); the Play notes
+are 3.0.2 only. Text and counts: `store/RELEASE_NOTES.md`.
 
 ### 3.0.1 (build 74)
 Bug-fix release. The App Store notes list the iOS fixes and the Google Play
 notes the Android ones; both mention the fix for maps going missing after an
 update from 2.x and the relay hardening. Keep them in plain user language with
-no exploit detail. See the JSON for the text (en-US App Store 463 / 4,000,
-Play 355 / 500; de-DE App Store 623 / 4,000, Play 453 / 500).
+no exploit detail. Only Google Play shipped it. Text and counts:
+`store/RELEASE_NOTES.md` (en-US App Store 606 / 4,000, Play 355 / 500; de-DE
+App Store 790 / 4,000, Play 453 / 500).
 
 ### 3.0.0 (build 73)
 3.0.0 replaced the unreleased 2.2.0: builds 70-72 only went to TestFlight, so

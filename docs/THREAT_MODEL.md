@@ -49,7 +49,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
 | Imported symbol packs | **Untrusted** | User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated. |
-| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. On an MBTiles pack SQLite runs only TacMap's own fixed queries: SQL stored in the pack (a view that computes anything, a generated column, a virtual table) gets the pack refused, and opening a pack is crash-guarded too (§7). A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
+| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. On an MBTiles pack SQLite runs only TacMap's own fixed queries: SQL stored in the pack (a view that computes anything, a generated column, a virtual table) gets the pack refused, the size of its schema and metadata rows is checked from the file before SQLite reads them, and opening a pack is crash-guarded too (§7). A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
 | Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
@@ -611,7 +611,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   file is missing, or whose size, time or hash no longer match, the selection and its
   entry are kept but nothing is drawn, baked tiles included (the map shows "couldn't
   be drawn"), until bytes with that exact hash are back, so a calibration is never
-  applied to a different file; an MBTiles pack falls back to the online basemap. The
+  applied to a different file. An MBTiles pack whose file is missing or changed at launch keeps its
+  selection too: the map stays blank, nothing online is loaded in its place, and a notice says so (§7,
+  untrusted MBTiles). One whose content hash fails the background check is switched to the online
+  basemap, so the swapped file isn't drawn again at the next launch. The
   hash is re-checked on every Try Again, whether or not the sheet was already flagged,
   and (Android) at each document open and whenever a new tile source is built; a memo
   keyed on path, size, mtime and file identity keeps repeat checks of an untouched file
@@ -756,22 +759,39 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   and a schema statement at 100,000 bytes (iOS through SQLite's own limits;
   Android checks the same lengths itself and, from Android 12, caps SQLite's
   heap at 128 MiB for the process), turns off untrusted schema functions where
-  SQLite supports that and turns off automatic indexes. Before Android 12 a
-  value read through a view can still be materialised whole before its length
-  is checked (bounded by the 4 GiB file). A view has no rowid for incremental
-  reads, so it is read with key-addressed
+  SQLite supports that and turns off automatic indexes. Older SQLite (Android
+  before 12, iOS before SQLite 3.45) loads a whole value before it checks its
+  length, so before SQLite reads anything TacMap also reads the file's own
+  b-tree page headers (never a value) and refuses a pack whose schema has more
+  than 1,000 entries or 1 MiB in all, or whose metadata tables hold more than
+  64 rows or a row over 8 MiB + 128 KiB. Neither the schema load nor a metadata
+  read can then make SQLite load more than that, on any Android or iOS version,
+  and a tile stored as text instead of a blob is never read. What remains: on a
+  pack whose tiles are a view, rows of the underlying tables the view never
+  shows, and the columns it joins on, are compared while tiles are read, so on
+  that older SQLite such a value can still be loaded whole (bounded by the
+  4 GiB file); the crash guard below stops a repeat at the next launch. A view
+  has no rowid for incremental reads, so it is read with key-addressed
   queries under the same bounds. A view's join isn't bounded by the file size
   alone, so when either relation is a view the admission queries share a 30 s
   budget and each later query on a view gets 2 s; an interrupted admission
   rejects the pack and an interrupted tile read returns no tile (two tables get
   no budget: their check is one scan the file size bounds). Packs are opened
   and checked off the main thread; while the saved pack is checked at launch
-  the map stays blank rather than loading online tiles. Opening the saved or a
-  newly chosen pack is covered by a crash guard (`mbtiles_open_guard.json`,
-  entry ids only): if the app dies while a pack is being opened or is drawing
-  its first screen, the next launch doesn't reopen it automatically, shows the
-  online map in memory and asks (Open Anyway, Delete Map, Not Now), the same
-  way as for a PDF. A pack that kills
+  the map stays blank rather than loading online tiles. If the saved pack can't
+  be opened (its file is missing or changed, or the check refuses it) the map
+  stays blank and a notice says so: TacMap doesn't swap a chosen offline pack
+  for the online map on its own. Layers lists the pack as unavailable (delete
+  it or import it again) or as couldn't be opened (tap to retry, or delete
+  it). A pack the user picks that can't be
+  opened leaves the map on screen as it was, and an alert says so. Opening a
+  pack is covered by a crash guard (`mbtiles_open_guard.json`, entry ids
+  only): if the app dies while the saved pack is being opened, or while any
+  pack is drawing its first screen, the next launch doesn't reopen it
+  automatically, shows the online map in memory and asks (Open Anyway, Delete
+  Map, Not Now), the same way as for a PDF. A newly chosen pack that kills the
+  app while it is being checked was never saved as the map, so the next launch
+  shows the previous one; picking it again is up to the user. A pack that kills
   its own import is removed at the next launch like a PDF, and the library
   recovery never reopens a pack it died on. Both readers reject more than 64 metadata
   rows using bounded row/type descriptors before copying text. Keys are bounded

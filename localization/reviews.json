@@ -14647,7 +14647,35 @@
     "sync_legacy_room_mixed_versions": {
       "de": {
         "source": "4c3303cba2c9f8010320d0fb3ec45e7b311941db215a3a3a451f74a75479707a",
-        "translation": "50522a666f0edc990c4974a94e4fc7ceb503ed921db8401f49c3bdeffe091670",
+        "translation": "862a7646dc65619afee057eb16bcdde149e6448a4335bf7cf3d89029ffce0630",
+        "status": "reviewed"
+      }
+    },
+    "map_state_open_failed": {
+      "de": {
+        "source": "f123131fb7752365812dab8b162a0b9f1b5f5e30cd02878a9fc641ddbd6bb12f",
+        "translation": "b6886a58795da38bd524657148cd662ecbad0a9669f1b3aa92b4af1eb24e2e55",
+        "status": "reviewed"
+      }
+    },
+    "map_pack_open_failed_title": {
+      "de": {
+        "source": "45f5e4beee312ee010b0a5d412d80464d8fe0c9292aff38fde89cf6a42f01a0f",
+        "translation": "90717cdfb21a2c63494aff6c0097b1936d993d231cfee59527a0d6393dc75eee",
+        "status": "reviewed"
+      }
+    },
+    "map_pack_open_failed_message": {
+      "de": {
+        "source": "8fc333fb7e24641c64da599ccd8edfed8d27064b2d5aa5f74f40d6490f232e77",
+        "translation": "e0831a56cdd8655cc3778312aecaad6cbefaecdc26c21b5451c0b357875acd08",
+        "status": "reviewed"
+      }
+    },
+    "map_pack_restore_failed_message": {
+      "de": {
+        "source": "d12412f5c0f7d3df33769e78127bf7107f3b3e2c5a9fc06d822e85932e15c975",
+        "translation": "b29da6c91824337c03031c40111718f1b39fb0e00858db9624704ca6f420689f",
         "status": "reviewed"
       }
     }
