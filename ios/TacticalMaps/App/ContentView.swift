@@ -283,20 +283,21 @@ struct ContentView: View {
     /// "a PDF is loaded" does not mean "nothing is being fetched".
     private var onlineTilesActive: Bool {
         guard opsec.onlineBasemaps else { return false }
-        return !(mapVM.mapSource is OfflineTileMapSource)
+        // a pack still opening (blank placeholder) asks nothing online either
+        return !mapVM.showsOfflinePack
     }
 
     /// Nothing to draw at all: no imported map, and online tiles are gated off.
     private var basemapBlank: Bool {
         !opsec.onlineBasemaps
-            && !(mapVM.mapSource is OfflineTileMapSource)
+            && !mapVM.showsOfflinePack
             && !(mapVM.mapSource is PDFMapSource)
     }
 
     /// An imported, location-bound basemap (offline pack or PDF/GeoPDF). These
     /// have coverage, so they get the "Centre on Map" button + green banner tag.
     private var importedMapLoaded: Bool {
-        mapVM.mapSource is OfflineTileMapSource || mapVM.mapSource is PDFMapSource
+        mapVM.showsOfflinePack || mapVM.mapSource is PDFMapSource
     }
 
     /// Plain PDF on its made-up placement: positions off it mean nothing yet.
@@ -1667,7 +1668,8 @@ struct ContentView: View {
     private func unlockMissionData() {
         missionUnlockError = nil
         do {
-            _ = try DataKey.key()
+            // the user's own unlock, the only thing that reopens the key after a relock
+            try DataKey.unlock()
             dataKeyEpoch &+= 1
             waypointStore.reloadAfterUnlock()
             drawingStore.reloadAfterUnlock()

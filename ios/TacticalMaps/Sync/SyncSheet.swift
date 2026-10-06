@@ -13,6 +13,30 @@ enum UnitSyncJoinGate {
     }
 }
 
+/// Where the sheet shows the legacy 2: room lines (the red one plus the
+/// mixed versions note under it). Pulled out of the view so it's testable.
+enum LegacyRoomNotice: Equatable {
+    case joinForm
+    case joinedRoom
+
+    static func isLegacy(_ code: String?) -> Bool {
+        code?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("2:") == true
+    }
+
+    /// joined wins, the join form isn't on screen then so whatever is still
+    /// typed in it doesn't count. nil = show nothing
+    static func placement(joinedRoom: String?, typedCode: String) -> LegacyRoomNotice? {
+        if let joinedRoom {
+            return isLegacy(joinedRoom) ? .joinedRoom : nil
+        }
+        return isLegacy(typedCode) ? .joinForm : nil
+    }
+
+    static var mixedVersionsMessage: LocalizedMessage {
+        Messages.syncLegacyRoomMixedVersionsMessage()
+    }
+}
+
 private struct PendingUnitSyncJoin: Identifiable {
     let id = UUID()
     let code: String
@@ -100,9 +124,8 @@ struct SyncSheet: View {
                         .accessibilityLabel(L10n.text("Unit room code %1$@", room))
                         .accessibilityHint(L10n.text("Copies the unit room code to the clipboard"))
                         .accessibilityValue(roomCodeCopied ? L10n.text("Copied") : "")
-                        if room.hasPrefix("2:") {
-                            Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."))
-                                .font(.caption.bold()).foregroundStyle(.red)
+                        if LegacyRoomNotice.placement(joinedRoom: room, typedCode: code) == .joinedRoom {
+                            legacyRoomLines
                         }
                         Button(role: .destructive) {
                             manager.leave()
@@ -191,9 +214,8 @@ struct SyncSheet: View {
                         if let codeError {
                             Text(codeError.text).font(.caption).foregroundStyle(.red)
                         }
-                        if code.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("2:") {
-                            Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."))
-                                .font(.caption.bold()).foregroundStyle(.red)
+                        if LegacyRoomNotice.placement(joinedRoom: nil, typedCode: code) == .joinForm {
+                            legacyRoomLines
                         }
                     } header: {
                         Text(L10n.text("Join or create a unit room"))
@@ -328,6 +350,18 @@ struct SyncSheet: View {
         } else {
             manager.join(trimmed, roomName: roomName)
         }
+    }
+
+    // red line first, then the plain mixed versions note right under it.
+    // stays up through the tap-again confirm and the whole time we're in the room
+    @ViewBuilder
+    private var legacyRoomLines: some View {
+        Text(L10n.text("LEGACY ROOM: weaker replay, identity, and metadata protections."))
+            .font(.caption.bold()).foregroundStyle(.red)
+        Text(LegacyRoomNotice.mixedVersionsMessage.text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("sync.legacyRoomMixedVersions")
     }
 
     private var joinConsentMessage: String {

@@ -190,8 +190,9 @@ struct PDFRenderChrome: ViewModifier {
             } message: { f in
                 Text(f.localizedMessage.text)
             }
-            .alert(Messages.pdfGuardCrashTitle(mapVM.pdfCrashSuspect?.displayName ?? ""),
-                   isPresented: Binding(get: { mapVM.pdfCrashSuspect != nil && !confirmingSuspectDelete },
+            // PDF or MBTiles suspect (3.0.2 M1), same alert and copy
+            .alert(Messages.pdfGuardCrashTitle(mapVM.crashSuspectDisplayName),
+                   isPresented: Binding(get: { mapVM.crashSuspectAlertShowing && !confirmingSuspectDelete },
                                         set: { _ in })) {
                 Button(Messages.pdfGuardOpenAnyway()) { mapVM.openCrashSuspectAnyway() }
                 Button(Messages.pdfGuardDeleteMap(), role: .destructive) { confirmingSuspectDelete = true }
@@ -200,7 +201,7 @@ struct PDFRenderChrome: ViewModifier {
                 Text(Messages.pdfGuardCrashMessage())
             }
             // the library's own delete confirmation (s8.2), same as the Layers row
-            .alert(Messages.mapDeleteTitle(mapVM.pdfCrashSuspect?.displayName ?? ""), isPresented: $confirmingSuspectDelete) {
+            .alert(Messages.mapDeleteTitle(mapVM.crashSuspectDisplayName), isPresented: $confirmingSuspectDelete) {
                 Button(L10n.text("Delete"), role: .destructive) {
                     _ = mapVM.deleteCrashSuspect()
                 }
@@ -208,7 +209,7 @@ struct PDFRenderChrome: ViewModifier {
             } message: {
                 Text(Messages.mapDeleteMessage())
             }
-            .alert(launchNoticeTitle, isPresented: Binding(get: { mapVM.pdfLaunchNotice != nil && mapVM.pdfCrashSuspect == nil },
+            .alert(launchNoticeTitle, isPresented: Binding(get: { mapVM.pdfLaunchNotice != nil && !mapVM.crashSuspectAlertShowing },
                                                            set: { if !$0 { mapVM.dismissLaunchNotice() } })) {
                 Button(Messages.acknowledge(), role: .cancel) { mapVM.dismissLaunchNotice() }
             } message: {

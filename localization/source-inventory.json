@@ -160,7 +160,19 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Calibration/MBTilesOpenGuard.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/MBTilesStore.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "ios/TacticalMaps/Calibration/MBTilesViewShape.swift",
     "platform": "ios",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"

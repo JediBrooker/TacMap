@@ -17,9 +17,15 @@ final class MBTilesStore: @unchecked Sendable {
         "name": 128, "format": 32, "minzoom": 16, "maxzoom": 16, "bounds": 256
     ]
     static let consumedBakeExtensionMaximumCharacters = 128
-    /// One deadline for the whole admission (relations, metadata, tile
-    /// aggregate). A view's row count isn't bounded by the file, so a
-    /// recursive view could otherwise spin the aggregate forever.
+    /// 3.0.2 SEC-1 caps, every connection: SQLITE_LIMIT_LENGTH (one value) and
+    /// SQLITE_LIMIT_SQL_LENGTH (a longer schema statement fails the schema load)
+    static let maximumValueBytes = maximumTileBytes + 64 * 1024
+    static let maximumSchemaSQLBytes = MBTilesViewShape.maximumSQLBytes
+    /// generated columns (and pragma_table_xinfo hidden 2/3) need 3.31
+    static let generatedColumnsMinimumSQLite: Int32 = 3_031_000
+    /// One deadline for the admission after the relation checks (metadata,
+    /// tile aggregate), only when tiles or metadata is a view. A view's join
+    /// isn't bounded by the file, two tables are one scan the file bounds.
     static let admissionBudgetMs = 30_000
     /// Per statement against a view after admission (tile + extension reads).
     static let viewQueryBudgetMs = 2_000
@@ -76,17 +82,30 @@ final class MBTilesStore: @unchecked Sendable {
     /// every query behind this lock.
     private let lock = NSLock()
 
+#if DEBUG
+    /// called at the top of every admission open, so tests can look at the
+    /// crash markers and guard files right where a hostile pack would kill us
+    static var admissionOpenHookForTesting: ((URL) -> Void)?
+#endif
+
     /// admissionBudgetMs is only a test seam, callers use the default.
     init?(url: URL, admissionBudgetMs: Int = MBTilesStore.admissionBudgetMs) {
         self.url = url
+#if DEBUG
+        Self.admissionOpenHookForTesting?(url)
+#endif
         guard openConnection() else { return nil }
         // Reject files that aren't actually MBTiles: sqlite3_open succeeds on any
         // path, so without this check a garbage/corrupt file would load as a
         // "valid" but blank basemap. Both relations are mandatory, and all
         // security-sensitive metadata is validated before publishing a source.
-        let validated = withQueryBudget(milliseconds: admissionBudgetMs) { () -> Metadata? in
-            guard loadRelationTypes() else { return nil }
-            return loadMetadata()
+        // Relations, view shape and base tables first, they read sqlite_master
+        // only. The budget's for views, two tables get none
+        var validated: Metadata?
+        if loadRelationTypes() {
+            validated = tilesRelation == .view || metadataRelation == .view
+                ? withQueryBudget(milliseconds: admissionBudgetMs) { loadMetadata() }
+                : loadMetadata()
         }
         guard let validatedMetadata = validated else {
             sqlite3_close(db)
@@ -107,9 +126,19 @@ final class MBTilesStore: @unchecked Sendable {
     deinit { sqlite3_close(db) }
 
     private func openConnection() -> Bool {
-        // trusted_schema off before anything touches the schema, so a hostile
-        // view can't reach functions that aren't marked innocuous
-        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            sqlite3_close(db)
+            db = nil
+            return false
+        }
+        // caps before the schema's even parsed: one value can't go past a tile
+        // + 64 KiB, so randomblob / zeroblob / printf in the file hit TOOBIG
+        // instead of allocating, and a giant schema statement fails the load.
+        // automatic indexes off or one big image gets copied into a temp index
+        // on every read. trusted_schema off before anything touches the schema
+        sqlite3_limit(db, SQLITE_LIMIT_LENGTH, Int32(Self.maximumValueBytes))
+        sqlite3_limit(db, SQLITE_LIMIT_SQL_LENGTH, Int32(Self.maximumSchemaSQLBytes))
+        guard sqlite3_exec(db, "PRAGMA automatic_index=OFF", nil, nil, nil) == SQLITE_OK,
               sqlite3_exec(db, "PRAGMA trusted_schema=OFF", nil, nil, nil) == SQLITE_OK else {
             sqlite3_close(db)
             db = nil
@@ -117,6 +146,26 @@ final class MBTilesStore: @unchecked Sendable {
         }
         return true
     }
+
+#if DEBUG
+    /// what the live connection really runs with (LENGTH, SQL_LENGTH,
+    /// automatic_index, trusted_schema). Opens lazily like a read would
+    func connectionHardeningForTesting() -> (length: Int32, sqlLength: Int32, automaticIndex: Int32,
+                                             trustedSchema: Int32)? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard openDatabaseIfNeeded() else { return nil }
+        func pragma(_ name: String) -> Int32 {
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, "PRAGMA \(name)", -1, &stmt, nil) == SQLITE_OK,
+                  sqlite3_step(stmt) == SQLITE_ROW else { return -1 }
+            return sqlite3_column_int(stmt, 0)
+        }
+        return (sqlite3_limit(db, SQLITE_LIMIT_LENGTH, -1), sqlite3_limit(db, SQLITE_LIMIT_SQL_LENGTH, -1),
+                pragma("automatic_index"), pragma("trusted_schema"))
+    }
+#endif
 
     /// Lazy open for the prevalidated path. It still has to learn whether
     /// each relation is a table or a view since the read paths differ.
@@ -132,34 +181,109 @@ final class MBTilesStore: @unchecked Sendable {
         return true
     }
 
+    /// 3.0.2 SEC-1: both relations, a view's shape and every table a read
+    /// touches, all from sqlite_master before any statement names tiles or
+    /// metadata. After this no expression stored in the file can run on a read
     private func loadRelationTypes() -> Bool {
-        guard let tiles = relationType("tiles"),
-              let metadata = relationType("metadata") else { return false }
-        tilesRelation = tiles
-        metadataRelation = metadata
+        var found: [Relation] = []
+        for name in ["tiles", "metadata"] {
+            guard let row = relationType(name) else { return false }
+            let relation = row.relation
+            let bases: [String]
+            if relation == .view {
+                guard let sql = row.sql,
+                      case .success(let tables) = MBTilesViewShape.baseTables(sql: sql, relation: name) else {
+                    return false
+                }
+                bases = tables
+            } else {
+                bases = [name]
+            }
+            guard bases.allSatisfy(isOrdinaryTable) else { return false }
+            found.append(relation)
+        }
+        tilesRelation = found[0]
+        metadataRelation = found[1]
         return true
     }
 
     /// Exactly one sqlite_master row by that name and it has to be a table
     /// or a view. Index, trigger, missing or anything odd fails closed.
-    private func relationType(_ name: String) -> Relation? {
+    private func relationType(_ name: String) -> (relation: Relation, sql: String?)? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_prepare_v2(
             db,
-            "SELECT type FROM sqlite_master WHERE name=? LIMIT 2",
+            "SELECT type, sql FROM sqlite_master WHERE name=? LIMIT 2",
             -1, &stmt, nil) == SQLITE_OK else { return nil }
         sqlite3_bind_text(stmt, 1, name, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         guard sqlite3_step(stmt) == SQLITE_ROW,
               sqlite3_column_type(stmt, 0) == SQLITE_TEXT,
               let typePointer = sqlite3_column_text(stmt, 0) else { return nil }
         let type = String(cString: typePointer)
+        // schema text is capped by SQL_LENGTH already, so this copy is bounded
+        let sql = sqlite3_column_type(stmt, 1) == SQLITE_TEXT
+            ? sqlite3_column_text(stmt, 1).map { String(cString: $0) } : nil
         guard sqlite3_step(stmt) == SQLITE_DONE else { return nil }
         switch type {
-        case "table": return .table
-        case "view": return .view
+        case "table": return (.table, sql)
+        case "view": return (.view, sql)
         default: return nil
         }
+    }
+
+    /// a table a read touches: one sqlite_master row (NOCASE, like SQLite
+    /// resolves it), a real table not CREATE VIRTUAL TABLE (module code on
+    /// every read), and no generated column (an expression on every read)
+    private func isOrdinaryTable(_ name: String) -> Bool {
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        guard sqlite3_prepare_v2(db, "SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
+                                 -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, name, -1, transient)
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              sqlite3_column_type(stmt, 0) == SQLITE_TEXT,
+              let typePointer = sqlite3_column_text(stmt, 0),
+              String(cString: typePointer) == "table",
+              sqlite3_column_type(stmt, 1) == SQLITE_TEXT,
+              let sqlPointer = sqlite3_column_text(stmt, 1),
+              Self.startsWithCreateTable(String(cString: sqlPointer)),
+              sqlite3_step(stmt) == SQLITE_DONE else { return false }
+        // below 3.31 a generated column can't exist, the schema wouldnt parse
+        guard sqlite3_libversion_number() >= Self.generatedColumnsMinimumSQLite else { return true }
+        var info: OpaquePointer?
+        defer { sqlite3_finalize(info) }
+        guard sqlite3_prepare_v2(db, "SELECT hidden FROM pragma_table_xinfo(?)", -1, &info, nil) == SQLITE_OK else {
+            return false
+        }
+        sqlite3_bind_text(info, 1, name, -1, transient)
+        while true {
+            let step = sqlite3_step(info)
+            if step == SQLITE_DONE { return true }
+            guard step == SQLITE_ROW else { return false }
+            let hidden = sqlite3_column_int(info, 0)
+            if hidden == 2 || hidden == 3 { return false }
+        }
+    }
+
+    /// first two ASCII words are CREATE and TABLE, whatever the case. Same as
+    /// the generator's regex [ \t\r\n]*([A-Za-z]+)[ \t\r\n]+([A-Za-z]+), so
+    /// CREATE/**/VIRTUAL TABLE doesnt sneak through as two words
+    static func startsWithCreateTable(_ sql: String) -> Bool {
+        let b = Array(sql.utf8)
+        var i = 0
+        func isSpace(_ c: UInt8) -> Bool { c == 0x20 || c == 0x09 || c == 0x0D || c == 0x0A }
+        func isLetter(_ c: UInt8) -> Bool { (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) }
+        func word() -> String? {
+            let start = i
+            while i < b.count, isLetter(b[i]) { i += 1 }
+            return i > start ? String(decoding: b[start..<i], as: UTF8.self).uppercased() : nil
+        }
+        while i < b.count, isSpace(b[i]) { i += 1 }
+        guard word() == "CREATE", i < b.count, isSpace(b[i]) else { return false }
+        while i < b.count, isSpace(b[i]) { i += 1 }
+        return word() == "TABLE"
     }
 
     /// Runs body with a progress handler that interrupts whatever statement
@@ -684,4 +808,13 @@ final class MBTilesStore: @unchecked Sendable {
         sqlite3_close(db)
         db = nil
     }
+
+#if DEBUG
+    /// retired, no connection left and none will open again
+    var isClosedForTesting: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return closedForDeletion && db == nil
+    }
+#endif
 }

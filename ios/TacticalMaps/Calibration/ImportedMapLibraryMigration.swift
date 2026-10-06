@@ -325,6 +325,10 @@ enum ImportedMapLibraryMigration {
 
     static func mbtilesEntry(_ url: URL, nowMs: Int64) -> (entry: ImportedMapEntry, link: (old: URL, new: URL)?)? {
         let inTiles = url.deletingLastPathComponent().lastPathComponent == ImportedMapStorage.tilesDirectoryName
+        // name first, on the 2.x file itself. Linking before it meant dying in
+        // the open left a map-<uuid> link to the same bytes, which the salvage
+        // then adopted and opened again
+        let name = legacyPackName(url)
         let target: URL
         var link: (old: URL, new: URL)?
         if inTiles {
@@ -339,15 +343,30 @@ enum ImportedMapLibraryMigration {
             if link != nil { ImportedMapStorage.unlink(target) }
             return nil
         }
-        var name = url.deletingPathExtension().lastPathComponent
-        if let store = MBTilesStore(url: target) {
-            name = store.metadata.name ?? name
-            store.closeForDeletion()
-        }
         let stats = fileStats(target)
         return (ImportedMapEntry(id: UUID(), kind: .mbtiles, fileName: rel, displayName: name, contentKey: nil,
                                  byteCount: stats.bytes, fileModifiedAtMs: stats.mtime, importedAtMs: nowMs,
                                  derivedFromId: nil, pdf: nil), link)
+    }
+
+    /// 3.0.2: the pack's own name, read under the rebuild marker keyed on the
+    /// 2.x name. Any marker already down means some pass died opening a file:
+    /// this one last time (dont open it again), or a pack the salvage's adopt
+    /// still has to skip. Either way the stem it is and the marker stays put,
+    /// adopt reads it and takes it off. Overwriting it here used to wipe that
+    /// record and the salvage reopened the pack it died on, every launch
+    private static func legacyPackName(_ url: URL) -> String {
+        let stem = url.deletingPathExtension().lastPathComponent
+        let marker = ImportedMapLibraryRecovery.markerURL
+        if let marker, FileManager.default.fileExists(atPath: marker.path) { return stem }
+        if let marker {
+            try? Data(url.lastPathComponent.utf8).write(
+                to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+        defer { if let marker { try? FileManager.default.removeItem(at: marker) } }
+        guard let store = MBTilesStore(url: url) else { return stem }
+        defer { store.closeForDeletion() }
+        return store.metadata.name ?? stem
     }
 }
 
@@ -506,10 +525,17 @@ enum ImportedMapLibraryRecovery {
                     }
                 }
                 info = pdf
-            } else if let store = MBTilesStore(url: url) {
-                store.closeForDeletion()
-            } else {
+            } else if url.lastPathComponent == crashedOn {
+                // 3.0.2: the last pass died opening this pack, adopt it unavailable unopened
                 opens = false
+            } else {
+                if let marker {
+                    try? Data(url.lastPathComponent.utf8).write(to: marker, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                }
+                let store = MBTilesStore(url: url)
+                store?.closeForDeletion()
+                if let marker { try? FileManager.default.removeItem(at: marker) }
+                opens = store != nil
             }
             // linked only after the parse, so a crash in there never leaves a
             // second name for the same bytes

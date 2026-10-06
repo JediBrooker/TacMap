@@ -370,7 +370,8 @@ final class MapImportController: ObservableObject {
             return
         }
         progress = .saving
-        mapVM.addImportedEntry(entry, activate: true, ownsCopy: prepared.copy.url)
+        // shown from the worker's admission, nothing re-opened on main (M2)
+        mapVM.addImportedEntry(entry, activate: true, ownsCopy: prepared.copy.url, packMetadata: prepared.metadata)
     }
 
     // MARK: - page picker
