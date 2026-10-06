@@ -1255,9 +1255,9 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
         let table = try XCTUnwrap(json["libraryLoad"] as? [String: Any])
         let allRows = try XCTUnwrap(table["rows"] as? [[String: Any]])
-        XCTAssertEqual(allRows.count, 28)
+        XCTAssertEqual(allRows.count, 32)
         let rows = allRows.filter { ($0["platforms"] as? [String])?.contains("ios") == true }
-        XCTAssertEqual(rows.count, 26, "the two retained-selector rows are Android only")
+        XCTAssertEqual(rows.count, 27, "the retained-selector and ledger-only rows are Android only")
         let codes = try XCTUnwrap(table["legacyCodes"] as? [String: Any])
         let geoPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
         let plainPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_plain.pdf"))
@@ -1337,8 +1337,10 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
                     XCTAssertEqual(p.swept, e["bakeSweep"] as? Bool, ctx)
                     XCTAssertEqual(p.pruned, e["draftPrune"] as? Bool, ctx)
                     XCTAssertEqual(vm.libraryStatus == .loaded, e["basemapChangeAllowed"] as? Bool, ctx)
-                    // L6: the migration's draft was saved before the library write, failing or not
-                    if legacy == "readable" && given["libraryFile"] as? String == "absent" && given["writes"] as? String != "draftFails" {
+                    // L6: the migration's draft was saved before the library write, failing or not.
+                    // a write already on record means corrupt, no migration runs so no draft either
+                    if legacy == "readable" && given["libraryFile"] as? String == "absent"
+                        && given["writtenBefore"] as? Bool != true && given["writes"] as? String != "draftFails" {
                         XCTAssertEqual(p.migrationDrafts, 1, ctx)
                     }
                 }
