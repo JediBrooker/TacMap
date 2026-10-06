@@ -233,6 +233,7 @@ struct PDFRenderChrome: ViewModifier {
         switch mapVM.pdfLaunchNotice {
         case .importInterrupted?: return Messages.pdfGuardImportInterruptedTitle()
         case .bakeInterrupted?: return Messages.pdfBakeInterruptedTitle()
+        case .packRestoreFailed(let name)?: return Messages.mapPackOpenFailedTitle(name)
         case nil: return ""
         }
     }
@@ -241,6 +242,7 @@ struct PDFRenderChrome: ViewModifier {
         switch mapVM.pdfLaunchNotice {
         case .importInterrupted?: return Messages.pdfGuardImportInterruptedMessage()
         case .bakeInterrupted?: return Messages.pdfBakeInterruptedMessage()
+        case .packRestoreFailed?: return Messages.mapPackRestoreFailedMessage()
         case nil: return ""
         }
     }

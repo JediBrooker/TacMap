@@ -10,11 +10,13 @@ MuPDF quirk, so don't use it as the oracle here.
 
 CoreGraphics ignores OCMDs, which is what PDFOptionalContent.swift works around.
 Every case is written twice: a classic xref table, and (via pymupdf) a
-compressed object stream + xref stream layout like real USGS files.
+compressed object stream + xref stream layout like real USGS files. The objstm
+file's trailer /ID is the MD5 of the classic file's bytes (pymupdf would mint a
+random one on every save), so a rerun writes the same bytes.
 
   python3 scripts/gen_optional_content_pdfs.py   (needs pymupdf for the objstm set)
 """
-import json, os, sys
+import hashlib, json, os, sys
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'testdata', 'optional_content')
 
@@ -81,7 +83,11 @@ def main():
         manifest.append({'file': f'{name}.pdf', 'visible': vis, 'layout': 'xref-table'})
         if pymupdf:
             doc = pymupdf.open('pdf', raw)
-            doc.save(os.path.join(OUT, f'{name}_objstm.pdf'), use_objstms=1, compression_effort=0, deflate=True)
+            # /ID from the content, not a fresh random one each run
+            digest = hashlib.md5(raw).hexdigest().upper()
+            doc.xref_set_key(-1, 'ID', f'[<{digest}><{digest}>]')
+            doc.save(os.path.join(OUT, f'{name}_objstm.pdf'), use_objstms=1, compression_effort=0, deflate=True,
+                     no_new_id=1)
             manifest.append({'file': f'{name}_objstm.pdf', 'visible': vis, 'layout': 'object-stream'})
     with open(os.path.join(OUT, 'manifest.json'), 'w') as f:
         json.dump({'description': 'Red square at page centre (50,50 of a 100x100 page) wrapped in /OC /MC0; visible per ISO 32000 8.11 default config', 'cases': manifest}, f, indent=1)

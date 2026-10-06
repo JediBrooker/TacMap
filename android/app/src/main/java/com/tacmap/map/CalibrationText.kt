@@ -114,6 +114,7 @@ internal object CalibrationText {
             "map_state_offline_tiles" -> Messages.mapStateOfflineTiles()
             "map_state_derived" -> Messages.mapStateDerived(a["name"].toString())
             "map_state_unavailable" -> Messages.mapStateUnavailable()
+            "map_state_open_failed" -> Messages.mapStateOpenFailed()
             else -> m.key
         }
     }

@@ -162,6 +162,114 @@ class SyncStoredIdCasingTest {
         assertTrue(h.uncaught.isEmpty())
     }
 
+    // ---- R1-V3-STALE-BASELINE: a delete the diff never sent vs a teammate's edit in the other casing ----
+
+    private fun content(id: String, name: String) = FakeV3Peer.waypointContent(waypoint(id, name))
+
+    private fun SyncHarness.copiesOf(lower: String) = waypointStore.committedWaypoints.value.filter { it.id.lowercase() == lower }
+
+    /**
+     * We hold it uppercase and the edit comes lowercase, then the mirror, then matching casings
+     * as the control (that one always behaved). Every failure gets reported, not just the first.
+     */
+    private fun eachCasing(block: (held: String, edited: String, label: String) -> Unit) {
+        val failures = ArrayList<String>()
+        for ((heldUpper, editedUpper) in listOf(true to false, false to true, false to false)) {
+            val lower = UUID.randomUUID().toString()
+            val held = if (heldUpper) lower.uppercase() else lower
+            val edited = if (editedUpper) lower.uppercase() else lower
+            try {
+                block(held, edited, "held ${if (heldUpper) "upper" else "lower"}, edit ${if (editedUpper) "upper" else "lower"}")
+            } catch (e: AssertionError) {
+                failures += e.message.toString()
+            }
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    @Test
+    fun trackedAliasesOnlyCoverUuidsNothingStores() {
+        val gone = UUID.randomUUID().toString()
+        val storedUpper = UUID.randomUUID().toString()
+        val storedLower = UUID.randomUUID().toString()
+        val stored = setOf(storedUpper.uppercase(), storedLower)
+        val aliases = SnapshotValidator.caseAliases(stored, stored::contains)
+        val tracked = SnapshotValidator.trackedAliases(
+            sequenceOf(gone.uppercase(), gone, storedUpper, storedLower.uppercase(), storedLower, "wire:abc", "not-a-uuid"),
+            stored::contains,
+            aliases,
+        )
+        // first casing wins; a UUID stored in any casing, wire: placeholders and junk stay out
+        assertEquals(mapOf(gone to gone.uppercase()), tracked)
+    }
+
+    @Test
+    fun anOfflineDeleteNeverTombstonesATeammatesNewerEditInTheOtherCasing() {
+        // we keep X under one casing (received verbatim, 3.0.2), delete it while the socket is
+        // down, and the reconnect snapshot has a teammate's newer edit in the other casing. the
+        // put used to land under a second local id, so the old one looked gone to the diff and we
+        // tombstoned the object room wide while still showing it ourselves
+        eachCasing { held, edited, label ->
+            val h = harness()
+            val lower = held.lowercase()
+            h.join()
+            val creator = FakeV3Peer(h.keys())
+            val wire = creator.wireId(lower)
+            h.completeHandshake(listOf(creator.record(wire, 5, "waypoint", content(held, "first"))))
+            h.advance(1_000)
+            assertEquals(label, listOf(held), h.copiesOf(lower).map { it.id })
+
+            h.socket.serverClose(1006)
+            h.runCurrent()
+            assertNotEquals(label, SyncManager.Status.CONNECTED, h.manager.status.value)
+            assertTrue(label, h.waypointStore.remove(h.copiesOf(lower).single()))
+            val socket = h.awaitNewSocket()
+            val teammate = FakeV3Peer(h.keys())
+            h.completeHandshake(listOf(teammate.record(wire, 50, "waypoint", content(edited, "theirs"))), seq = 2)
+            h.advance(5_000)
+
+            assertEquals("$label: tombstoned the teammate's edit", emptyList<JSONObject>(), socket.framesFor("del", wire))
+            assertEquals(label, emptyList<JSONObject>(), socket.framesFor("put", wire))
+            assertEquals("$label: one copy, under the id we had", listOf(held), h.copiesOf(lower).map { it.id })
+            assertEquals(label, listOf("theirs"), h.copiesOf(lower).map { it.name })
+            assertTrue("$label: our own tombstone", !h.manager.replayStateForTests!!.isTombstoned(wire))
+            assertStillSyncing(h)
+        }
+    }
+
+    @Test
+    fun aDeleteTheDiffHasntSentYetNeverTombstonesALiveEditInTheOtherCasing() {
+        // same thing without a reconnect: the teammate's live put lands before the debounced diff
+        // picks up our delete
+        eachCasing { held, edited, label ->
+            val h = harness()
+            val lower = held.lowercase()
+            h.join()
+            h.completeHandshake()
+            val creator = FakeV3Peer(h.keys())
+            val wire = creator.wireId(lower)
+            h.deliver(creator.hello())
+            h.deliver(creator.record(wire, 5, "waypoint", content(held, "first"), t = "put"))
+            h.advance(1_000)
+            assertEquals(label, listOf(held), h.copiesOf(lower).map { it.id })
+            val teammate = FakeV3Peer(h.keys())
+            h.deliver(teammate.hello())
+            val sentBefore = h.socket.sentFrames().size
+
+            assertTrue(label, h.waypointStore.remove(h.copiesOf(lower).single()))
+            // the revision bump lands, the 250 ms diff debounce hasn't run
+            h.runCurrent()
+            h.deliver(teammate.record(wire, 50, "waypoint", content(edited, "theirs"), t = "put"))
+            h.advance(5_000)
+
+            val after = h.socket.sentFrames().drop(sentBefore).filter { it.optString("id") == wire }
+            assertEquals("$label: sent something for the teammate's edit", emptyList<String>(), after.map { it.optString("t") })
+            assertEquals("$label: one copy, under the id we had", listOf(held), h.copiesOf(lower).map { it.id })
+            assertEquals(label, listOf("theirs"), h.copiesOf(lower).map { it.name })
+            assertStillSyncing(h)
+        }
+    }
+
     @Test
     fun aTombstoneForADashlessLegacyIdNeverStopsSync() {
         // the delete side of sync-android-2: the lenient hasher gave a dashless store id a wire

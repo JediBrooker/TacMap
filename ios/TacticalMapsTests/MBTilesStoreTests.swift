@@ -238,12 +238,19 @@ final class MBTilesStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
         // SQLite stores a large unknown value without constructing it in Swift.
         // The reader only classifies the key and never requests its payload.
-        try execute("INSERT INTO metadata VALUES ('vendor_extension', CAST(zeroblob(16777216) AS TEXT))", on: url)
+        // 8,000,000 bytes, under the record probe's cap (s15.2)
+        try execute("INSERT INTO metadata VALUES ('vendor_extension', CAST(zeroblob(8000000) AS TEXT))", on: url)
         let store = try XCTUnwrap(MBTilesStore(url: url))
         XCTAssertEqual(store.metadata.name, "Sample")
         XCTAssertEqual(store.metadata.minZoom, 0)
         XCTAssertEqual(store.metadata.maxZoom, 1)
         XCTAssertNotNil(store.tileData(z: 1, x: 0, y: 1))
+        store.closeForDeletion()
+        // 16 MiB was ignored the same way up to 3.0.2. 3.0.3 refuses a row over
+        // 2 x maxValueBytes off its record size, before sqlite reads any of it
+        try execute("UPDATE metadata SET value = CAST(zeroblob(16777216) AS TEXT) WHERE name = 'vendor_extension'",
+                    on: url)
+        XCTAssertNil(MBTilesStore(url: url))
     }
 
     private func sqliteScalarText(_ query: String, on url: URL) throws -> String {
@@ -424,10 +431,22 @@ final class MBTilesStoreTests: XCTestCase {
         }
     }
 
+    /// sql[] in order on one ordinary connection, like the generator builds
+    /// them. one connection so a leading PRAGMA page_size / auto_vacuum sticks
     private func makePack(_ statements: [String]) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("relation-\(UUID().uuidString).mbtiles")
-        for statement in statements { try execute(statement, on: url) }
+        var db: OpaquePointer?
+        guard sqlite3_open(url.path, &db) == SQLITE_OK else {
+            sqlite3_close(db)
+            throw CocoaError(.fileWriteUnknown)
+        }
+        defer { sqlite3_close(db) }
+        for statement in statements {
+            guard sqlite3_exec(db, statement, nil, nil, nil) == SQLITE_OK else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        }
         return url
     }
 
@@ -455,7 +474,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
         XCTAssertEqual(fixture["admissionBudgetAppliesTo"] as? String, "views")
         let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 43)
+        XCTAssertEqual(cases.count, 50)
         var seen: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
@@ -506,7 +525,12 @@ final class MBTilesStoreTests: XCTestCase {
                                            "tableRowKeepsIfNotExists", "baseRowNameLie",
                                            // SHADOW-PARITY-2, both opened in 3.0.1
                                            "gdal2mbtilesCommaJoin", "tippecanoeAndJoin",
-                                           "commaJoinWhereCallsFunction"]))
+                                           "commaJoinWhereCallsFunction",
+                                           // 3.0.3 U2 record probe, 3.0.2 opened the three refused ones
+                                           "metadataLargeRecordUnderProbeCap", "metadataRecordOverProbeCap",
+                                           "metadataViewJoinBaseRows", "schemaTooManyObjects", "textTileData",
+                                           // PROBE-RT-1: ANALYZE'd opens, a stat row over the schema caps doesn't
+                                           "analyzedPack", "statisticsOverProbeCap"]))
     }
 
     /// "3.31.0" -> 3031000, what sqlite3_libversion_number gives
@@ -562,7 +586,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(reserved.count, 149)
         XCTAssertEqual(Set(reserved), MBTilesViewShape.reservedWords)
         let cases = try XCTUnwrap(shape["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 82)
+        XCTAssertEqual(cases.count, 88)
         var reasons: [String: Int] = [:]
         for c in cases {
             let id = try XCTUnwrap(c["id"] as? String)
@@ -584,8 +608,9 @@ final class MBTilesStoreTests: XCTestCase {
             }
         }
         // 3.0.2 SEC-M1-SHADOW moved ifNotExists from accepted to shape. SHADOW-PARITY-2
-        // moved onWithAnd the other way and added the comma join / AND rows
-        XCTAssertEqual(reasons, ["accepted": 23, "tooLong": 1, "token": 18, "shape": 40])
+        // moved onWithAnd the other way and added the comma join / AND rows. 3.0.3
+        // added six more shape rows (widening review F3: IS, USING, empty parens)
+        XCTAssertEqual(reasons, ["accepted": 23, "tooLong": 1, "token": 18, "shape": 46])
         for id in ["gdal2mbtiles", "tippecanoe", "onWithAnd"] {
             let c = try XCTUnwrap(cases.first { $0["id"] as? String == id }, id)
             XCTAssertEqual((c["expect"] as? [String: Any])?["accepted"] as? Bool, true, id)
@@ -607,6 +632,395 @@ final class MBTilesStoreTests: XCTestCase {
             verdicts[want, default: 0] += 1
         }
         XCTAssertEqual(verdicts, [true: 12, false: 23])
+    }
+
+    // MARK: 3.0.3 U2, the record probe (s15.2)
+
+    private func recordProbeFixture() throws -> [String: Any] {
+        try XCTUnwrap(try metadataAdmissionFixture()["recordProbe"] as? [String: Any])
+    }
+
+    /// a recordProbe expect: nil when ok, else its reason
+    private func probeReason(_ expect: Any?, _ id: String) throws -> String? {
+        let e = try XCTUnwrap(expect as? [String: Any], id)
+        return try XCTUnwrap(e["ok"] as? Bool, id) ? nil : try XCTUnwrap(e["reason"] as? String, id)
+    }
+
+    /// the root lookup the casesRule gives, the same row the base table check reads
+    private func rootPage(of table: String, in url: URL, _ id: String) throws -> Int64 {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK, id)
+        defer { sqlite3_close(db) }
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? " +
+                                          "COLLATE NOCASE", -1, &statement, nil), SQLITE_OK, id)
+        sqlite3_bind_text(statement, 1, table, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW, "\(id) \(table)")
+        XCTAssertEqual(sqlite3_column_type(statement, 0), SQLITE_INTEGER, "\(id) \(table)")
+        return sqlite3_column_int64(statement, 0)
+    }
+
+    func testRecordProbeCapsMatchTheSharedFixture() throws {
+        let fixture = try metadataAdmissionFixture()
+        let probe = try recordProbeFixture()
+        XCTAssertEqual(probe["maxSchemaRows"] as? Int, MBTilesRecordProbe.maximumSchemaRows)
+        XCTAssertEqual((probe["maxSchemaBytes"] as? Int).map(UInt64.init), MBTilesRecordProbe.maximumSchemaBytes)
+        XCTAssertEqual(probe["maxMetadataRows"] as? Int, MBTilesRecordProbe.maximumMetadataRows)
+        XCTAssertEqual((probe["maxMetadataRecordBytes"] as? Int).map(UInt64.init),
+                       MBTilesRecordProbe.maximumMetadataRecordBytes)
+        XCTAssertEqual(probe["maxDepth"] as? Int, MBTilesRecordProbe.maximumDepth)
+        XCTAssertEqual(probe["maxPages"] as? Int, MBTilesRecordProbe.maximumPages)
+        // the admission's own 64 row cap, and a record that holds two values at the value cap
+        XCTAssertEqual(fixture["maxRows"] as? Int, MBTilesRecordProbe.maximumMetadataRows)
+        let connection = try XCTUnwrap(fixture["connection"] as? [String: Any])
+        XCTAssertEqual((connection["maxValueBytes"] as? Int).map { 2 * UInt64($0) },
+                       MBTilesRecordProbe.maximumMetadataRecordBytes)
+    }
+
+    /// recordProbe.cases: sql[] rows built by this sqlite with their table's
+    /// root looked up like the reader does, packBase64 rows are the exact files
+    func testSharedRecordProbeCasesGiveTheSharedVerdicts() throws {
+        let cases = try XCTUnwrap(try recordProbeFixture()["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 51)
+        XCTAssertEqual(cases.filter { $0["sql"] != nil }.count, 11)
+        // the 9 byte varint is 2^64 - 1, a signed compare would let it through as -1
+        XCTAssertTrue(cases.contains { $0["id"] as? String == "nineByteVarint" })
+        // PROBE-RT-1: the ANALYZE tables, built by this sqlite and by hand, one
+        // only findable on its schema row's overflow page
+        for id in ["analyzedPack", "analyzedStatisticsOverCap", "analyzedStatisticsTooManyRows",
+                   "statisticsMarkOnOverflowPage", "statisticsView"] {
+            XCTAssertTrue(cases.contains { $0["id"] as? String == id }, id)
+        }
+        var reasons: Set<String> = []
+        for vector in cases {
+            let id = try XCTUnwrap(vector["id"] as? String)
+            let url: URL
+            if let packed = vector["packBase64"] as? String {
+                url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-\(UUID().uuidString).mbtiles")
+                try XCTUnwrap(Data(base64Encoded: packed), id).write(to: url)
+            } else {
+                url = try makePack(try XCTUnwrap(vector["sql"] as? [String], id))
+            }
+            defer { try? FileManager.default.removeItem(at: url) }
+            let schema = try probeReason(vector["schema"], id)
+            XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, schema, "\(id) schema")
+            if let schema { reasons.insert(schema) }
+            for table in try XCTUnwrap(vector["metadataTables"] as? [[String: Any]], id) {
+                let root: Int64
+                if let name = table["table"] as? String {
+                    root = try rootPage(of: name, in: url, id)
+                } else {
+                    root = Int64(try XCTUnwrap(table["root"] as? Int, id))
+                }
+                let want = try probeReason(table["expect"], id)
+                XCTAssertEqual(try MBTilesRecordProbe.metadataTable(url, root: root)?.rawValue, want, "\(id) root \(root)")
+                if let want { reasons.insert(want) }
+            }
+        }
+        XCTAssertEqual(reasons, ["header", "structure", "pageType", "rows", "recordBytes", "totalBytes",
+                                 "statistics"])
+    }
+
+    /// every door a pack comes through refuses what the probe refuses: the
+    /// admission, the map source, the bake reader, the import and the lazy
+    /// prevalidated open, which never reads metadata and gets probed anyway
+    func testRecordProbeRefusalsHoldOnEveryOpen() async throws {
+        // a 16 MB name value. 3.0.2 admitted it on iOS (the table path reads a
+        // bounded blob prefix), an old android sqlite loaded all of it first
+        let huge = try makePack([
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', replace(hex(zeroblob(8000000)), '0', 'n')), ('format', 'png')",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01')"
+        ])
+        defer { try? FileManager.default.removeItem(at: huge) }
+        let size = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: huge.path)[.size] as? Int)
+        XCTAssertGreaterThan(UInt64(size), MBTilesRecordProbe.maximumMetadataRecordBytes)
+        XCTAssertNil(OfflineTileMapSource(url: huge), "map source")
+        XCTAssertNil(PDFBakeReader(url: huge, expectedKey: String(repeating: "a", count: 64), tilePx: 256), "bake reader")
+
+        var packs: [(String, URL)] = [("hugeName", huge)]
+        for id in ["metadataRecordOverProbeCap", "metadataViewJoinBaseRows", "schemaTooManyObjects",
+                   "statisticsOverProbeCap"] {
+            let vector = try relationCase(id)
+            XCTAssertEqual((vector["expect"] as? [String: Any])?["rejectedAt"] as? String, "probe", id)
+            packs.append((id, try makeRelationPack(vector, id)))
+        }
+        defer { for (_, url) in packs.dropFirst() { try? FileManager.default.removeItem(at: url) } }
+        for (id, url) in packs {
+            XCTAssertNil(MBTilesStore(url: url), "\(id): admission")
+            let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
+                name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+            XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), "\(id) lazy tile")
+            XCTAssertNil(lazy.extensionMetadata("tacmap_bake_key"), "\(id) lazy extension")
+            XCTAssertNil(lazy.connectionHardeningForTesting(), "\(id): the lazy open refuses, not just the read")
+            lazy.closeForDeletion()
+        }
+
+        // and the import's admission, refused and the copy cleaned up
+        let original = ImportedMapStorage.applicationSupportProvider
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("probe-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        ImportedMapStorage.applicationSupportProvider = { root }
+        defer {
+            ImportedMapStorage.applicationSupportProvider = original
+            try? FileManager.default.removeItem(at: root)
+        }
+        do {
+            _ = try await MapImportPipeline.prepareMBTiles(url: huge, entryCount: 0, libraryLoaded: true,
+                                                           isCancelled: { false }, progress: { _ in })
+            XCTFail("the import admitted a 16 MB metadata row")
+        } catch {
+            XCTAssertEqual(error as? MapImportError, .invalidMbtiles)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: huge.path), "refused, the source isn't touched")
+    }
+
+    /// the 100 byte file header, only what the probe reads filled in
+    private func sqliteHeader(pageSize: Int) -> [UInt8] {
+        var h = [UInt8](repeating: 0, count: 100)
+        h.replaceSubrange(0..<16, with: Array("SQLite format 3\u{0}".utf8))
+        h[16] = UInt8(pageSize >> 8 & 0xFF)
+        h[17] = UInt8(pageSize & 0xFF)
+        h[18] = 1
+        h[19] = 1
+        return h
+    }
+
+    /// a table leaf page, b-tree header at headerAt, one cell per record size
+    /// packed at the end. offsets count from the page start. withRecords puts
+    /// that many zero bytes in as well, the schema's rows get read whole now
+    private func leafPage(size: Int, records: [UInt64], headerAt: Int = 0, withRecords: Bool = false) -> [UInt8] {
+        cellPage(size: size, cells: records.map {
+            (size: $0, body: withRecords ? [UInt8](repeating: 0, count: Int($0)) : [])
+        }, headerAt: headerAt)
+    }
+
+    /// the same with what goes after each cell's size and rowid varints
+    private func cellPage(size: Int, cells: [(size: UInt64, body: [UInt8])], headerAt: Int = 0) -> [UInt8] {
+        var page = [UInt8](repeating: 0, count: size)
+        page[headerAt] = 0x0D
+        page[headerAt + 3] = UInt8(cells.count >> 8 & 0xFF)
+        page[headerAt + 4] = UInt8(cells.count & 0xFF)
+        var at = size
+        for (i, record) in cells.enumerated() {
+            let cell = sqliteVarint(record.size) + sqliteVarint(UInt64(i + 1)) + record.body
+            at -= cell.count
+            page.replaceSubrange(at..<at + cell.count, with: cell)
+            page[headerAt + 8 + 2 * i] = UInt8(at >> 8 & 0xFF)
+            page[headerAt + 9 + 2 * i] = UInt8(at & 0xFF)
+        }
+        return page
+    }
+
+    /// a real record as a cell: header (its own size, a serial type per
+    /// column) then the bodies. Int64 columns go in as 4 bytes, the rest as text
+    private func recordCell(_ columns: Any...) -> (size: UInt64, body: [UInt8]) {
+        var types: [UInt8] = []
+        var body: [UInt8] = []
+        for column in columns {
+            if let int = column as? Int64 {
+                types += sqliteVarint(4)
+                body += (0..<4).map { UInt8(truncatingIfNeeded: int >> (24 - 8 * $0)) }
+            } else {
+                let text = Array("\(column)".utf8)
+                types += sqliteVarint(UInt64(13 + 2 * text.count))
+                body += text
+            }
+        }
+        let record = sqliteVarint(UInt64(types.count + 1)) + types + body
+        return (UInt64(record.count), record)
+    }
+
+    /// sqlite's varint for anything under 2^56
+    private func sqliteVarint(_ value: UInt64) -> [UInt8] {
+        var groups: [UInt8] = []
+        var v = value
+        repeat {
+            groups.insert(UInt8(v & 0x7F), at: 0)
+            v >>= 7
+        } while v != 0
+        return groups.enumerated().map { $0.offset < groups.count - 1 ? $0.element | 0x80 : $0.element }
+    }
+
+    func testAHugeMetadataRecordIsJudgedOffItsSizeWithoutReadingIt() throws {
+        // the OOM pack's shape: a sane schema and one metadata row claiming 300 MB.
+        // the file really is that long (sparse, nothing written past page 2) and
+        // the probe only ever reads two pages of it
+        let size = 4096
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-huge-\(UUID().uuidString).mbtiles")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var first = leafPage(size: size, records: [60], headerAt: 100, withRecords: true)
+        first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
+        func write(_ record: UInt64) throws {
+            try Data(first + leafPage(size: size, records: [record])).write(to: url)
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: UInt64(2 * size) + 300_000_000)
+            try handle.close()
+        }
+        try write(300_000_000)
+        XCTAssertNil(try MBTilesRecordProbe.schema(url))
+        XCTAssertEqual(try MBTilesRecordProbe.metadataTable(url, root: 2), .recordBytes)
+        // its size alone decides: right at the cap is fine, a byte over isn't
+        try write(MBTilesRecordProbe.maximumMetadataRecordBytes)
+        XCTAssertNil(try MBTilesRecordProbe.metadataTable(url, root: 2))
+        try write(MBTilesRecordProbe.maximumMetadataRecordBytes + 1)
+        XCTAssertEqual(try MBTilesRecordProbe.metadataTable(url, root: 2), .recordBytes)
+    }
+
+    /// PROBE-RT-1: the red team's pack, a sane schema plus sqlite_stat1 with
+    /// one 150 MB row. sqlite reads that whole along with the schema at the
+    /// first statement, and the first probe only walked sqlite_master so it
+    /// said fine. the file really is that long (sparse), the probe reads 2 pages
+    func testAHugeStatisticsRowIsJudgedOffItsRecordSizeBeforeSQLiteOpensTheFile() throws {
+        let size = 4096
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-stat-\(UUID().uuidString).mbtiles")
+        defer { try? FileManager.default.removeItem(at: url) }
+        func schemaPage(_ row: (size: UInt64, body: [UInt8])) -> [UInt8] {
+            var page = cellPage(size: size, cells: [row], headerAt: 100)
+            page.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
+            return page
+        }
+        let table = schemaPage(recordCell("table", "sqlite_stat1", "sqlite_stat1", Int64(2),
+                                          "CREATE TABLE sqlite_stat1(tbl,idx,stat)"))
+        try Data(table + leafPage(size: size, records: [20, 150_000_000])).write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(2 * size) + 150_000_000)
+        try handle.close()
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "recordBytes")
+        XCTAssertNil(MBTilesStore(url: url))
+
+        // ANALYZE's usual few bytes a row are fine
+        try Data(table + leafPage(size: size, records: [20, 40])).write(to: url)
+        XCTAssertNil(try MBTilesRecordProbe.schema(url))
+
+        // the same name as a view would run sql from the file when sqlite reads it
+        let view = schemaPage(recordCell("view", "sqlite_stat1", "sqlite_stat1", Int64(0),
+                                         "CREATE VIEW sqlite_stat1(tbl,idx,stat) AS SELECT 'tiles', NULL, " +
+                                         "hex(zeroblob(400000000))"))
+        try Data(view + leafPage(size: size, records: [20])).write(to: url)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "statistics")
+        // and the name only in the sql in another case still counts, older sqlite goes by the sql
+        let hidden = schemaPage(recordCell("table", "harmless", "harmless", Int64(2),
+                                           "CREATE TABLE SQLITE_STAT1(tbl,idx,stat)"))
+        try Data(hidden + leafPage(size: size, records: [20, 2_000_000])).write(to: url)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "recordBytes")
+    }
+
+    func testAFileThatCantBeReadThrowsSoTheOpenRefusesIt() {
+        let gone = FileManager.default.temporaryDirectory.appendingPathComponent("gone-\(UUID().uuidString).mbtiles")
+        XCTAssertThrowsError(try MBTilesRecordProbe.schema(gone))
+        XCTAssertThrowsError(try MBTilesRecordProbe.metadataTable(gone, root: 2))
+        XCTAssertNil(MBTilesStore(url: gone))
+    }
+
+    /// seeded so a failure replays
+    private struct SplitMix64 {
+        var state: UInt64
+        mutating func next() -> UInt64 {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+    }
+
+    /// a hostile file gets no say in whether we crash: bytes flipped all over a
+    /// real multi level pack (page headers and cell pointers mostly), tails cut
+    /// off, silly roots. every walk has to come back with a verdict, quick
+    func testMangledPacksNeverTrapTheProbe() throws {
+        let cases = try XCTUnwrap(try recordProbeFixture()["cases"] as? [[String: Any]])
+        let vector = try XCTUnwrap(cases.first { $0["id"] as? String == "smallPagesManyLevels" })
+        let url = try makePack(try XCTUnwrap(vector["sql"] as? [String]))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let original = [UInt8](try Data(contentsOf: url))
+        let pageSize = 512
+        XCTAssertEqual(Int(original[16]) << 8 | Int(original[17]), pageSize)
+        let metadataRoot = try rootPage(of: "metadata", in: url, "fuzz")
+        var rng = SplitMix64(state: 0x7AC_3A9_0303)
+        var verdicts: Set<String> = []
+        let started = Date()
+        for round in 0..<600 {
+            var bytes = original
+            for _ in 0..<(1 + Int(rng.next() % 6)) {
+                let page = Int(rng.next() % UInt64(bytes.count / pageSize))
+                let base = page * pageSize + (page == 0 ? 100 : 0)
+                let at: Int
+                switch rng.next() % 8 {
+                case 0: at = 16 + Int(rng.next() % 6) // page size and reserved bytes
+                case 1, 2: at = Int(rng.next() % UInt64(bytes.count))
+                default: at = base + Int(rng.next() % 40) // b-tree header and pointer array
+                }
+                bytes[at] = UInt8(truncatingIfNeeded: rng.next())
+            }
+            // cut the tail off now and then, sometimes down to nearly nothing
+            if round % 9 == 0 {
+                let keep = round % 27 == 0 ? rng.next() % 120 : rng.next() % UInt64(bytes.count)
+                bytes = Array(bytes.prefix(Int(keep)))
+            }
+            try Data(bytes).write(to: url)
+            verdicts.insert(try MBTilesRecordProbe.schema(url)?.rawValue ?? "ok")
+            for root in [metadataRoot, 1, -1, 0, Int64(bytes.count / pageSize), Int64(bytes.count / pageSize) + 1,
+                         Int64(UInt32.max), Int64.max, Int64.min] {
+                verdicts.insert(try MBTilesRecordProbe.metadataTable(url, root: root)?.rawValue ?? "ok")
+            }
+        }
+        // the mangling has to reach past the header check or this proves little
+        XCTAssertTrue(verdicts.isSuperset(of: ["ok", "structure", "pageType", "header"]), "\(verdicts)")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 30)
+    }
+
+    /// the widest interior page there is (64 KiB, ~32k children) all pointing at
+    /// one page, and a chain of interior pages that goes one level too deep.
+    /// both are refused as structure without walking forever
+    func testWideAndDeepInteriorPagesAreStructure() throws {
+        let size = 65_536
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-wide-\(UUID().uuidString).mbtiles")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var first = leafPage(size: size, records: [], headerAt: 100)
+        // the header stores 65536 as 1
+        first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: 1))
+        // page 2: interior, every pointer at one cell whose child is page 3, a leaf
+        var wide = [UInt8](repeating: 0, count: size)
+        let n = (size - 12 - 4) / 2
+        wide[0] = 0x05
+        wide[3] = UInt8(n >> 8 & 0xFF)
+        wide[4] = UInt8(n & 0xFF)
+        let cell = 12 + 2 * n
+        for i in 0..<n {
+            wide[12 + 2 * i] = UInt8(cell >> 8 & 0xFF)
+            wide[13 + 2 * i] = UInt8(cell & 0xFF)
+        }
+        wide[cell + 3] = 3
+        wide[11] = 3
+        let leaf = leafPage(size: size, records: [10])
+        try Data(first + wide + leaf).write(to: url)
+        XCTAssertNil(try MBTilesRecordProbe.schema(url))
+        let started = Date()
+        XCTAssertEqual(try MBTilesRecordProbe.metadataTable(url, root: 2), .structure, "page 3 a second time")
+        XCTAssertNil(try MBTilesRecordProbe.metadataTable(url, root: 3))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+
+        // interior pages 2...21 each with only a right most child, the next one,
+        // and page 22 a leaf: depth 20 is one too many, from page 3 it's fine
+        let small = 512
+        var chain = sqliteHeader(pageSize: small)
+        chain += leafPage(size: small, records: [], headerAt: 100).dropFirst(100)
+        for p in 2...21 {
+            var page = [UInt8](repeating: 0, count: small)
+            page[0] = 0x05
+            page[8] = UInt8((p + 1) >> 24 & 0xFF)
+            page[9] = UInt8((p + 1) >> 16 & 0xFF)
+            page[10] = UInt8((p + 1) >> 8 & 0xFF)
+            page[11] = UInt8((p + 1) & 0xFF)
+            chain += page
+        }
+        chain += leafPage(size: small, records: [1])
+        try Data(chain).write(to: url)
+        XCTAssertEqual(try MBTilesRecordProbe.metadataTable(url, root: 2), .structure)
+        XCTAssertNil(try MBTilesRecordProbe.metadataTable(url, root: 3))
     }
 
     /// the process's resident high water mark. SQLite fills what it allocates
@@ -695,6 +1109,77 @@ final class MBTilesStoreTests: XCTestCase {
             XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), "\(id) lazy")
             XCTAssertNil(lazy.extensionMetadata("tacmap_bake_key"), "\(id) lazy")
             XCTAssertLessThan(Date().timeIntervalSince(started), 1, "\(id): refused at once, not cut off by a budget")
+            lazy.closeForDeletion()
+        }
+    }
+
+    /// rewrites table's sqlite_master rootpage from the one byte integer sqlite
+    /// wrote to that digit as one byte of text. same record size, sqlite still
+    /// loads the schema off it (it parses the text) and reads the table fine,
+    /// only typeof(rootpage) changes. no writable_schema here (DEFENSIVE)
+    private func storeRootpageAsText(_ table: String, in url: URL) throws {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT rootpage, sql FROM sqlite_master WHERE name = ?", -1,
+                                          &statement, nil), SQLITE_OK)
+        sqlite3_bind_text(statement, 1, table, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW, table)
+        let root = Int(sqlite3_column_int64(statement, 0))
+        let sql = String(cString: try XCTUnwrap(sqlite3_column_text(statement, 1)))
+        sqlite3_finalize(statement)
+        sqlite3_close(db)
+        XCTAssertTrue((1...9).contains(root), table)
+
+        var bytes = [UInt8](try Data(contentsOf: url))
+        let body = Array("table\(table)\(table)".utf8) + [UInt8(root)] + Array(sql.utf8)
+        let at = try XCTUnwrap((0...(bytes.count - body.count)).first {
+            bytes[$0] == body[0] && bytes[$0..<$0 + body.count].elementsEqual(body)
+        }, table)
+        // header: size, type, name, tbl_name, rootpage, then sql's serial type
+        let typeAt = at - sqliteVarint(UInt64(13 + 2 * sql.utf8.count)).count - 1
+        XCTAssertEqual(bytes[typeAt], 1, "\(table): a one byte integer")
+        bytes[typeAt] = 15
+        bytes[at + 5 + 2 * table.utf8.count] = UInt8(ascii: "0") + UInt8(root)
+        try Data(bytes).write(to: url)
+
+        XCTAssertEqual(sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT typeof(rootpage) FROM sqlite_master WHERE name = ?", -1,
+                                          &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, table, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW, table)
+        XCTAssertEqual(String(cString: try XCTUnwrap(sqlite3_column_text(statement, 0))), "text", table)
+    }
+
+    /// U2-IOS-3: sqlite only ever writes an integer rootpage, anything else
+    /// in a base table's row is a hand edit. android refused that for every
+    /// base table, iOS only for the metadata ones (the probe needs the page),
+    /// so a tiles table or a tiles view's table with a text rootpage still
+    /// opened here. both platforms refuse it now, every open
+    func testABaseTableWhoseRootpageIsntAnIntegerIsRefused() throws {
+        let table = [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01')"
+        ]
+        let dedup = try XCTUnwrap(try relationCase("nodeMbtilesDedup")["sql"] as? [String])
+        for (sql, base) in [(table, "tiles"), (dedup, "map"), (dedup, "images"), (table, "metadata")] {
+            let url = try makePack(sql)
+            defer { try? FileManager.default.removeItem(at: url) }
+            // untouched it opens and draws, so the refusal below is the rootpage
+            let admitted = try XCTUnwrap(MBTilesStore(url: url), base)
+            XCTAssertEqual(hex(admitted.tileData(z: 0, x: 0, y: 0)), "01", base)
+            admitted.closeForDeletion()
+            try storeRootpageAsText(base, in: url)
+            XCTAssertNil(try MBTilesRecordProbe.schema(url), "\(base): nothing the probe minds")
+            XCTAssertNil(MBTilesStore(url: url), "\(base): admission")
+            let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
+                name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+            XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), "\(base) lazy")
+            XCTAssertNil(lazy.connectionHardeningForTesting(), "\(base): the lazy open refuses, not just the read")
             lazy.closeForDeletion()
         }
     }
@@ -801,14 +1286,22 @@ final class MBTilesStoreTests: XCTestCase {
         // tile/extension instead of wedging the renderer under the store lock.
         // CROSS JOIN pins the left table outside, every key matches, and the
         // column the read filters on lives in the inner table, so each read
-        // really walks all 400M pairs (no Bloom filter shortcut)
+        // really walks all 400M pairs (no Bloom filter shortcut).
+        // 3.0.3 U2: the record probe walks a metadata view's base tables now,
+        // 64 rows each at most, so a slow metadata view never gets this far
+        // (refused at the lazy open, below). its reads stay budgeted, the
+        // tiles view isn't walked and is what's left to be slow
         let rows = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 19999)"
-        let url = try makePack([
-            "CREATE TABLE names (k text, value text)",
-            "CREATE TABLE vals (k text, name text)",
-            "\(rows) INSERT INTO names SELECT 'a', 'v' FROM n",
-            "\(rows) INSERT INTO vals SELECT 'a', 'extension_' || i FROM n",
-            "CREATE VIEW metadata AS SELECT vals.name AS name, names.value AS value FROM names CROSS JOIN vals ON vals.k = names.k",
+        let small = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 64)"
+        func metadataView(_ fill: String) -> [String] {
+            ["CREATE TABLE names (k text, value text)",
+             "CREATE TABLE vals (k text, name text)",
+             "\(fill) INSERT INTO names SELECT 'a', 'v' FROM n",
+             "\(fill) INSERT INTO vals SELECT 'a', 'extension_' || i FROM n",
+             "CREATE VIEW metadata AS SELECT vals.name AS name, names.value AS value FROM names CROSS JOIN vals " +
+                "ON vals.k = names.k"]
+        }
+        let tilesView = [
             "CREATE TABLE map (zoom_level integer, tile_column integer, k text)",
             "CREATE TABLE images (tile_row integer, tile_data blob, k text)",
             // the z0 row and its image come first, every z1 row only meets row 0 images
@@ -818,7 +1311,8 @@ final class MBTilesStoreTests: XCTestCase {
             "\(rows) INSERT INTO images SELECT 0, X'02', 'a' FROM n",
             "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, " +
                 "images.tile_row AS tile_row, images.tile_data AS tile_data FROM map CROSS JOIN images ON images.k = map.k"
-        ])
+        ]
+        let url = try makePack(metadataView(small) + tilesView)
         defer { try? FileManager.default.removeItem(at: url) }
         let store = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
             name: "Unindexed", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
@@ -830,13 +1324,24 @@ final class MBTilesStoreTests: XCTestCase {
         var elapsed = Date().timeIntervalSince(started)
         XCTAssertGreaterThanOrEqual(elapsed, budget * 0.9)
         XCTAssertLessThan(elapsed, 10)
+        // 64 x 64 pairs, the budgeted view read answers well inside it
         started = Date()
         XCTAssertNil(store.extensionMetadata("tacmap_bake_key"))
-        elapsed = Date().timeIntervalSince(started)
-        XCTAssertGreaterThanOrEqual(elapsed, budget * 0.9)
-        XCTAssertLessThan(elapsed, 10)
+        XCTAssertLessThan(Date().timeIntervalSince(started), budget / 2)
         // the matching row comes first so this one still answers
         XCTAssertEqual(store.tileData(z: 0, x: 0, y: 0), Data([0x01]))
+
+        // the 3.0.2 slow metadata view (20,000 x 20,000) is refused by the lazy
+        // open's metadata probe before a single read, tiles included
+        let slowMetadata = try makePack(metadataView(rows) + tilesView)
+        defer { try? FileManager.default.removeItem(at: slowMetadata) }
+        let probed = MBTilesStore(prevalidatedURL: slowMetadata, metadata: MBTilesStore.Metadata(
+            name: "Unindexed", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
+        started = Date()
+        XCTAssertNil(probed.extensionMetadata("tacmap_bake_key"))
+        XCTAssertNil(probed.tileData(z: 0, x: 0, y: 0))
+        XCTAssertNil(probed.connectionHardeningForTesting(), "the lazy open refused it")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "refused at once")
 
         // the 3.0.1 endless recursive views aren't budgeted any more, the lazy
         // open refuses them before a single read

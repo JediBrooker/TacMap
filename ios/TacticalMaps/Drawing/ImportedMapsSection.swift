@@ -47,7 +47,8 @@ struct ImportedMapsSection: View {
 
     private func presentation(_ e: ImportedMapEntry) -> ImportedMapPresentation {
         let parent = e.derivedFromId.flatMap { mapVM.entry($0)?.displayName }
-        return ImportedMapStates.present(e, file: mapVM.fileStatus(e), draftPoints: draftPoints(e), parentName: parent)
+        return ImportedMapStates.present(e, file: mapVM.fileStatus(e), draftPoints: draftPoints(e), parentName: parent,
+                                         packRefused: mapVM.packRefused(e))
     }
 
     var body: some View {
@@ -122,7 +123,8 @@ struct ImportedMapsSection: View {
                             .lineLimit(2)
                         Text(p.subtitle.text)
                             .font(.caption2)
-                            .foregroundStyle(p.state == .unavailable || p.state == .rejected || p.state == .needsCalibration
+                            .foregroundStyle(p.state == .unavailable || p.state == .openFailed
+                                             || p.state == .rejected || p.state == .needsCalibration
                                              ? Color.orange : Color.secondary)
                             .lineLimit(2)
                         if bakeIsFor(e), bake.isRunning {

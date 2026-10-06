@@ -654,8 +654,13 @@ V2 = {
                    "version 1 file from 3.0.1 (uppercase only) loads as it is. Written at most once per snapshot, "
                    "once per live batch and once per outbound diff pass that pinned something new. Capped at 10,000 "
                    "pins (then nothing new is pinned and an unpinned key sends its lowercase local id), removed with "
-                   "the room's other local stores. A lost or unreadable store only means lowercase sends until the "
-                   "next snapshot or send pins again",
+                   "the room's other local stores. A device with no pin for a key (fresh, upgraded from 3.0.1 "
+                   "without that entry, or its store lost, unreadable, locked at join or never written) pins the "
+                   "casing it meets first: in a snapshot the record the relay sorts first (uppercase before "
+                   "lowercase), so an object, its own included, that the relay holds an uppercase record for is "
+                   "pinned uppercase from then on (3.0.1 learned the same way); otherwise its own next send pins "
+                   "lowercase. Pins are never pruned: once the store is full, an object first met uppercase stays "
+                   "unpinned, Android's edits of it go out lowercase and 2.x iOS echo-deletes it",
         "upgradeFrom300": "iOS 3.0.0 kept every v2 per-id map in memory (cleared on each v2 connect), so nothing "
                           "on the device is keyed lowercase across the update. Relay records 3.0.0 iOS wrote under "
                           "lowercase ids stay; 3.0.1 never deletes or rewrites a record because of its casing "

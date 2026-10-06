@@ -251,7 +251,21 @@ Layers sheet lets you unload it. iOS + Android.
 ## Release history
 
 What's new in each store release, newest first. Add an entry here every time a
-version ships (the full store notes live in `docs/store/localizations/*.json`).
+version ships. The full store notes for the release being prepared live in
+`docs/store/localizations/*.json`, and shipped ones, English and German, in
+[`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
+
+### 3.0.2 (build 75), October 2026
+- Sturdier MBTiles reading: a damaged or crafted pack can no longer make TacMap close at every launch (it is held back at the next start), and large packs open in the background.
+- Android: Google Play's Open button no longer opens a second map screen; if storage runs out while updating from 2.x, map names and calibrations are kept.
+- iOS: with mission data protected by Face ID or the passcode, work that finishes after you leave the app no longer asks for Face ID or stops Unit Sync. iOS went straight from 3.0.0 to 3.0.2, so it also got the 3.0.1 iOS fixes: App Lock and the privacy screen over open panels, sturdier PDF reading, MBTiles packs that store their tiles as a view, and Undo no longer overwriting a teammate's newer change.
+- Older-style Unit Sync rooms (2: codes): changes to objects you create reach teammates on TacMap 2 for Android again, and the room explains mixed versions.
+
+### 3.0.1 (build 74), October 2026 (Google Play only)
+- Opening TacMap from the Unit Sync notification could remove a recently imported map. Fixed.
+- Fixed rare cases where updating from 2.x could hide or remove imported maps.
+- MBTiles packs made with MapTiler or TileMill open again.
+- Unit Sync no longer stops on a malformed record; relay hardening.
 
 ### 3.0.0 (build 73), October 2026
 - GeoPDFs placed in the sheet's own projection and datum, so the MGRS grid sits on the printed grid; USGS US Topo sheets import again.

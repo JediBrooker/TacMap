@@ -40,22 +40,77 @@ class StoreCopyTests(unittest.TestCase):
             if re.search(r'photo', line, re.I):
                 self.assertRegex(line, SAVED_AS_PDF)
 
-    def test_release_notes_are_for_3_0_2(self):
+    def test_app_store_text_never_names_other_platforms(self):
+        # app review 2.3.10 bounced 3.0.2 for 'Android' in the description, keep it out of every app store field
         for path in LOCALES:
             data = json.loads(path.read_text())
-            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.2'), path.name)
-            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.2'), path.name)
+            for field, value in data['appStore'].items():
+                if isinstance(value, str):
+                    self.assertNotIn('android', value.lower(), f'{path.name} appStore.{field}')
+
+    def test_release_notes_are_for_3_0_3(self):
+        for path in LOCALES:
+            data = json.loads(path.read_text())
+            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.3: '), path.name)
+            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.3\n'), path.name)
+            # the notes for the release before go to RELEASE_NOTES.md, not in here
+            for field, value in text_fields(data):
+                self.assertNotIn('3.0.2', value, f'{path.name} {field}')
+
+    def test_release_notes_history_has_3_0_3(self):
+        # RELEASE_NOTES.md carries the text that ships, so it can't drift from the json
+        history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
+        self.assertIn('## 3.0.3 (build 76)', history)
+        for path in LOCALES:
+            data = json.loads(path.read_text())
+            for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
+                self.assertIn(f'```\n{text}\n```', history, path.name)
+
+    def test_memory_note_only_says_more_packs_are_refused(self):
+        # F1: THREAT_MODEL s7 keeps the index residual (a huge index key still gets loaded whole, with no cap
+        # on iOS or android before 12), so the notes can say more packs built that way are refused, never
+        # all of them. if that residual ever goes, this can go too
+        self.assertIn("What remains: indexes aren't checked", (ROOT / 'docs/THREAT_MODEL.md').read_text())
+        words = {'en-US.json': ('too much memory', r'\b[Mm]ore\b', 'built to'),
+                 'de-DE.json': ('zu viel Speicher', r'\b[Ww]eitere\b', 'so gebaut')}
+        for name, (memory, partial, built) in words.items():
+            data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
+            for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
+                lines = [line for line in text.split('\n') if memory in line]
+                self.assertEqual(len(lines), 1, name)
+                self.assertRegex(lines[0], partial, name)
+                self.assertIn(built, lines[0], name)
+
+    def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):
+        # F2: a missing or changed pack is unavailable, Delete only, and just a refused one (openFailed) has
+        # the tap to retry. so a notes sentence that offers a retry has to say it's for one that won't open
+        rows = json.loads((ROOT / 'testdata/import_limits.json').read_text())['entryStates']
+        taps = {'unavailable': 'none', 'openFailed': 'activate'}
+        for row in rows:
+            state = row['expect']['state']
+            if row['entry']['kind'] == 'mbtiles' and state in taps:
+                self.assertEqual(row['expect']['rowTap'], taps[state], row['id'])
+        words = {'en-US.json': (r'\b(try again|retry)\b', "if it just won't open"),
+                 'de-DE.json': (r'\berneut\b', 'wenn er sich nur nicht öffnen lässt')}
+        for name, (retry, only_refused) in words.items():
+            data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
+            for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
+                for sentence in re.split(r'(?<=[.!?])\s+|\n', text):
+                    if re.search(retry, sentence, re.I):
+                        self.assertIn(only_refused, sentence, name)
 
     def test_play_room_note_is_about_edits_not_visibility(self):
         # 3.0.1 never hid an android-made object from 2.x android, it was the later edits and deletes
-        # that stopped arriving once an iOS edit flipped the id casing. so the note promises those, not visibility
+        # that stopped arriving once an iOS edit flipped the id casing. so a note about those rooms
+        # promises edits, not visibility. 3.0.3 has none, the check stays for the next one that does
         words = {'en-US.json': ('changes', 'visible'), 'de-DE.json': ('Änderungen', 'sichtbar')}
         for name, (must, mustnt) in words.items():
             notes = json.loads((ROOT / 'docs/store/localizations' / name).read_text())['googlePlay']['releaseNotes']
             room = [line for line in notes.split('\n') if '(2:' in line]
-            self.assertEqual(len(room), 1, name)
-            self.assertIn(must, room[0], name)
-            self.assertNotIn(mustnt, room[0], name)
+            self.assertLessEqual(len(room), 1, name)
+            for line in room:
+                self.assertIn(must, line, name)
+                self.assertNotIn(mustnt, line, name)
 
 
 class PrivacyPolicyTests(unittest.TestCase):

@@ -131,6 +131,7 @@ struct LayersSheet: View {
             } message: { msg in Text(msg.text) }
             // the sheet hosts it while its up, ContentView stands down (OD3-R3-1)
             .mapSelectionIssueAlert(mapVM: mapVM, isActive: true) { _ in }
+            .packOpenFailedAlert(mapVM: mapVM, isActive: true)
         }
     }
 
@@ -768,7 +769,56 @@ struct MapSelectionIssueAlert: ViewModifier {
     }
 }
 
+/// 3.0.3 U1: "Couldn't open ..." for a refused activation, OK only. Same
+/// hosting as the issue alert above: whoever's on top shows it a beat after it
+/// changes, a dropped presentation just hides it till the next host takes over,
+/// only OK clears it
+struct PackOpenFailedAlertHost: ViewModifier {
+    @ObservedObject var mapVM: MapViewModel
+    let isActive: Bool
+    @State private var shown: MapViewModel.PackOpenFailedAlert?
+
+    private struct Key: Equatable {
+        let alertID: UUID?
+        let isActive: Bool
+    }
+
+    func body(content: Content) -> some View {
+        let key = Key(alertID: mapVM.packOpenFailedAlert?.id, isActive: isActive)
+        return content
+            .background(
+                EmptyView()
+                    .alert(shown?.title ?? "",
+                           isPresented: Binding(get: { shown != nil }, set: { if !$0 { shown = nil } }),
+                           presenting: shown) { _ in
+                        Button(Messages.acknowledge(), role: .cancel) {
+                            shown = nil
+                            mapVM.dismissPackOpenFailedAlert()
+                        }
+                    } message: { alert in
+                        Text(alert.message)
+                    }
+            )
+            .task(id: key) {
+                guard key.isActive, let current = mapVM.packOpenFailedAlert, current.id == key.alertID else {
+                    shown = nil
+                    return
+                }
+                if shown?.id == current.id { return }
+                shown = nil
+                try? await Task.sleep(nanoseconds: MapSelectionIssueAlertGate.settleNanoseconds)
+                guard !Task.isCancelled, key.isActive, let again = mapVM.packOpenFailedAlert,
+                      again.id == key.alertID else { return }
+                shown = again
+            }
+    }
+}
+
 extension View {
+    func packOpenFailedAlert(mapVM: MapViewModel, isActive: Bool) -> some View {
+        modifier(PackOpenFailedAlertHost(mapVM: mapVM, isActive: isActive))
+    }
+
     func mapSelectionIssueAlert(mapVM: MapViewModel, isActive: Bool,
                                 onRetry: @escaping (Bool) -> Void = { _ in }) -> some View {
         modifier(MapSelectionIssueAlert(mapVM: mapVM, isActive: isActive, onRetry: onRetry))

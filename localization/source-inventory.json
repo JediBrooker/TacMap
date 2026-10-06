@@ -166,6 +166,12 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Calibration/MBTilesRecordProbe.swift",
+    "platform": "ios",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/MBTilesStore.swift",
     "platform": "ios",
     "area": "maps-calibration",
@@ -1018,6 +1024,12 @@
   },
   {
     "path": "android/app/src/main/java/com/tacmap/calibration/GeoPdfParser.kt",
+    "platform": "android",
+    "area": "maps-calibration",
+    "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/calibration/MBTilesRecordProbe.kt",
     "platform": "android",
     "area": "maps-calibration",
     "reviewStatus": "manual-review-needed"

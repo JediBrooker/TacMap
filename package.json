@@ -12,5 +12,8 @@
   "devDependencies": {
     "marked": "18.0.11",
     "wrangler": "4.144.0"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
   }
 }

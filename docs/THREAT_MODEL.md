@@ -49,7 +49,7 @@ TacMap treats the following as **untrusted** once data crosses into them:
 | Boundary | Trusted? | Why it matters |
 |---|---|---|
 | Imported symbol packs | **Untrusted** | User-selected bounded JSON and passive PNG artwork; labels and depicted meaning are not authenticated. |
-| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. On an MBTiles pack SQLite runs only TacMap's own fixed queries: SQL stored in the pack (a view that computes anything, a generated column, a virtual table) gets the pack refused, and opening a pack is crash-guarded too (§7). A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
+| Imported map files (PDF/GeoPDF/MBTiles) | **Untrusted** | Parsed by PDFBox/pdfium (Android) or CoreGraphics (iOS) and SQLite. On iOS a small in-app reader also walks the PDF's cross-reference and object streams to work out optional-content (layer) visibility, because CoreGraphics ignores OCMDs. It never writes the file and falls back to the plain file on anything unexpected. Offsets, lengths and object numbers from the file are range checked before they are combined, so a crafted value is rejected rather than crashing the app. Its budgets cover the whole pass, not each object: at most 64 MiB of stream data decoded per pass (32 MiB per stream), at most 32 MiB of decoded object streams kept at once, a cross-reference table of at most 2,000,000 entries, at most 1,000,000 object reads, nesting depth 64, and parsing work capped at twice the file plus twice what was decoded plus 16 MiB, so time grows linearly with the file. Hitting any budget means the plain file is drawn. Memory for what it parses is budgeted as well: one parsed object may take about 16 MiB (counted as 64 bytes per element plus its name and string bytes), a keyword or name at most 4 KiB and a string at most 1 MiB, and the arrays loaded for one visibility expression share a single 16 MiB allowance. An object over that is skipped; if it is the catalog or the layer settings, the plain file is drawn. When a stored map is reopened at launch in the foreground and has not yet drawn cleanly once, this pass runs under the render crash guard. A map that has already drawn (the usual case), or one restored by a background relaunch, is opened without it. On an MBTiles pack SQLite runs only TacMap's own fixed queries: SQL stored in the pack (a view that computes anything, a generated column, a virtual table) gets the pack refused, the size of its schema, statistics and metadata rows is checked from the file before SQLite reads them, and opening a pack is crash-guarded too (§7). A hostile file can try to exhaust memory or time, or declare a misleading georeference (see §7). |
 | Your device | Trusted (see §7 caveats) | Holds the at-rest key, and can decrypt mission data. |
 | The sync relay | **Untrusted** | Routes encrypted traffic; can see metadata. |
 | Basemap / lookup providers | **Untrusted** | See the coordinates you request. |
@@ -611,7 +611,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   file is missing, or whose size, time or hash no longer match, the selection and its
   entry are kept but nothing is drawn, baked tiles included (the map shows "couldn't
   be drawn"), until bytes with that exact hash are back, so a calibration is never
-  applied to a different file; an MBTiles pack falls back to the online basemap. The
+  applied to a different file. An MBTiles pack whose file is missing or changed at launch keeps its
+  selection too: the map stays blank, nothing online is loaded in its place, and a notice says so (§7,
+  untrusted MBTiles). One whose content hash fails the background check is switched to the online
+  basemap, so the swapped file isn't drawn again at the next launch. The
   hash is re-checked on every Try Again, whether or not the sheet was already flagged,
   and (Android) at each document open and whenever a new tile source is built; a memo
   keyed on path, size, mtime and file identity keeps repeat checks of an untouched file
@@ -654,7 +657,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   moves the file and writes its record as one step. It runs only on an authoritative
   read of the library: a library that loaded, or a first launch where no library was
   ever written, no legacy store is left to migrate and no map file is in the managed
-  directories (that names nothing and has nothing to delete). A library
+  directories (that names nothing; on Android the most it can delete is what an interrupted
+  copy left behind, see below). A library
   that was written before and is gone now, or that was quarantined as unreadable (a
   `.corrupt-<time>` copy next to it), counts as unreadable, never as empty. If the library
   is locked or won't decrypt or decode, or legacy stores are still waiting for the
@@ -711,7 +715,8 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   rename itself fails, while the old stores are still waiting, the next launch or Retry treats it as the
   migration it was and salvages (below:
   what converts keeps its name and calibration, every other map file is adopted, nothing is cleaned up or
-  deleted) rather than as a damaged library. On iOS, if saving the record fails after the bytes went down, the
+  deleted) rather than as a damaged library. If Android finds the library gone that way while it is running,
+  it shows the damaged-library message, and its Retry runs that same salvage instead of the rebuild. On iOS, if saving the record fails after the bytes went down, the
   library is already written. The migration then keeps the opaque links that library names, clears and
   deletes nothing, and the restore uses that library as if the app had been killed right after the write.
   If a legacy store is damaged
@@ -719,17 +724,24 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   or converted, the app converts what it can, re-adopts every other map file in app storage the same way as
   the rebuild above (one that won't inspect is listed as unavailable), records `recoveryPreservesOrphans=true`,
   leaves every old store and quarantine copy untouched and tells the user once; no cleanup ever runs for that
-  library. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
+  library. On Android an unexpected error while reading or converting the old stores, with the mission-data key
+  available, is handled the same way and converts nothing; only a key that is locked at some point of the
+  read, or a write that fails, keeps the migration waiting for Retry. On iOS a file still under its pre-3.0 name keeps that name only inside the sealed index and is
   hard-linked (or copied) to an opaque file name like a migrated file; the old name is unlinked after the write.
-  In a salvage those links are made before the write, so if the app is killed part way through, the retry can list
-  the same map twice, and a kill between the write and the unlink leaves the old name behind as a second, unlisted
-  link to the same bytes that Delete Map does not remove (after a plain migration the next reconcile removes such
-  leftovers). Nothing is lost in either case.
+  In a salvage those links are made before the write, so if the app is killed part way through, the links it made
+  are still there on the retry. The retry lists each file once, by its file identity, and unlinks those leftover
+  names after its write; only a leftover that had to be copied rather than linked is listed a second time. A kill
+  between the write and the unlink leaves the old name behind as a second, unlisted link to the same bytes that
+  Delete Map does not remove (after a plain migration the next reconcile removes such leftovers). Nothing is lost
+  in either case.
   On iOS, old hand calibration points whose page space can't be rebuilt stay in their sealed legacy store rather
   than being dropped; Android can't rebuild them either and brings that map back uncalibrated. A library that was
   never written, with no old stores left to migrate, while map files sit in app storage is salvaged the same way
   (every file adopted, `recoveryPreservesOrphans=true`, no cleanup), so neither a missing nor a quarantined index
-  can authorise deleting those files. When old stores that read cleanly are migrated instead, the library written from them permits
+  can authorise deleting those files. On Android, what an interrupted copy leaves behind (a `.partial` file, or
+  a SQLite `-journal`/`-wal`/`-shm` sidecar without its pack) is not a map file: on its own it doesn't turn a
+  first launch into a recovery, and that launch's cleanup deletes it (the copy never finished, so no imported
+  map is lost); iOS still counts such leftovers as map files and salvages. When old stores that read cleanly are migrated instead, the library written from them permits
   cleanup, so the reconcile after it keeps the files those stores name and removes any other map file in app
   storage, much like 2.x's own cold-start cleanup, which kept only the active and retained map. Downgrading to an implementation that knows only one retained map is
   unsupported: its cleanup can delete additional library files it does not
@@ -747,31 +759,69 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   These checks read the schema rows SQLite actually runs: each name is looked up
   the way SQLite resolves it (any letter case) and has to match exactly one row
   whose own text declares that name, without `IF NOT EXISTS` (which SQLite never
-  stores), so a hand-edited duplicate or a row that misnames its object can't
-  stand in for the live view or table. The
+  stores), and a table's row has to give its root page as a whole number, the
+  only way SQLite writes it, so a hand-edited duplicate or a row that misnames
+  its object can't stand in for the live view or table. The
   plain views real tools write (node-mbtiles, TileMill, mbutil, MapTiler,
   martin, planetiler, gdal2mbtiles, tippecanoe and tile-join) still open; a
   pack whose views compute anything is refused. Every connection to a pack
   also caps a single value at 4 MiB + 64 KiB
-  and a schema statement at 100,000 bytes (iOS through SQLite's own limits;
-  Android checks the same lengths itself and, from Android 12, caps SQLite's
-  heap at 128 MiB for the process), turns off untrusted schema functions where
-  SQLite supports that and turns off automatic indexes. Before Android 12 a
-  value read through a view can still be materialised whole before its length
-  is checked (bounded by the 4 GiB file). A view has no rowid for incremental
-  reads, so it is read with key-addressed
+  and a schema statement at 100,000 bytes (iOS through SQLite's own limits,
+  set before SQLite reads the schema; Android checks the same lengths itself
+  and, from Android 12, caps SQLite's heap at 128 MiB for the process before
+  it opens any pack), turns off untrusted schema functions where SQLite
+  supports that and turns off automatic indexes. Older SQLite (Android before
+  12, iOS before SQLite 3.45) loads a whole value before it checks its length,
+  so before SQLite reads anything both apps also read the file's own b-tree
+  page headers (never a metadata value) and refuse, with the same verdict on
+  both, a pack whose schema has more than 1,000 entries or 1 MiB in all, whose
+  statistics tables (the sqlite_stat1 and sqlite_stat4 that ANALYZE leaves,
+  which SQLite reads in full along with the schema) hold more than 1,000 rows
+  or 1 MiB between them or aren't plain tables, or whose metadata tables hold
+  more than 64 rows or a row over 8 MiB + 128 KiB. To find the statistics
+  tables they read the schema's own entries, once their size is capped. That
+  bounds the schema load, the statistics SQLite reads with it and every value
+  SQLite takes from a metadata table's rows, on every Android and iOS version,
+  and a tile stored as text instead of a blob is never read. What remains: indexes aren't checked, and
+  when SQLite looks a key up in an index (a metadata read by name, a view's
+  join, a tile read) it loads each index entry it compares whole, whatever the
+  length cap. So a pack carrying an index on a metadata or tiles table with a
+  huge entry (built that way on purpose, or a hand-edited index that points at
+  other data) can still make SQLite load that much, bounded by the 4 GiB file:
+  while the pack is checked (import, launch or a pick in Layers) for a
+  metadata index, while tiles are drawn for a tiles index. From Android 12 the 128 MiB heap cap
+  bounds that; Android before 12 and iOS have no such cap. Likewise, on a pack
+  whose tiles are a view, rows of the underlying tables the view never shows,
+  and the columns it joins on, are compared while tiles are read, so on older
+  SQLite (Android before 12, iOS before 3.45) such a value can still be loaded
+  whole (bounded by the 4 GiB file). A pack that kills its import is removed at
+  the next launch, and one that kills the app while it is opened or draws its
+  first screen is held back by the crash guard below. A view
+  has no rowid for incremental reads, so it is read with key-addressed
   queries under the same bounds. A view's join isn't bounded by the file size
   alone, so when either relation is a view the admission queries share a 30 s
   budget and each later query on a view gets 2 s; an interrupted admission
   rejects the pack and an interrupted tile read returns no tile (two tables get
   no budget: their check is one scan the file size bounds). Packs are opened
   and checked off the main thread; while the saved pack is checked at launch
-  the map stays blank rather than loading online tiles. Opening the saved or a
-  newly chosen pack is covered by a crash guard (`mbtiles_open_guard.json`,
-  entry ids only): if the app dies while a pack is being opened or is drawing
-  its first screen, the next launch doesn't reopen it automatically, shows the
-  online map in memory and asks (Open Anyway, Delete Map, Not Now), the same
-  way as for a PDF. A pack that kills
+  the map stays blank rather than loading online tiles. If the saved pack can't
+  be opened (its file is missing or changed, or the check refuses it) the map
+  stays blank and a notice says so: TacMap doesn't swap a chosen offline pack
+  for the online map on its own. Layers lists the pack as unavailable (delete
+  it or import it again) or as couldn't be opened (tap to retry, or delete
+  it). A pack SQLite finds damaged isn't deleted for it: by default Android
+  deletes a database file SQLite reports as corrupt, even one opened read
+  only, so every Android MBTiles connection swaps that handler for one that
+  keeps the file. The check then refuses the pack, or a damaged tile just
+  doesn't draw, and the file stays until the user deletes it. A pack the
+  user picks that can't be opened leaves the map on screen as it was, and an
+  alert says so. Opening a pack is covered by a crash guard (`mbtiles_open_guard.json`, entry ids
+  only): if the app dies while the saved pack is being opened, or while any
+  pack is drawing its first screen, the next launch doesn't reopen it
+  automatically, shows the online map in memory and asks (Open Anyway, Delete
+  Map, Not Now), the same way as for a PDF. A newly chosen pack that kills the
+  app while it is being checked was never saved as the map, so the next launch
+  shows the previous one; picking it again is up to the user. A pack that kills
   its own import is removed at the next launch like a PDF, and the library
   recovery never reopens a pack it died on. Both readers reject more than 64 metadata
   rows using bounded row/type descriptors before copying text. Keys are bounded
@@ -802,7 +852,14 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   parse is abandoned rather than stopped, and pdfium (Android rendering) runs in-process
   and could still crash natively on a hostile file. A marker written before parsing
   starts stops an import crash loop: if it is still there at the next launch the copy is
-  removed, the import is not retried and the user is told. Before the map is added, a
+  removed, the import is not retried and the user is told. The same check also runs after
+  a mission-data unlock or a Retry, while an import may still be running: a marker whose
+  copy a live import in this process is still checking belongs to that import, so the
+  copy and the marker are left alone and nothing is reported. On Android the marker sits in
+  the sealed import journal, so when mission data locks while a file is being checked
+  (leaving the app) its clear can't be written; the app remembers in memory that it set
+  that marker and the check came back, so while it keeps running that marker isn't taken
+  for a crash and the import is tried again when the map comes back. Before the map is added, a
   probe draws it once under the render crash guard; a sheet that can't be drawn is
   refused and nothing is saved. Drawing (calibration previews included) is covered by
   the same guard, so a sheet that crashes the renderer is not reopened automatically.
@@ -948,7 +1005,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   unlock: a save still queued when the app left the foreground fails quietly
   instead of prompting for Face ID or passcode, re-caching the key behind the
   lock or stopping Unit Sync, and the sync revision record of a local edit it
-  carried is written after the unlock instead. The
+  carried is written after the unlock instead. Likewise an imported map or a
+  finished offline-tile bake whose library write lands behind the lock keeps
+  its file and is recorded after that unlock. The
   authorized recording-key exception and DEVICE cache policy above still apply.
   A background return needs a fresh connection and verified snapshot before
   mission frames are adopted. The background

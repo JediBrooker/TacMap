@@ -19517,6 +19517,18 @@
     "context": "Imported-maps library (WP5). Row subtitle when the map file is gone or was modified.",
     "parameters": []
   },
+  "map_state_open_failed": {
+    "en": "Couldn't be opened – tap to try again",
+    "de": "Konnte nicht geöffnet werden – tippe, um es erneut zu versuchen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapStateOpenFailed",
+    "context": "Imported-maps library (3.0.3). Row subtitle for an MBTiles map pack whose last open in this session failed (the file is there, but it is damaged, built in a way TacMap can't open, or checking it took too long). Tapping the row tries to open it again; Delete is in the row menu. Same style as the 'File missing or changed' subtitle.",
+    "parameters": []
+  },
   "map_action_calibrate": {
     "en": "Calibrate / refine…",
     "de": "Kalibrieren / verfeinern …",
@@ -20020,6 +20032,50 @@
     "context": "PDF/MBTiles import (WP5). One-time notice at launch.",
     "parameters": []
   },
+  "map_pack_open_failed_title": {
+    "en": "Couldn't open “{1}”",
+    "de": "„{1}“ konnte nicht geöffnet werden",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapPackOpenFailedTitle",
+    "deferred": true,
+    "context": "Imported-maps library (3.0.3). Alert title when an imported MBTiles map pack couldn't be opened, either right after the user picked it or when TacMap tried to show the saved map at launch or unlock. {1} is the map's name. One OK button.",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string"
+      }
+    ]
+  },
+  "map_pack_open_failed_message": {
+    "en": "The map pack may be damaged or built in a way TacMap can't open, or checking it took too long. The map on screen hasn't changed. You can try again or delete it under Imported maps in Layers.",
+    "de": "Das Kartenpaket ist möglicherweise beschädigt oder so aufgebaut, dass TacMap es nicht öffnen kann, oder die Prüfung hat zu lange gedauert. Die angezeigte Karte wurde nicht geändert. Unter „Importierte Karten“ in „Ebenen“ kannst du es erneut versuchen oder das Kartenpaket löschen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapPackOpenFailedMessage",
+    "deferred": true,
+    "context": "Imported-maps library (3.0.3). Alert message after the user picked an MBTiles map pack (in Layers, Open Anyway, or an import of a map they already had) and it couldn't be opened. Nothing was saved or deleted and the map that was on screen stays. 'Imported maps' and 'Layers' are the section and screen names in the app.",
+    "parameters": []
+  },
+  "map_pack_restore_failed_message": {
+    "en": "Your saved map pack is missing, has changed or couldn't be opened, so the map stays blank. No online map was loaded in its place, and nothing was deleted. Under Imported maps in Layers you can choose another map, try again or delete it.",
+    "de": "Dein gespeichertes Kartenpaket fehlt, wurde geändert oder konnte nicht geöffnet werden. Deshalb bleibt die Karte leer. Stattdessen wurde keine Onlinekarte geladen, und es wurde nichts gelöscht. Unter „Importierte Karten“ in „Ebenen“ kannst du eine andere Karte wählen, es erneut versuchen oder das Kartenpaket löschen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapPackRestoreFailedMessage",
+    "deferred": true,
+    "context": "Imported-maps library (3.0.3). Notice (once per session, OK button) when TacMap tried to show the user's saved MBTiles map pack at launch, unlock or Retry and couldn't. The map is left blank on purpose: switching to online tiles on its own would send the area to an online provider. 'Imported maps' and 'Layers' are the section and screen names in the app.",
+    "parameters": []
+  },
   "map_import_read_failed": {
     "en": "The map couldn't be imported: {1}",
     "de": "Die Karte konnte nicht importiert werden: {1}",
@@ -20274,7 +20330,7 @@
   },
   "sync_legacy_room_mixed_versions": {
     "en": "Older room type: if members use different TacMap versions, some may not see the same waypoints and drawings, and some edits or deletions may not reach everyone. To avoid this, create a new join code (it starts with 3:) and move everyone to the new room.",
-    "de": "Älterer Raumtyp: Wenn Mitglieder unterschiedliche TacMap-Versionen verwenden, sehen manche möglicherweise nicht dieselben Wegpunkte und Zeichnungen, und manche Änderungen oder Löschungen erreichen nicht alle. Um das zu vermeiden, erstelle einen neuen Beitrittscode (er beginnt mit 3:) und lass alle in den neuen Raum wechseln.",
+    "de": "Älterer Raumtyp: Wenn Mitglieder unterschiedliche TacMap-Versionen verwenden, sehen manche möglicherweise nicht dieselben Wegpunkte und Zeichnungen, und manche Änderungen oder Löschungen erreichen unter Umständen nicht alle. Um das zu vermeiden, erstelle einen neuen Beitrittscode (er beginnt mit 3:) und lass alle in den neuen Raum wechseln.",
     "platforms": [
       "ios",
       "android"

@@ -233,8 +233,11 @@ class ImportLimitsContractTest {
     @Test
     fun libraryRowsMatchTheEntryStateTable() {
         val rows = root["entryStates"]!!.jsonArray.map { it.jsonObject }
-        assertTrue("only ${rows.size} entry states", rows.size >= 13)
+        assertTrue("only ${rows.size} entry states", rows.size >= 18)
         assertTrue(rows.any { it.s("id") == "recovered_uninspectable_pdf" })
+        // s15.1: every row says whether the pack's open got refused, and openFailed is in there
+        assertTrue(rows.all { it["packRefused"] is JsonPrimitive })
+        assertTrue(rows.any { it.s("id") == "mbtiles_open_failed" })
         for (r in rows) {
             val id = r.s("id")!!
             val entry = r.o("entry")!!
@@ -255,7 +258,8 @@ class ImportLimitsContractTest {
                 "missing" -> EntryFileStatus.MISSING
                 else -> EntryFileStatus.MISMATCH
             }
-            val got = LibraryEntryRules.present(facts, file, (r["draftPoints"] as? JsonPrimitive)?.intOrNull)
+            val refused = (r["packRefused"] as JsonPrimitive).booleanOrNull!!
+            val got = LibraryEntryRules.present(facts, file, (r["draftPoints"] as? JsonPrimitive)?.intOrNull, refused)
             val e = r.o("expect")!!
             assertEquals("$id state", e.s("state"), got.state.code)
             assertEquals("$id effective", e.s("effectiveGeoref"), got.effectiveGeoref)

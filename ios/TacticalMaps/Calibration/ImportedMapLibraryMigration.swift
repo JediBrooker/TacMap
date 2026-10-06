@@ -23,10 +23,12 @@ enum LegacyMigrationCause: String, Sendable {
 /// before 3 just redoes it (drafts are keyed by file + page so they get
 /// overwritten), a crash after 3 leaves stale legacy bytes the next load clears.
 /// Not clean though: links are made as files get inspected, before 3. A salvage
-/// killed in there leaves map-<uuid> links that the redo adopts as extra
-/// "Recovered map" rows for the same bytes, and a kill between 3 and 4 leaves
-/// the 2.x name as a second hard link nothing lists (a flagged library never
-/// reconciles it away). Nothing is lost either way.
+/// killed in there leaves map-<uuid> links behind. The redo's adopt keeps one
+/// name per inode (3.0.3), so those aren't listed again as "Recovered map"
+/// rows, and once 3 lands 4 unlinks them with the old names. Only a copy (link
+/// failed) still gets adopted twice. A kill between 3 and 4 leaves the 2.x name
+/// as a second hard link nothing lists (a flagged library never reconciles it
+/// away). Nothing is lost either way.
 /// A locked key migrates nothing and deletes nothing. Legacy state the key can
 /// open but we can't fully read or convert gets salvaged (L5): what converts is
 /// written, every other map file adopted, the old stores left frozen, and the
@@ -168,8 +170,8 @@ enum ImportedMapLibraryMigration {
             let converted = Set(links.flatMap { [$0.old, $0.new] } + state.entries.compactMap(ImportedMapLibrary.fileURL))
             let adopted = ImportedMapLibraryRecovery.adopt(excluding: converted, inFlight: inFlight, now: now, inspect: inspect)
             state.entries += adopted.entries
-            return commit(state, links: links + adopted.links, drafts: drafts, draftStore: draftStore, write: write,
-                          clearLegacyStores: false) ? .salvaged : .blocked
+            return commit(state, links: links + adopted.links, extraNames: adopted.extraNames, drafts: drafts,
+                          draftStore: draftStore, write: write, clearLegacyStores: false) ? .salvaged : .blocked
         }
         return commit(state, links: links, drafts: drafts, draftStore: draftStore, write: write, clearLegacyStores: true)
             ? .migrated(uncalibratedName: uncalibratedName) : .blocked
@@ -184,15 +186,18 @@ enum ImportedMapLibraryMigration {
         state.active = .online(OnlineRasterBasemapSource.defaultStyle)
         let adopted = ImportedMapLibraryRecovery.adopt(excluding: [], inFlight: inFlight, now: now, inspect: inspect)
         state.entries = adopted.entries
-        return commit(state, links: adopted.links, drafts: [], draftStore: draftStore, write: write,
-                      clearLegacyStores: false) ? .adoptedOrphans : .blocked
+        return commit(state, links: adopted.links, extraNames: adopted.extraNames, drafts: [], draftStore: draftStore,
+                      write: write, clearLegacyStores: false) ? .adoptedOrphans : .blocked
     }
 
     /// L6: drafts, then the one library write, then (plain runs only) clear the
     /// old stores, then unlink the old names. false = blocked, nothing was
     /// cleared and no old name unlinked. This attempt's links go again unless
-    /// the library landed anyway (see below)
-    private static func commit(_ state: LibraryState, links: [(old: URL, new: URL)], drafts: [CalibrationDraft],
+    /// the library landed anyway (see below). extraNames are second hard links
+    /// to bytes the state lists under another name (adopt), dropped with the
+    /// old names and only after the write
+    private static func commit(_ state: LibraryState, links: [(old: URL, new: URL)], extraNames: [URL] = [],
+                               drafts: [CalibrationDraft],
                                draftStore: CalibrationDraftStoring, write: (LibraryState) throws -> Void,
                                clearLegacyStores: Bool) -> Bool {
         let moved = links.filter { $0.old.standardizedFileURL != $0.new.standardizedFileURL }
@@ -217,6 +222,7 @@ enum ImportedMapLibraryMigration {
         }
         if clearLegacyStores { clearLegacy() }
         for l in moved { ImportedMapStorage.unlink(l.old) }
+        for u in extraNames { ImportedMapStorage.unlink(u) }
         return true
     }
 
@@ -434,13 +440,50 @@ enum ImportedMapLibraryRecovery {
     /// minus the files a converted entry already owns. A file still under a 2.x
     /// name keeps its stem as the name and gets linked to an opaque one like a
     /// migrated file (adopted where it is if neither link nor copy works). Not
-    /// written: the caller saves, writes once, then unlinks the old names
+    /// written: the caller saves, writes once, then unlinks the old names and
+    /// extraNames
     static func adopt(excluding: Set<URL>, inFlight: Set<URL> = InFlightImportFiles.snapshot, now: Date = Date(),
                       inspect: (URL) -> PDFInspection? = inspectForRecovery)
-        -> (entries: [ImportedMapEntry], links: [(old: URL, new: URL)]) {
+        -> (entries: [ImportedMapEntry], links: [(old: URL, new: URL)], extraNames: [URL]) {
         let skip = Set(excluding.map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
         let urls = candidates(inFlight: inFlight).filter { !skip.contains($0.standardizedFileURL.resolvingSymlinksInPath().path) }
-        return entries(for: urls, now: now, inspect: inspect, linkLegacyNames: true)
+        let split = oneNamePerFile(urls, taken: Set(excluding.compactMap(fileIdentity)))
+        let made = entries(for: split.kept, now: now, inspect: inspect, linkLegacyNames: true)
+        return (made.entries, made.links, split.extra)
+    }
+
+    /// device + inode, what every hard link to the same bytes shares
+    struct FileIdentity: Hashable {
+        let device: Int
+        let inode: UInt64
+    }
+
+    static func fileIdentity(_ url: URL) -> FileIdentity? {
+        // lstat, a symlink is never the file it points at
+        guard let a = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let dev = (a[.systemNumber] as? NSNumber)?.intValue,
+              let ino = (a[.systemFileNumber] as? NSNumber)?.uint64Value else { return nil }
+        return FileIdentity(device: dev, inode: ino)
+    }
+
+    /// 3.0.3 A2: a salvage killed before its write leaves its map-<uuid> links
+    /// behind, same inode as a file this pass converts (excluded, so taken) or
+    /// a 2.x name it's about to link again. Adopting those listed the map twice.
+    /// One name per inode survives, the 2.x one if there is one (it has the
+    /// stem), the rest come back as extra names. No identity = adopted as before
+    static func oneNamePerFile(_ urls: [URL], taken: Set<FileIdentity>) -> (kept: [URL], extra: [URL]) {
+        let ids = urls.map(fileIdentity)
+        var owner: [FileIdentity: Int] = [:]
+        let legacyFirst = urls.indices.filter { legacyStem(urls[$0]) != nil } + urls.indices.filter { legacyStem(urls[$0]) == nil }
+        for i in legacyFirst {
+            guard let id = ids[i], !taken.contains(id), owner[id] == nil else { continue }
+            owner[id] = i
+        }
+        var kept: [URL] = [], extra: [URL] = []
+        for (i, url) in urls.enumerated() {
+            if let id = ids[i], owner[id] != i { extra.append(url) } else { kept.append(url) }
+        }
+        return (kept, extra)
     }
 
     /// L7 managedFiles: after s9.8 a regular file in ImportedMaps or offline_tiles

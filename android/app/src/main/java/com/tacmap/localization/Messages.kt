@@ -462,6 +462,18 @@ object Messages {
         L10n.message("id.map_library_section", "Imported maps")
     fun mapMigrationUncalibrated(name: String): String =
         L10n.message("id.map_migration_uncalibrated", "“%1\$s” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.", name)
+    fun mapPackOpenFailedMessage(): String =
+        L10n.message("id.map_pack_open_failed_message", "The map pack may be damaged or built in a way TacMap can't open, or checking it took too long. The map on screen hasn't changed. You can try again or delete it under Imported maps in Layers.")
+    fun mapPackOpenFailedMessageMessage(): LocalizedMessage =
+        LocalizedMessage("id.map_pack_open_failed_message", "The map pack may be damaged or built in a way TacMap can't open, or checking it took too long. The map on screen hasn't changed. You can try again or delete it under Imported maps in Layers.", listOf())
+    fun mapPackOpenFailedTitle(name: String): String =
+        L10n.message("id.map_pack_open_failed_title", "Couldn't open “%1\$s”", name)
+    fun mapPackOpenFailedTitleMessage(name: String): LocalizedMessage =
+        LocalizedMessage("id.map_pack_open_failed_title", "Couldn't open “%1\$s”", listOf(name))
+    fun mapPackRestoreFailedMessage(): String =
+        L10n.message("id.map_pack_restore_failed_message", "Your saved map pack is missing, has changed or couldn't be opened, so the map stays blank. No online map was loaded in its place, and nothing was deleted. Under Imported maps in Layers you can choose another map, try again or delete it.")
+    fun mapPackRestoreFailedMessageMessage(): LocalizedMessage =
+        LocalizedMessage("id.map_pack_restore_failed_message", "Your saved map pack is missing, has changed or couldn't be opened, so the map stays blank. No online map was loaded in its place, and nothing was deleted. Under Imported maps in Layers you can choose another map, try again or delete it.", listOf())
     fun mapPointCopy(): String =
         L10n.message("id.map_point_copy", "Copy Coordinates")
     fun mapPointMeasure(): String =
@@ -490,6 +502,8 @@ object Messages {
         L10n.message("id.map_state_needs_calibration", "Not georeferenced – tap to calibrate")
     fun mapStateOfflineTiles(): String =
         L10n.message("id.map_state_offline_tiles", "Offline tiles")
+    fun mapStateOpenFailed(): String =
+        L10n.message("id.map_state_open_failed", "Couldn't be opened – tap to try again")
     fun mapStateRejected(): String =
         L10n.message("id.map_state_rejected", "Georeferencing unreadable – tap to calibrate")
     fun mapStateUnavailable(): String =

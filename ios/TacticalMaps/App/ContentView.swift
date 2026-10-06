@@ -320,7 +320,8 @@ struct ContentView: View {
         // calibrating reads calibrating (s7.8), a failure mid calibration still gets
         // its alert. Same order as Android
         if calibration.isCalibrating { return Messages.calibrationHeaderLabel() }
-        if pdfRenderFailed { return Messages.pdfRenderFailedLabel() }
+        // U1: a pack that can't be shown reads failed, not a green offline basemap
+        if pdfRenderFailed || mapVM.showsUnavailablePack { return Messages.pdfRenderFailedLabel() }
         if pdfPreparing { return Messages.pdfRenderDrawingLabel() }
         if uncalibratedPDFLoaded { return Messages.pdfMapUncalibratedLabel() }
         if importedMapLoaded { return L10n.text("Offline basemap") }
@@ -329,7 +330,7 @@ struct ContentView: View {
     }
     private var basemapColor: Color {
         if calibration.isCalibrating { return Color(red: 1, green: 0.65, blue: 0.18) }  // amber, not a basemap yet
-        if pdfRenderFailed { return PDFRenderStatusColors.failed }
+        if pdfRenderFailed || mapVM.showsUnavailablePack { return PDFRenderStatusColors.failed }
         if pdfPreparing { return PDFRenderStatusColors.preparing }
         if uncalibratedPDFLoaded { return Color(red: 1, green: 0.65, blue: 0.18) }  // amber, not a basemap yet
         return importedMapLoaded
@@ -1084,6 +1085,11 @@ struct ContentView: View {
             mapVM: mapVM,
             isActive: MapSelectionIssueAlertGate.rootHostIsActive(presentationsOnTop: rootPresentationsOnTop)
         ) { _ in }
+        // U1 refused activation, same hosting rule (Layers has its own copy)
+        .packOpenFailedAlert(
+            mapVM: mapVM,
+            isActive: MapSelectionIssueAlertGate.rootHostIsActive(presentationsOnTop: rootPresentationsOnTop)
+        )
         .alert(L10n.text("Import"),
                isPresented: Binding(get: { importMessage != nil },
                                     set: { if !$0 { importMessage = nil } }),

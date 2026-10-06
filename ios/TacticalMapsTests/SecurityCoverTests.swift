@@ -86,6 +86,56 @@ final class SecurityCoverTests: XCTestCase {
         XCTAssertFalse(field.isFirstResponder, "a sheet's text field must not keep typing behind the cover")
     }
 
+    /// A5: every transient .inactive (Control Center, a banner pulled down) put
+    /// the privacy cover up, which dropped the keyboard and left VoiceOver on the
+    /// first element afterwards. Both come back once the cover is down
+    func testPrivacyGlanceGivesTheKeyboardAndVoiceOverFocusBack() throws {
+        let (scene, app) = try makeAppWindow()
+        let field = UITextField(frame: CGRect(x: 20, y: 120, width: 200, height: 40))
+        let button = UIButton(frame: CGRect(x: 20, y: 200, width: 200, height: 40))
+        app.rootViewController?.view.addSubview(field)
+        app.rootViewController?.view.addSubview(button)
+        XCTAssertTrue(field.becomeFirstResponder())
+
+        let covers = makeCovers()
+        var posted: [Any?] = []
+        covers.voiceOverFocus = { button }
+        covers.postAccessibility = { note, arg in if note == .screenChanged { posted.append(arg) } }
+        covers.apply(.privacy, onUnlock: {}, scenes: [scene])
+        XCTAssertFalse(field.isFirstResponder, "still dropped under the cover, no QuickType in the switcher card")
+
+        covers.apply(.none, onUnlock: {}, scenes: [scene])
+        XCTAssertTrue(field.isFirstResponder, "keyboard back where it was")
+        XCTAssertTrue((posted.last ?? nil) as? UIButton === button, "VoiceOver back on what it was on")
+    }
+
+    /// a real lock in between is a fresh start: nothing popped back up
+    func testLockAfterThePrivacyCoverGivesNothingBack() throws {
+        let (scene, app) = try makeAppWindow()
+        let field = UITextField(frame: CGRect(x: 20, y: 120, width: 200, height: 40))
+        app.rootViewController?.view.addSubview(field)
+        XCTAssertTrue(field.becomeFirstResponder())
+
+        let covers = makeCovers()
+        var posted: [Any?] = []
+        covers.voiceOverFocus = { field }
+        covers.postAccessibility = { note, arg in if note == .screenChanged { posted.append(arg) } }
+        covers.apply(.privacy, onUnlock: {}, scenes: [scene])
+        covers.apply(.lock, onUnlock: {}, scenes: [scene])
+        covers.apply(.none, onUnlock: {}, scenes: [scene])
+        XCTAssertFalse(field.isFirstResponder)
+        XCTAssertNotNil(posted.last)
+        XCTAssertNil(posted.last ?? nil, "VoiceOver starts from the top after an unlock")
+
+        // and a field that left the screen meanwhile is left alone
+        XCTAssertTrue(field.becomeFirstResponder())
+        covers.apply(.privacy, onUnlock: {}, scenes: [scene])
+        field.removeFromSuperview()
+        covers.apply(.none, onUnlock: {}, scenes: [scene])
+        XCTAssertFalse(field.isFirstResponder)
+        XCTAssertNil(posted.last ?? nil)
+    }
+
     func testWindowsThatTurnUpWhileCoveredGoUnderIt() throws {
         let (scene, app) = try makeAppWindow()
         let covers = makeCovers()

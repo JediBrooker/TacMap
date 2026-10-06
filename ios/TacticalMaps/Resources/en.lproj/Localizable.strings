@@ -163,6 +163,9 @@
 "id.map_library_recovered_notice" = "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.";
 "id.map_library_section" = "Imported maps";
 "id.map_migration_uncalibrated" = "“%1$@” was never georeferenced, so it's no longer shown as a basemap. Calibrate it from Layers.";
+"id.map_pack_open_failed_message" = "The map pack may be damaged or built in a way TacMap can't open, or checking it took too long. The map on screen hasn't changed. You can try again or delete it under Imported maps in Layers.";
+"id.map_pack_open_failed_title" = "Couldn't open “%1$@”";
+"id.map_pack_restore_failed_message" = "Your saved map pack is missing, has changed or couldn't be opened, so the map stays blank. No online map was loaded in its place, and nothing was deleted. Under Imported maps in Layers you can choose another map, try again or delete it.";
 "id.map_point_copy" = "Copy Coordinates";
 "id.map_point_measure" = "Measure From Here";
 "id.map_point_place_symbol" = "Place Symbol Here";
@@ -176,6 +179,7 @@
 "id.map_state_geopdf" = "GeoPDF";
 "id.map_state_needs_calibration" = "Not georeferenced – tap to calibrate";
 "id.map_state_offline_tiles" = "Offline tiles";
+"id.map_state_open_failed" = "Couldn't be opened – tap to try again";
 "id.map_state_rejected" = "Georeferencing unreadable – tap to calibrate";
 "id.map_state_unavailable" = "File missing or changed – delete it and import again";
 "id.map_use_embedded_confirm" = "Remove your calibration and use the georeferencing stored in the PDF?";

@@ -29,6 +29,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
@@ -121,6 +122,15 @@ internal class MapImportPipeline(
         operationKey: String,
         library: LibrarySnapshot,
         progress: (ImportProgress) -> Unit,
+    ): PreparedOutcome = InspectionMarks.lockFor(operationKey).withLock {
+        runPdfOnce(uri, operationKey, library, progress)
+    }
+
+    private suspend fun runPdfOnce(
+        uri: Uri,
+        operationKey: String,
+        library: LibrarySnapshot,
+        progress: (ImportProgress) -> Unit,
     ): PreparedOutcome {
         interruptedBefore(operationKey)?.let { return it }
         val size = sourceSize(uri)
@@ -135,6 +145,17 @@ internal class MapImportPipeline(
     }
 
     suspend fun runMbtiles(
+        uri: Uri,
+        operationKey: String,
+        library: LibrarySnapshot,
+        progress: (ImportProgress) -> Unit,
+    ): PreparedOutcome = InspectionMarks.lockFor(operationKey).withLock {
+        // a pause cancels the job but not the admission, which can't be stopped. the replay on
+        // resume waits for that one to come back so they never share the copy (DL-1)
+        runMbtilesOnce(uri, operationKey, library, progress)
+    }
+
+    private suspend fun runMbtilesOnce(
         uri: Uri,
         operationKey: String,
         library: LibrarySnapshot,
@@ -228,16 +249,16 @@ internal class MapImportPipeline(
     private fun interruptedBefore(operationKey: String): PreparedOutcome? {
         val st = runCatching { journal.state(operationKey) }.getOrNull() ?: return null
         if (st.inspectStartedAtEpochMs == null && !st.interrupted) return null
+        // a marker this process set and just couldn't clear (the key relocked under the
+        // parse) isn't a crash, the parse came back. clear it and go again (DL-1)
+        if (!st.interrupted && InspectionMarks.clearStale(journal, st, clock())) return null
         clearInterrupted(journal, st)
         return PreparedOutcome.Failed(ImportFailure(ImportError.INTERRUPTED))
     }
 
     private fun discard(file: File) = discardImportCopy(file)
 
-    private fun markInspecting(operationKey: String, at: Long?) {
-        val st = runCatching { journal.state(operationKey) }.getOrNull() ?: return
-        runCatching { journal.persist(st.copy(inspectStartedAtEpochMs = at, updatedAtEpochMs = clock())) }
-    }
+    private fun markInspecting(operationKey: String, at: Long?) = InspectionMarks.mark(journal, operationKey, at, clock())
 
     private fun sourceSize(uri: Uri): Long? = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
@@ -288,6 +309,9 @@ internal class MapImportPipeline(
             val stuck = runCatching { journal.all() }.getOrDefault(emptyList())
                 .filter { it.inspectStartedAtEpochMs != null }
                 .filterNot { st -> st.resultPath?.let { File(it).absoluteFile in live } == true }
+                // set by this process and its parse came back (or is still going): not a crash.
+                // a stale one gets its clear retried, the copy and the pending pick stay (DL-1)
+                .filterNot { st -> InspectionMarks.clearStale(journal, st) }
             stuck.forEach { clearInterrupted(journal, it) }
             return stuck.isNotEmpty()
         }
@@ -354,6 +378,58 @@ internal class MapImportPipeline(
                 importedAtMs = nowMs,
             )
         }
+    }
+}
+
+/**
+ * s9.8 markers this process set, memory only. The marker lives in the sealed journal, so once
+ * a pause relocks the key mid parse its clear can't be written and it's left on disk although
+ * nothing crashed (DL-1). Another journal instance may also have read it before the clear
+ * landed. So: [running] while a parse is going, [returned] once one came back in this
+ * process. A marker for a returned op is ours, not a crash. A real crash takes this memory
+ * with it, so the next launch still reads the marker as one and the loop breaker holds
+ */
+internal object InspectionMarks {
+    private val running = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val returned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
+    /** one run of an operation at a time in this process */
+    fun lockFor(operationKey: String): kotlinx.coroutines.sync.Mutex =
+        locks.getOrPut(operationKey) { kotlinx.coroutines.sync.Mutex() }
+
+    /** set ([at]) or clear (null) the durable marker, and keep track of it here */
+    fun mark(journal: DocumentImportCopyStateStore, operationKey: String, at: Long?, now: Long) {
+        if (at != null) running.merge(operationKey, 1, Int::plus)
+        runCatching {
+            journal.state(operationKey)?.let { journal.persist(it.copy(inspectStartedAtEpochMs = at, updatedAtEpochMs = now)) }
+        }
+        if (at == null) {
+            returned += operationKey
+            running.computeIfPresent(operationKey) { _, n -> (n - 1).takeIf { it > 0 } }
+        }
+    }
+
+    /** this process set the op's marker and is still alive: a parse running or one that came back */
+    fun ranHere(operationKey: String): Boolean = running.containsKey(operationKey) || operationKey in returned
+
+    /**
+     * true = [st]'s marker is this process's, not a crash. Once nothing's parsing it any more
+     * the clear it may still owe is tried again (best effort, the next look tries again).
+     * never cleared while one's running, that one's crash protection still counts
+     */
+    fun clearStale(journal: DocumentImportCopyStateStore, st: DocumentImportCopyState, now: Long = System.currentTimeMillis()): Boolean {
+        if (!ranHere(st.operationKey)) return false
+        if (!running.containsKey(st.operationKey) && st.inspectStartedAtEpochMs != null) {
+            runCatching { journal.persist(st.copy(inspectStartedAtEpochMs = null, updatedAtEpochMs = now)) }
+        }
+        return true
+    }
+
+    /** a new process as far as this goes, for tests */
+    fun forgetForTesting() {
+        running.clear()
+        returned.clear()
     }
 }
 
@@ -458,8 +534,5 @@ internal class PdfImportStages(
         }
     }
 
-    private fun markInspecting(operationKey: String, at: Long?) {
-        val st = journal.state(operationKey) ?: return
-        runCatching { journal.persist(st.copy(inspectStartedAtEpochMs = at, updatedAtEpochMs = clock())) }
-    }
+    private fun markInspecting(operationKey: String, at: Long?) = InspectionMarks.mark(journal, operationKey, at, clock())
 }

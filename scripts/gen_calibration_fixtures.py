@@ -2092,12 +2092,16 @@ def inspections():
 def entry_states():
     rows = []
 
-    def run(cid, entry, file_status, draft_points, note):
+    def run(cid, entry, file_status, draft_points, note, pack_refused=False):
         pdf = entry.get("pdf")
         # an entry re-adopted by a corrupt-library rebuild whose PDF didn't inspect has pageCount 0: it stays
         # unavailable whatever its file stamp says, only Delete (S2)
         if file_status != "ok" or (pdf is not None and pdf["pageCount"] == 0):
             state = "unavailable"
+        elif entry["kind"] == "mbtiles" and pack_refused:
+            # 3.0.3 U1: this process's open of these bytes was refused. Still a durable choice (a restore keeps
+            # it), the row tap is the retry: a fresh guarded open, and Delete is in the menu
+            state = "openFailed"
         elif entry["kind"] == "mbtiles":
             state = "derived" if entry.get("derivedFromId") else "offlineTiles"
         elif pdf.get("manual"):
@@ -2111,9 +2115,11 @@ def entry_states():
         effective = None
         if pdf:
             effective = "manual" if pdf.get("manual") else ("embedded" if pdf.get("embedded") else None)
-        can_active = state in ("geoPDF", "calibrated", "offlineTiles", "derived")
+        can_active = state in ("geoPDF", "calibrated", "offlineTiles", "derived", "openFailed")
         if state == "unavailable":
             sub = msg("map_state_unavailable")
+        elif state == "openFailed":
+            sub = msg("map_state_open_failed")
         elif draft_points is not None and entry["kind"] == "pdf":
             sub = msg("map_state_draft", points=draft_points)
         else:
@@ -2136,7 +2142,8 @@ def entry_states():
             if pdf.get("manual") and pdf.get("embedded"):
                 menu.append(key("map_action_use_embedded"))
         menu.append(key("map_action_delete"))
-        rows.append({"id": cid, "entry": entry, "fileStatus": file_status, "draftPoints": draft_points,
+        rows.append({"id": cid, "entry": entry, "fileStatus": file_status, "packRefused": pack_refused,
+                     "draftPoints": draft_points,
                      "expect": {"state": state, "effectiveGeoref": effective, "canBeDurableActive": can_active,
                                 "subtitle": sub, "rowTap": tap, "menu": menu}, "note": note})
 
@@ -2160,6 +2167,19 @@ def entry_states():
     run("mbtiles", {"kind": "mbtiles", "derivedFromId": None}, "ok", None, "imported MBTiles")
     run("baked_tiles", {"kind": "mbtiles", "derivedFromId": "6f1c2d3e-0000-4000-8000-000000000001",
                         "parentName": "Sydney 1:25k"}, "ok", None, "tiles baked from a PDF entry")
+    # 3.0.3 U1 (contract s15.1): packRefused = an open of this pack in this process came back refused (in memory,
+    # keyed by entry id + contentKey + byte count + mtime, never saved)
+    run("mbtiles_open_failed", {"kind": "mbtiles", "derivedFromId": None}, "ok", None,
+        "the pack's open was refused this process: tap tries again, Delete in the menu", pack_refused=True)
+    run("baked_tiles_open_failed", {"kind": "mbtiles", "derivedFromId": "6f1c2d3e-0000-4000-8000-000000000001",
+                                    "parentName": "Sydney 1:25k"}, "ok", None,
+        "a migrated derived pack the same way", pack_refused=True)
+    run("mbtiles_missing_file", {"kind": "mbtiles", "derivedFromId": None}, "missing", None,
+        "a missing pack file: unavailable, nothing to retry")
+    run("mbtiles_missing_and_refused", {"kind": "mbtiles", "derivedFromId": None}, "sizeOrMtimeMismatch", None,
+        "unavailable still wins over openFailed", pack_refused=True)
+    run("pdf_ignores_pack_refused", pdf(embedded=True), "ok", None,
+        "packRefused is about MBTiles only, a PDF's failures are the WP2 couldn't-draw state", pack_refused=True)
     return rows
 
 
@@ -2692,6 +2712,19 @@ MBT_VIEW_WHITESPACE = " \t\r\n"
 MBT_VIEW_PUNCT = "(),.*="
 MBT_VIEW_QUOTES = {'"': '"', "[": "]", "`": "`"}
 
+# 3.0.3 U2 (SEC-M1-ANDROID-OLDSQLITE-OOM): SQLite loads a whole TEXT value into memory before length() or
+# substr(CAST(...)) can look at it, and only SQLite 3.45+ checks SQLITE_LIMIT_LENGTH first. Android below 12 has no
+# limit and no heap cap at all, iOS 16-18 ship SQLite older than 3.45. So before SQLite sees the file both readers
+# walk its b-tree page headers themselves (never a value) and refuse a schema or a metadata table whose rows are
+# too many or too big. A cell's first varint is its whole record size, nothing SQLite reads from that row can be
+# bigger. The caps sit far above any real pack: tableOversizedValues (a 5 MiB name) still opens
+MBT_PROBE_MAX_SCHEMA_ROWS = 1000
+MBT_PROBE_MAX_SCHEMA_BYTES = 1024 * 1024
+MBT_PROBE_MAX_METADATA_ROWS = 64
+MBT_PROBE_MAX_METADATA_RECORD_BYTES = 2 * MBT_MAX_VALUE_BYTES
+MBT_PROBE_MAX_DEPTH = 20
+MBT_PROBE_MAX_PAGES = 4096
+
 
 class _MbtReject(Exception):
     pass
@@ -2902,10 +2935,200 @@ def table_declares(sql, name):
     return name.isascii() and ident.lower() == name.lower()
 
 
+class _ProbeReject(Exception):
+    pass
+
+
+def probe_header(data):
+    """(page size, usable size, page count) from the 100 byte file header, or _ProbeReject('header')"""
+    if len(data) < 100 or data[:16] != b"SQLite format 3\x00":
+        raise _ProbeReject("header")
+    size = int.from_bytes(data[16:18], "big")
+    size = 65536 if size == 1 else size
+    if size < 512 or size > 65536 or size & (size - 1):
+        raise _ProbeReject("header")
+    usable = size - data[20]
+    if usable < 480:
+        raise _ProbeReject("header")
+    # 3.0.3 PROBE-RT-1: the statistics step reads schema text as UTF-8. SQLite takes the low two bits of the 32 bit
+    # value at 56, 0 meaning UTF-8 too. Admission refuses any other encoding anyway, only later than this
+    if int.from_bytes(data[56:60], "big") & 3 not in (0, 1):
+        raise _ProbeReject("header")
+    return size, usable, len(data) // size
+
+
+def _probe_varint_at(page, at, end):
+    """SQLite's varint at at: (value, where the next thing starts). Up to 8 bytes of 7 bits (high bit = more), a 9th
+    byte gives all 8. Unsigned. structure if it doesn't end before end"""
+    value = 0
+    for i in range(9):
+        if at + i >= end:
+            raise _ProbeReject("structure")
+        b = page[at + i]
+        if i == 8:
+            return (value << 8) | b, at + 9
+        value = (value << 7) | (b & 0x7F)
+        if b < 0x80:
+            return value, at + i + 1
+
+
+def _probe_varint(page, at, end):
+    return _probe_varint_at(page, at, end)[0]
+
+
+def probe_walk(data, root, max_rows, max_record, max_total=None, cells=None):
+    """walk table b-trees from root (one page, or a list walked as one: same pages seen, rows and total, each root at
+    depth 0 in list order) in b-tree order (each interior page's children left to right, then its right most child;
+    leaf cells in cell pointer order) and check every row's record size, the first varint of its cell. Only page
+    headers, cell pointers and that varint are read, never a value or an overflow page. Raises
+    _ProbeReject(header | structure | pageType | rows | recordBytes | totalBytes) at the first problem. cells, when
+    given, gets (page, cell offset) of every leaf cell in walk order"""
+    size, usable, count = probe_header(data)
+    seen, rows, total = set(), 0, 0
+    stack = [(r, 0) for r in reversed(root if isinstance(root, list) else [root])]
+    while stack:
+        p, depth = stack.pop()
+        if not 1 <= p <= count or p in seen or depth >= MBT_PROBE_MAX_DEPTH or len(seen) >= MBT_PROBE_MAX_PAGES:
+            raise _ProbeReject("structure")
+        seen.add(p)
+        page = data[(p - 1) * size:p * size]
+        h = 100 if p == 1 else 0
+        kind = page[h]
+        if kind == 0x05:
+            n = int.from_bytes(page[h + 3:h + 5], "big")
+            first = h + 12 + 2 * n
+            if first > usable:
+                raise _ProbeReject("structure")
+            children = []
+            for i in range(n):
+                off = int.from_bytes(page[h + 12 + 2 * i:h + 14 + 2 * i], "big")
+                if off < first or off + 4 > usable:
+                    raise _ProbeReject("structure")
+                children.append(int.from_bytes(page[off:off + 4], "big"))
+            children.append(int.from_bytes(page[h + 8:h + 12], "big"))
+            stack.extend((c, depth + 1) for c in reversed(children))
+        elif kind == 0x0D:
+            n = int.from_bytes(page[h + 3:h + 5], "big")
+            first = h + 8 + 2 * n
+            if first > usable:
+                raise _ProbeReject("structure")
+            for i in range(n):
+                off = int.from_bytes(page[h + 8 + 2 * i:h + 10 + 2 * i], "big")
+                if off < first or off >= usable:
+                    raise _ProbeReject("structure")
+                record = _probe_varint(page, off, usable)
+                rows += 1
+                if rows > max_rows:
+                    raise _ProbeReject("rows")
+                if record > max_record:
+                    raise _ProbeReject("recordBytes")
+                total += record
+                if max_total is not None and total > max_total:
+                    raise _ProbeReject("totalBytes")
+                if cells is not None:
+                    cells.append((p, off))
+        else:
+            raise _ProbeReject("pageType")
+
+
+def _probe_record(data, size, usable, count, p, off):
+    """the whole record of the table leaf cell at off on page p, read the way SQLite does: after the record size and
+    rowid varints, the local part (all of it when size <= U - 35, else M = (U - 12) * 32 / 255 - 23 and K = M +
+    (size - M) % (U - 4), K when K <= U - 35 else M), then a 4 byte first overflow page and from each overflow page
+    the U - 4 bytes after its 4 byte next pointer until size bytes are in. structure if the local part (and its
+    pointer) runs past U or a chain page isn't in the file. Only for schema rows, which the walk bounded first"""
+    page = data[(p - 1) * size:p * size]
+    length, at = _probe_varint_at(page, off, usable)
+    _, at = _probe_varint_at(page, at, usable)
+    local = length
+    if length > usable - 35:
+        least = (usable - 12) * 32 // 255 - 23
+        local = least + (length - least) % (usable - 4)
+        if local > usable - 35:
+            local = least
+    if at + local + (4 if local < length else 0) > usable:
+        raise _ProbeReject("structure")
+    out = bytearray(page[at:at + local])
+    nxt = int.from_bytes(page[at + local:at + local + 4], "big") if local < length else 0
+    while len(out) < length:
+        if not 1 <= nxt <= count:
+            raise _ProbeReject("structure")
+        over = data[(nxt - 1) * size:nxt * size]
+        out += over[4:4 + min(length - len(out), usable - 4)]
+        nxt = int.from_bytes(over[:4], "big")
+    return bytes(out)
+
+
+# the tables ANALYZE writes (sqlite_stat1, and sqlite_stat2/3/4 on builds that had them) are named like this, and SQLite
+# reads every row of them whole along with the schema, at the first statement
+MBT_PROBE_STATISTICS_MARK = b"sqlite_stat"
+_PROBE_SERIAL_SIZES = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 8, 7: 8, 8: 0, 9: 0}
+
+
+def _probe_statistics_root(record):
+    """the rootpage of a schema row whose record mentions sqlite_stat. It has to be what SQLite itself writes for its
+    statistics tables: a record of exactly five columns that fill it exactly (no serial type 10 or 11), rootpage
+    (column 3) an integer and sql (column 4) text starting 'CREATE TABLE '. Anything else is statistics: a view or a
+    virtual table by that name would run SQL from the file when SQLite reads it"""
+    try:
+        header, at = _probe_varint_at(record, 0, len(record))
+        if not at <= header <= len(record):
+            raise _ProbeReject("statistics")
+        types = []
+        while at < header:
+            t, at = _probe_varint_at(record, at, header)
+            types.append(t)
+    except _ProbeReject:
+        raise _ProbeReject("statistics")
+    if len(types) != 5:
+        raise _ProbeReject("statistics")
+    body, columns = header, []
+    for t in types:
+        if t in (10, 11):
+            raise _ProbeReject("statistics")
+        n = _PROBE_SERIAL_SIZES[t] if t < 12 else (t - 12) // 2
+        columns.append((t, record[body:body + n]))
+        body += n
+    if body != len(record):
+        raise _ProbeReject("statistics")
+    (root_type, root_bytes), (sql_type, sql) = columns[3], columns[4]
+    if not (1 <= root_type <= 6 or root_type in (8, 9)) or sql_type < 13 or sql_type % 2 == 0 or \
+            not sql.startswith(b"CREATE TABLE "):
+        raise _ProbeReject("statistics")
+    return {8: 0, 9: 1}.get(root_type) if root_type >= 8 else int.from_bytes(root_bytes, "big", signed=True)
+
+
+def probe_schema(data):
+    """before SQLite opens the file: sqlite_master (rooted at page 1) has at most 1,000 rows and 1 MiB of records,
+    so the schema load SQLite does on the first statement can't be made huge. 3.0.3 PROBE-RT-1: that load also reads
+    every row of the ANALYZE tables whole, so each schema row's record is read and every row that mentions sqlite_stat
+    has to be a plain table whose b-tree, walked together with the other ones, stays under the same caps"""
+    cells = []
+    probe_walk(data, 1, MBT_PROBE_MAX_SCHEMA_ROWS, MBT_PROBE_MAX_SCHEMA_BYTES, MBT_PROBE_MAX_SCHEMA_BYTES, cells)
+    size, usable, count = probe_header(data)
+    roots = []
+    for p, off in cells:
+        record = _probe_record(data, size, usable, count, p, off)
+        # bytes.lower() folds ASCII only, like SQLite's identifier compare
+        if MBT_PROBE_STATISTICS_MARK in record.lower():
+            roots.append(_probe_statistics_root(record))
+    if roots:
+        probe_walk(data, roots, MBT_PROBE_MAX_SCHEMA_ROWS, MBT_PROBE_MAX_SCHEMA_BYTES, MBT_PROBE_MAX_SCHEMA_BYTES)
+
+
+def probe_metadata_table(data, root):
+    """after the relation checks, before any metadata read: each table the metadata relation reads (metadata itself,
+    or its view's base tables) has at most 64 rows and no row over 2 x maxValueBytes"""
+    probe_walk(data, root, MBT_PROBE_MAX_METADATA_ROWS, MBT_PROBE_MAX_METADATA_RECORD_BYTES)
+
+
 def _mbt_base_table(conn, name):
     """what every relation a read touches has to be: one ordinary table, no generated column"""
-    rows = conn.execute("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", (name,)).fetchall()
-    if len(rows) != 1 or rows[0][0] != "table" or not table_declares(rows[0][1], name):
+    rows = conn.execute("SELECT type, sql, typeof(rootpage) FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
+                        (name,)).fetchall()
+    # 3.0.3 (U2-IOS-3): an integer rootpage for every base table, tiles too, which Android always required. SQLite
+    # only writes integers there, and it loads a text one by parsing it, so only a hand edit can tell them apart
+    if len(rows) != 1 or rows[0][0] != "table" or rows[0][2] != "integer" or not table_declares(rows[0][1], name):
         raise _MbtReject("base")
     # needs SQLite >= 3.26 for table_xinfo; generated columns need 3.31, older readers can't even parse them
     if any(h in (2, 3) for (h,) in conn.execute("SELECT hidden FROM pragma_table_xinfo(?)", (name,))):
@@ -2943,8 +3166,9 @@ def _mbt_blob_prefix(conn, column, rowid, characters, truncates):
     return _mbt_prefix(prefix, length, characters, truncates)
 
 
-def _mbt_admit(conn, probes, start_budget):
+def _mbt_admit(conn, probes, start_budget, data):
     types = {}
+    metadata_tables = []
     for rel in ("metadata", "tiles"):
         # 3.0.2 SEC-M1-SHADOW: NOCASE, the way SQLite resolves FROM tiles. A case variant row (TILES) is a second
         # object by that name and fails closed, the same as base tables
@@ -2964,6 +3188,19 @@ def _mbt_admit(conn, probes, start_budget):
             bases = [rel]
         for base in bases:
             _mbt_base_table(conn, base)
+        if rel == "metadata":
+            metadata_tables = bases
+    # 3.0.3 U2: every table the metadata reads below touch gets its rows and record sizes checked from the file's own
+    # page headers first, so no metadata name or value SQLite loads can be bigger than the probe allows
+    for base in metadata_tables:
+        root = conn.execute("SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE",
+                            (base,)).fetchall()
+        if len(root) != 1 or not isinstance(root[0][0], int):
+            raise _MbtReject("probe")
+        try:
+            probe_metadata_table(data, root[0][0])
+        except _ProbeReject:
+            raise _MbtReject("probe")
     # 3.0.2 (F3): the admission budget is for views only. A table's aggregate is one scan the file size bounds
     if "view" in types.values():
         start_budget()
@@ -3081,8 +3318,15 @@ def mbtiles_reference(statements, probes=None, pack=None):
     automatic indexes off. A fresh connection, so the schema is parsed under the cap like a real open"""
     with tempfile.TemporaryDirectory() as scratch:
         path = os.path.join(scratch, "pack.mbtiles")
+        data = mbtiles_build(statements) if pack is None else pack
         with open(path, "wb") as fh:
-            fh.write(mbtiles_build(statements) if pack is None else pack)
+            fh.write(data)
+        # 3.0.3 U2: the schema probe runs on the file before SQLite opens it (the schema load is the first thing
+        # SQLite does, before any check of ours could)
+        try:
+            probe_schema(data)
+        except _ProbeReject:
+            return {"accepted": False, "rejectedAt": "probe"}
         conn = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
         try:
             conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MBT_MAX_VALUE_BYTES)
@@ -3098,7 +3342,7 @@ def mbtiles_reference(statements, probes=None, pack=None):
             def start_budget():
                 conn.set_progress_handler(tick, 1000)
             try:
-                return _mbt_admit(conn, probes or {}, start_budget)
+                return _mbt_admit(conn, probes or {}, start_budget, data)
             except _MbtReject as r:
                 return {"accepted": False, "rejectedAt": str(r)}
             except sqlite3.OperationalError as e:
@@ -3500,6 +3744,62 @@ def mbtiles_relation_cases():
             "PRAGMA writable_schema=OFF"],
          None, False, "the base table row b is a skipped IF NOT EXISTS decoy, the live b is an expression view in a "
                       "row named zzz"),
+        # 3.0.3 U2: the record probe (recordProbe) through the real readers. 3.0.2 opened all four of these
+        ("metadataLargeRecordUnderProbeCap", [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png'), "
+            "('vendor', replace(hex(zeroblob(4000000)), '0', 'v'))",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows], probes, True,
+         "an 8,000,000 byte unknown value: under maxMetadataRecordBytes, never read, the pack opens"),
+        ("metadataRecordOverProbeCap", [
+            "CREATE TABLE metadata (name text, value text)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png'), "
+            "('vendor', replace(hex(zeroblob(4300000)), '0', 'v'))",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows], None, False,
+         "an 8,600,000 byte row in metadata: the metadata probe refuses it before any metadata read. A name or value "
+         "that size would be loaded whole by SQLite before Android's own length check (3.0.2 opened this one, "
+         "its value is never read)"),
+        ("metadataViewJoinBaseRows", [
+            "CREATE TABLE keys (id integer, name text)",
+            "CREATE TABLE vals (id integer, value text)",
+            "INSERT INTO keys VALUES (1, 'name'), (2, 'format')",
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 70) INSERT INTO vals SELECT i, "
+            "CASE i WHEN 1 THEN 'Sample' WHEN 2 THEN 'png' ELSE 'unused' END FROM n",
+            "CREATE VIEW metadata AS SELECT keys.name AS name, vals.value AS value FROM keys JOIN vals ON vals.id = "
+            "keys.id",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows], None, False,
+         "the view gives 2 rows but its base table vals holds 70: the probe walks each base table the metadata "
+         "relation reads, at most maxMetadataRows rows each (the join compares every one of them)"),
+        ("schemaTooManyObjects", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows] + ["CREATE TABLE t%d (a)" % i
+                                                       for i in range(MBT_PROBE_MAX_SCHEMA_ROWS - 1)],
+         None, False, "1,001 schema rows: the schema probe refuses the file before SQLite opens it"),
+        ("textTileData", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, CAST('abc' AS TEXT)), (1, 1, 0, X'0203')"],
+         probes, True, "a TEXT tile_data is no tile: both readers take its length only when it is a BLOB, so a huge "
+                       "TEXT tile is never loaded (iOS since 3.0.1, Android from 3.0.3). The aggregate never reads "
+                       "tile_data, so the pack opens"),
+        # 3.0.3 PROBE-RT-1: SQLite reads every row of the ANALYZE tables whole along with the schema, at the first
+        # statement. mbutil runs ANALYZE on every pack it writes, so those have to keep opening
+        ("analyzedPack", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "INSERT INTO tiles VALUES " + tiles_rows, "ANALYZE"], probes, True,
+         "ANALYZE'd the way mbutil leaves its packs: sqlite_stat1 (and sqlite_stat4 where SQLite has it) well under "
+         "the schema caps, the pack opens"),
+        ("statisticsOverProbeCap", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "INSERT INTO tiles VALUES " + tiles_rows, "ANALYZE",
+            "UPDATE sqlite_stat1 SET stat = replace(hex(zeroblob(530000)), '0', '1') WHERE idx = 'tile_index'"],
+         None, False, "a 1,060,000 byte sqlite_stat1 row: SQLite loads it whole at the first statement, before any "
+                      "check of ours, and Android before 12 has no length limit or heap cap for that. The schema probe "
+                      "refuses the file before SQLite opens it (the first 3.0.3 probe let it through)"),
     ]
     min_sqlite = {"tilesTableGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE,
                   "viewOverGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE}
@@ -3510,7 +3810,9 @@ def mbtiles_relation_cases():
                    "budgetUnindexedJoin": "budget", "tilesShadowedByCaseVariant": "relation",
                    "metadataShadowedByCaseVariant": "relation", "tableRowKeepsIfNotExists": "base",
                    "viewRowNameLieBehindIfNotExists": "schema", "baseRowNameLie": "schema",
-                   "baseRowNameLieBehindIfNotExists": "schema"}
+                   "baseRowNameLieBehindIfNotExists": "schema", "metadataRecordOverProbeCap": "probe",
+                   "metadataViewJoinBaseRows": "probe", "schemaTooManyObjects": "probe",
+                   "statisticsOverProbeCap": "probe"}
     out = []
     for cid, sql, pr, accepted, note in rows:
         # a row that writes sqlite_master itself ships its file too: Apple's sqlite has SQLITE_DBCONFIG_DEFENSIVE on,
@@ -3686,6 +3988,17 @@ def view_shape_cases():
         ("ifNotExists", "tiles", "CREATE VIEW IF NOT EXISTS tiles AS SELECT * FROM t", "shape",
          "3.0.2 SEC-M1-SHADOW (3.0.2 builds before it accepted this): SQLite drops IF NOT EXISTS when it stores a "
          "view, so only a hand edited schema has it, and the duplicate it skips is a decoy behind the live view"),
+        # 3.0.3 (3.0.2 widening review F3): pinned so no port starts taking them. IS / IS NOT match NULLs and aren't
+        # the equality the grammar allows, USING only goes with JOIN, and an ON needs at least one equality
+        ("onIs", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k IS a.k", "shape", "only = joins columns"),
+        ("onIsNot", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON b.k IS NOT a.k", "shape", ""),
+        ("commaJoinWhereIs", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE a.k IS b.k", "shape",
+         "the comma join's WHERE the same"),
+        ("commaJoinUsing", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b USING (k)", "shape",
+         "a comma join takes WHERE equalities, never USING"),
+        ("onEmptyParens", "tiles", "CREATE VIEW tiles AS SELECT * FROM a JOIN b ON ()", "shape",
+         "parens round nothing"),
+        ("commaJoinWhereEmptyParens", "tiles", "CREATE VIEW tiles AS SELECT * FROM a, b WHERE ()", "shape", ""),
     ]
     out = []
     for cid, rel, sql, tables, note in ok:
@@ -3788,12 +4101,424 @@ def mbtiles_connection():
             "row (name compared NOCASE, the way SQLite resolves it) of type table or view. A view's "
             "sqlite_master.sql must pass viewShape (reserved words, grammar, maxSchemaSqlBytes) and gives the base "
             "tables. Every table a read touches (tiles or metadata when a table, each view's base tables) must be "
-            "exactly one sqlite_master row (name compared NOCASE) of type table whose sql passes baseTableShape "
+            "exactly one sqlite_master row (name compared NOCASE) of type table with an integer rootpage (3.0.3: "
+            "SQLite only ever writes one, so anything else is a hand edit) whose sql passes baseTableShape "
             "(the words CREATE TABLE, so not CREATE VIRTUAL TABLE, then exactly that table's name) and, where "
             "SQLite >= 3.31, has no column with pragma_table_xinfo hidden 2 or 3 (generated). Any failure: not "
             "admitted, and a lazy open serves no tile. Because every row checked must declare its own name with no "
             "IF NOT EXISTS, it is the object SQLite loaded for that name (a second one would be a schema error), so "
             "no expression stored in the file is ever evaluated on a read"),
+    }
+
+
+def _probe_varint_bytes(v):
+    """SQLite's varint encoding (the 9 byte form for anything over 56 bits)"""
+    if v > (1 << 56) - 1:
+        out = [v & 0xFF]
+        v >>= 8
+        for _ in range(8):
+            out.append((v & 0x7F) | 0x80)
+            v >>= 7
+        return bytes(reversed(out))
+    out = [v & 0x7F]
+    v >>= 7
+    while v:
+        out.append((v & 0x7F) | 0x80)
+        v >>= 7
+    return bytes(reversed(out))
+
+
+def _craft_page(size, kind, cells, right=None, first_page=False, reserved=0, pointers=None, count=None):
+    """one hand made b-tree page. cells are raw cell bytes packed down from the end of the usable area; pointers,
+    when given, replace the real cell offsets (to aim them somewhere bad), count replaces the cell count"""
+    h = 100 if first_page else 0
+    page = bytearray(size)
+    usable = size - reserved
+    end = usable
+    offsets = []
+    for c in cells:
+        end -= len(c)
+        page[end:end + len(c)] = c
+        offsets.append(end)
+    offsets = pointers if pointers is not None else offsets
+    page[h] = kind
+    page[h + 3:h + 5] = (len(offsets) if count is None else count).to_bytes(2, "big")
+    page[h + 5:h + 7] = (end % 65536).to_bytes(2, "big")
+    at = h + 8
+    if kind == 0x05:
+        page[h + 8:h + 12] = right.to_bytes(4, "big")
+        at = h + 12
+    for i, off in enumerate(offsets):
+        page[at + 2 * i:at + 2 * i + 2] = off.to_bytes(2, "big")
+    return page
+
+
+def _craft_file(size, pages, reserved=0, header_size=None):
+    """a file the probe reads like SQLite would: the 100 byte header on page 1, then pages 1..n in order. Not a
+    database SQLite would open (the cells carry no records), only the probe ever reads these"""
+    out = bytearray()
+    for n in range(1, len(pages) + 1):
+        out += pages[n]
+    out[0:16] = b"SQLite format 3\x00"
+    out[16:18] = (1 if (header_size or size) == 65536 else (header_size or size)).to_bytes(2, "big")
+    out[18], out[19], out[20], out[21], out[22], out[23] = 1, 1, reserved, 64, 32, 32
+    out[28:32] = len(pages).to_bytes(4, "big")
+    out[44:48] = (4).to_bytes(4, "big")
+    out[56:60] = (1).to_bytes(4, "big")
+    return bytes(out)
+
+
+def _leaf_cell(record, rowid=1):
+    return _probe_varint_bytes(record) + _probe_varint_bytes(rowid)
+
+
+def _interior_cell(child, rowid=1):
+    return child.to_bytes(4, "big") + _probe_varint_bytes(rowid)
+
+
+def _schema_record(*columns):
+    """a real SQLite record: its header (own size, then one serial type per column) and the bodies. A column is None,
+    an int (the smallest of the 1, 2, 3, 4, 6 and 8 byte forms) or a str (UTF-8 text)"""
+    types, body = [], b""
+    for v in columns:
+        if v is None:
+            types.append(0)
+        elif isinstance(v, int):
+            t, n = next((t, n) for t, n in ((1, 1), (2, 2), (3, 3), (4, 4), (5, 6), (6, 8))
+                        if -(1 << (8 * n - 1)) <= v < 1 << (8 * n - 1))
+            types.append(t)
+            body += v.to_bytes(n, "big", signed=True)
+        else:
+            types.append(13 + 2 * len(v.encode("utf-8")))
+            body += v.encode("utf-8")
+    head = b"".join(_probe_varint_bytes(t) for t in types)
+    return _probe_varint_bytes(len(head) + 1) + head + body if len(head) < 127 else \
+        _probe_varint_bytes(len(head) + 2) + head + body
+
+
+def _schema_cell(record, rowid=1):
+    """a table leaf cell with its whole record on the page"""
+    return _probe_varint_bytes(len(record)) + _probe_varint_bytes(rowid) + record
+
+
+def _spilled_cell(record, rowid, size, first_overflow):
+    """a table leaf cell split the way SQLite splits it (no reserved bytes): (the cell with the local part and the
+    first overflow page, the overflow pages numbered on from first_overflow, each padded to size)"""
+    least = (size - 12) * 32 // 255 - 23
+    local = least + (len(record) - least) % (size - 4)
+    local = least if local > size - 35 else local
+    cell = (_probe_varint_bytes(len(record)) + _probe_varint_bytes(rowid) + record[:local]
+            + first_overflow.to_bytes(4, "big"))
+    rest, pages, n = record[local:], [], first_overflow
+    while rest:
+        chunk, rest = rest[:size - 4], rest[size - 4:]
+        n += 1
+        page = (n if rest else 0).to_bytes(4, "big") + chunk
+        pages.append(page + bytes(size - len(page)))
+    return cell, pages
+
+
+def mbtiles_record_probe():
+    """3.0.3 U2: the b-tree record probe on its own (no SQLite in the probe). sql[] rows are real packs (runners build
+    them and look the table's rootpage up with SQLite), packBase64 rows are hand made page images"""
+    S = 512
+    empty_schema = _craft_page(S, 0x0D, [], first_page=True)
+
+    def crafted(*pages, **kw):
+        return _craft_file(S, {i + 1: p for i, p in enumerate((empty_schema,) + pages)}, **kw)
+
+    leaf = lambda records, **kw: _craft_page(S, 0x0D, [_leaf_cell(r, i + 1) for i, r in enumerate(records)], **kw)
+    meta_rows = ["INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')"]
+    base = ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+        "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+        "INSERT INTO tiles VALUES (0, 0, 0, X'01')"]
+    chain = [_craft_page(S, 0x05, [], right=i + 3) for i in range(MBT_PROBE_MAX_DEPTH)] + [leaf([10])]
+    ok, schema_ok = {"ok": True}, {"ok": True}
+
+    def bad(reason):
+        return {"ok": False, "reason": reason}
+    cap = MBT_PROBE_MAX_METADATA_RECORD_BYTES
+    # 3.0.3 PROBE-RT-1: schema rows with real records, for the statistics step
+    big = MBT_PROBE_MAX_SCHEMA_BYTES
+    stat4_sql = "CREATE TABLE sqlite_stat4(tbl,idx,neq,nlt,ndlt,sample)"
+    index = "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)"
+
+    def schema(*records, cells=None):
+        return _craft_page(S, 0x0D, cells or [_schema_cell(r, i + 1) for i, r in enumerate(records)], first_page=True)
+
+    def stat(name="sqlite_stat1", root=2, sql=None, kind="table"):
+        return _schema_record(kind, name, name, root, sql or "CREATE TABLE %s(tbl,idx,stat)" % name)
+
+    def pages(*ps):
+        return _craft_file(S, {i + 1: p for i, p in enumerate(ps)})
+    spilled_stat, spilled_pages = _spilled_cell(_schema_record(
+        "table", "x" * 40, "x" * 40, 2, "CREATE TABLE " + " " * 500 + "sqlite_stat1(tbl,idx,stat)"), 1, S, 3)
+    long_table = _schema_record("table", "t", "t", 2, "CREATE TABLE t(%s)" % ", ".join("c%d" % i for i in range(150)))
+    utf16 = bytearray(crafted(leaf([10])))
+    utf16[56:60] = (2).to_bytes(4, "big")
+    rows = [
+        # real packs, built by SQLite
+        ("realPack", base, None, schema_ok, [("metadata", ok)], "a plain pack: one leaf each"),
+        ("smallPagesManyLevels", ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)"]
+         + ["CREATE TABLE extra_%d (a)" % i for i in range(40)]
+         + ["WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 64) INSERT INTO metadata "
+            "SELECT 'key_' || i, replace(hex(zeroblob(300)), '0', 'v') FROM n"],
+         None, schema_ok, [("metadata", ok)],
+         "512 byte pages: 64 metadata rows that spill to overflow pages under an interior root, and 41 schema "
+         "rows that make page 1 an interior page. Overflow pages are never read"),
+        ("largestPageSize", ["PRAGMA page_size=65536"] + base, None, schema_ok, [("metadata", ok)],
+         "65536 byte pages: the header stores 1"),
+        ("autoVacuum", ["PRAGMA auto_vacuum=FULL"] + base, None, schema_ok, [("metadata", ok)],
+         "pointer map pages sit between the tables, the walk never reaches them"),
+        ("metadata65Rows", ["CREATE TABLE metadata (name text, value text)",
+                            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 65) INSERT INTO "
+                            "metadata SELECT 'key_' || i, 'v' FROM n"],
+         None, schema_ok, [("metadata", bad("rows"))], "65 rows, one over maxMetadataRows"),
+        ("schemaTooManyObjects", base + ["CREATE TABLE t%d (a)" % i for i in range(MBT_PROBE_MAX_SCHEMA_ROWS - 1)],
+         None, bad("rows"), [], "1,001 schema rows, one over maxSchemaRows"),
+        ("metadataRecordUnderCap", ["CREATE TABLE metadata (name text, value text)",
+                                    "INSERT INTO metadata VALUES ('vendor', replace(hex(zeroblob(4000000)), '0', "
+                                    "'v'))"],
+         None, schema_ok, [("metadata", ok)], "an 8,000,000 byte value: under the cap, still fine"),
+        ("metadataRecordOverCap", ["CREATE TABLE metadata (name text, value text)",
+                                   "INSERT INTO metadata VALUES ('vendor', replace(hex(zeroblob(4300000)), '0', "
+                                   "'v'))"],
+         None, schema_ok, [("metadata", bad("recordBytes"))], "an 8,600,000 byte value: one row over the cap"),
+        # hand made pages
+        ("badMagic", None, b"SQLite format 2\x00" + crafted(leaf([10]))[16:], bad("header"),
+         [(2, bad("header"))], "not an SQLite 3 file"),
+        ("truncatedHeader", None, crafted(leaf([10]))[:60], bad("header"), [], "shorter than the 100 byte header"),
+        ("pageSizeNotPowerOfTwo", None, _craft_file(S, {1: empty_schema, 2: leaf([10])}, header_size=1000),
+         bad("header"), [], "1000 isn't a power of two"),
+        ("pageSizeTooSmall", None, _craft_file(S, {1: empty_schema, 2: leaf([10])}, header_size=256),
+         bad("header"), [], "256 is under 512"),
+        ("usableTooSmall", None, crafted(leaf([10], reserved=40), reserved=40), bad("header"), [],
+         "512 - 40 reserved = 472 usable bytes, SQLite needs 480"),
+        ("reservedBytes", None, _craft_file(S, {1: _craft_page(S, 0x0D, [], first_page=True, reserved=32),
+                                               2: leaf([10, 20], reserved=32)}, reserved=32),
+         schema_ok, [(2, ok)], "32 reserved bytes per page: cells sit below the usable size"),
+        ("emptyMetadata", None, crafted(leaf([])), schema_ok, [(2, ok)], "no rows at all is fine here"),
+        ("indexPageAsRoot", None, crafted(_craft_page(S, 0x0A, [b"\x03\x01\x01"])), schema_ok,
+         [(2, bad("pageType"))], "an index leaf where a table b-tree has to be (a WITHOUT ROWID table)"),
+        ("zeroPageType", None, crafted(bytearray(S)), schema_ok, [(2, bad("pageType"))], "a page of zeros"),
+        ("rootPastTheEnd", None, crafted(leaf([10])), schema_ok, [(3, bad("structure")), (0, bad("structure"))],
+         "page 3 of a 2 page file, and page 0"),
+        ("childCycle", None, crafted(_craft_page(S, 0x05, [_interior_cell(3)], right=2), leaf([10])),
+         schema_ok, [(2, bad("structure"))], "an interior page that lists itself as its right child"),
+        ("childPastTheEnd", None, crafted(_craft_page(S, 0x05, [_interior_cell(3)], right=9), leaf([10])),
+         schema_ok, [(2, bad("structure"))], "a right child past the end of the file"),
+        ("tooDeep", None, crafted(*chain), schema_ok, [(2, bad("structure")), (3, ok)],
+         "a chain of interior pages: from page 2 the leaf is at depth %d (maxDepth levels are 0 to %d), from page 3 "
+         "at depth %d" % (MBT_PROBE_MAX_DEPTH, MBT_PROBE_MAX_DEPTH - 1, MBT_PROBE_MAX_DEPTH - 1)),
+        ("pointerArrayPastPage", None, crafted(_craft_page(S, 0x0D, [], count=300)), schema_ok,
+         [(2, bad("structure"))], "300 cell pointers don't fit in a 512 byte page"),
+        ("interiorPointerArrayPastPage", None, crafted(_craft_page(S, 0x05, [], right=3, count=300), leaf([10])),
+         schema_ok, [(2, bad("structure"))], "the same on an interior page"),
+        ("cellPointerPastUsable", None, crafted(_craft_page(S, 0x0D, [_leaf_cell(10)], pointers=[S])),
+         schema_ok, [(2, bad("structure"))], "a cell pointer at the end of the page"),
+        ("cellPointerIntoHeader", None, crafted(_craft_page(S, 0x0D, [_leaf_cell(10)], pointers=[4])),
+         schema_ok, [(2, bad("structure"))], "a cell pointer into the page header"),
+        ("varintRunsOffPage", None, crafted(_craft_page(S, 0x0D, [b"\xff\xff"])), schema_ok,
+         [(2, bad("structure"))], "a record size varint that never ends inside the usable area"),
+        ("recordAtCap", None, crafted(leaf([cap])), schema_ok, [(2, ok)], "exactly maxMetadataRecordBytes"),
+        ("recordOverCap", None, crafted(leaf([cap + 1])), schema_ok, [(2, bad("recordBytes"))], "one byte over"),
+        ("nineByteVarint", None, crafted(_craft_page(S, 0x0D, [b"\xff" * 9 + b"\x01"])), schema_ok,
+         [(2, bad("recordBytes"))], "the 9 byte form, 2^64 - 1 unsigned (a signed reader sees -1)"),
+        ("rowsAcrossLeaves", None, crafted(_craft_page(S, 0x05, [_interior_cell(3, 40)], right=4),
+                                           leaf([10] * 40), leaf([10] * 25)),
+         schema_ok, [(2, bad("rows"))], "40 + 25 rows under one interior page: the 65th row is one too many"),
+        ("firstProblemWins", None, crafted(leaf([10, 10, 10, cap + 1] + [10] * 66)), schema_ok,
+         [(2, bad("recordBytes"))], "70 rows with the 4th over the cap: the 4th row is reached first"),
+        ("schemaRecordOverCap", None, _craft_file(S, {1: _craft_page(S, 0x0D, [_leaf_cell(MBT_PROBE_MAX_SCHEMA_BYTES
+                                                                                         + 1)], first_page=True)}),
+         bad("recordBytes"), [], "one schema record over maxSchemaBytes"),
+        ("schemaTotalOverCap", None, _craft_file(S, {1: _craft_page(S, 0x0D, [_leaf_cell(400000, i) for i in (1, 2, 3)],
+                                                                    first_page=True)}),
+         bad("totalBytes"), [], "three 400,000 byte schema records: 1,200,000 in all"),
+        ("schemaInteriorFirstPage", None, _craft_file(S, {1: _craft_page(S, 0x05, [_interior_cell(2, 1)], right=3,
+                                                                         first_page=True),
+                                                         2: _craft_page(S, 0x0D, [_schema_cell(bytes(100))]),
+                                                         3: _craft_page(S, 0x0D, [_schema_cell(bytes(100), i)
+                                                                                  for i in (2, 3)])}),
+         schema_ok, [], "page 1 as an interior page: its header starts at byte 100, cell offsets from the page "
+                        "start. The 100 byte records are there in full (zeros), the statistics step reads them"),
+        # 3.0.3 PROBE-RT-1: the ANALYZE tables SQLite reads whole with the schema
+        ("analyzedPack", base + [index] + ["ANALYZE"], None, schema_ok, [("metadata", ok)],
+         "ANALYZE'd like mbutil leaves its packs: sqlite_stat1, and sqlite_stat4 where SQLite has it, a few rows"),
+        ("analyzedStatisticsOverCap", base + [index] + [
+            "ANALYZE", "UPDATE sqlite_stat1 SET stat = replace(hex(zeroblob(530000)), '0', '1') WHERE idx = 'tile_index'"],
+         None, bad("recordBytes"), [], "a 1,060,000 byte sqlite_stat1 row, over maxSchemaBytes"),
+        ("analyzedStatisticsTooManyRows", base + [
+            "ANALYZE", "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000) INSERT INTO "
+            "sqlite_stat1 SELECT 'tiles', 'i' || i, '1' FROM n"],
+         None, bad("rows"), [], "ANALYZE's own rows plus 1,000 more: over maxSchemaRows"),
+        ("statisticsTable", None, pages(schema(stat()), leaf([30, 30])), schema_ok, [],
+         "a statistics table the way SQLite writes it, two small rows"),
+        ("statisticsRecordOverCap", None, pages(schema(stat()), leaf([big + 1])), bad("recordBytes"), [],
+         "one statistics row over maxSchemaBytes"),
+        ("statisticsShareTheCaps", None, pages(schema(stat(), stat("sqlite_stat4", 3, stat4_sql)), leaf([600000]),
+                                               leaf([600000])),
+         bad("totalBytes"), [], "sqlite_stat1 and sqlite_stat4, 600,000 bytes each: walked as one, 1,200,000 in all"),
+        ("statisticsSameRootTwice", None, pages(schema(stat(), stat("sqlite_stat4", 2, stat4_sql)), leaf([30])),
+         bad("structure"), [], "two statistics rows on one b-tree: the second visit of page 2 in the one walk"),
+        ("statisticsRootPastTheEnd", None, pages(schema(stat(root=9)), leaf([30])), bad("structure"), [],
+         "a statistics rootpage past the end of the file"),
+        ("statisticsView", None, pages(schema(stat(root=0, kind="view", sql="CREATE VIEW sqlite_stat1(tbl,idx,stat) AS "
+                                                "SELECT 'tiles', NULL, hex(zeroblob(400000000))"))),
+         bad("statistics"), [], "a view by that name: SQLite without the ordinary table check would run it"),
+        ("statisticsRootNotInteger", None, pages(schema(_schema_record("table", "sqlite_stat1", "sqlite_stat1", "2",
+                                                                     "CREATE TABLE sqlite_stat1(tbl,idx,stat)")),
+                                                 leaf([30])),
+         bad("statistics"), [], "rootpage stored as text"),
+        ("statisticsLowercaseCreate", None, pages(schema(stat(sql="create table sqlite_stat1(tbl,idx,stat)")),
+                                                  leaf([30])),
+         bad("statistics"), [], "SQLite writes CREATE TABLE in capitals, anything else is a hand edit"),
+        ("statisticsFourColumns", None, pages(schema(_schema_record("table", "sqlite_stat1", "sqlite_stat1", 2)),
+                                              leaf([30])),
+         bad("statistics"), [], "a schema record with no sql column"),
+        ("statisticsNamedOnlyInSql", None, pages(schema(_schema_record("table", "harmless", "harmless", 2,
+                                                                     'CREATE TABLE "SQLITE_STAT1"(tbl,idx,stat)')),
+                                                 leaf([big + 1])),
+         bad("recordBytes"), [], "the name column says harmless but older SQLite goes by the sql, so the mark is "
+                                 "looked for anywhere in the record, ASCII case folded"),
+        ("statisticsMarkOnOverflowPage", None, pages(schema(cells=[spilled_stat]), leaf([big + 1]), *spilled_pages),
+         bad("recordBytes"), [], "512 byte pages: the schema record spills, and its sql (with the mark) is all on "
+                                 "the overflow page"),
+        ("schemaOverflowPastTheEnd", None, pages(schema(cells=[_spilled_cell(long_table, 1, S, 9)[0]]), leaf([30])),
+         bad("structure"), [], "a schema record whose overflow page isn't in the file"),
+        ("schemaRecordPastUsable", None, pages(schema(cells=[_leaf_cell(200)])), bad("structure"), [],
+         "a schema cell claiming 200 bytes it doesn't have: the local part runs past the usable size"),
+        ("textEncodingUtf16", None, bytes(utf16), bad("header"), [(2, bad("header"))],
+         "UTF-16le text (header 56 = 2): the statistics step reads schema text as UTF-8, admission refuses it anyway"),
+    ]
+    out = []
+    for cid, sql, pack, schema_expect, tables, note in rows:
+        data = mbtiles_build(sql) if pack is None else bytes(pack)
+
+        def run(fn):
+            try:
+                fn()
+                return {"ok": True}
+            except _ProbeReject as r:
+                return {"ok": False, "reason": str(r)}
+        got = run(lambda: probe_schema(data))
+        assert got == schema_expect, (cid, got)
+        walks = []
+        for table, want in tables:
+            if isinstance(table, str):
+                with tempfile.TemporaryDirectory() as scratch:
+                    path = os.path.join(scratch, "p.mbtiles")
+                    with open(path, "wb") as fh:
+                        fh.write(data)
+                    conn = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+                    try:
+                        root = conn.execute("SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? "
+                                            "COLLATE NOCASE", (table,)).fetchone()[0]
+                    finally:
+                        conn.close()
+                got = run(lambda: probe_metadata_table(data, root))
+                walks.append({"table": table, "expect": got})
+            else:
+                got = run(lambda: probe_metadata_table(data, table))
+                walks.append({"root": table, "expect": got})
+            assert got == want, (cid, table, got)
+        row = {"id": cid, "schema": schema_expect, "metadataTables": walks, "note": note}
+        if pack is None:
+            row["sql"] = sql
+        else:
+            row["packBase64"] = base64.b64encode(bytes(pack)).decode("ascii")
+        out.append(row)
+    assert len({r["id"] for r in out}) == len(out)
+    reasons = {w["expect"].get("reason") for r in out for w in r["metadataTables"]} | {r["schema"].get("reason")
+                                                                                    for r in out}
+    assert reasons == {None, "header", "structure", "pageType", "rows", "recordBytes", "totalBytes",
+                       "statistics"}, reasons
+    return {
+        "maxSchemaRows": MBT_PROBE_MAX_SCHEMA_ROWS,
+        "maxSchemaBytes": MBT_PROBE_MAX_SCHEMA_BYTES,
+        "maxMetadataRows": MBT_PROBE_MAX_METADATA_ROWS,
+        "maxMetadataRecordBytes": MBT_PROBE_MAX_METADATA_RECORD_BYTES,
+        "maxDepth": MBT_PROBE_MAX_DEPTH,
+        "maxPages": MBT_PROBE_MAX_PAGES,
+        "why": (
+            "3.0.3 U2 (SEC-M1-ANDROID-OLDSQLITE-OOM). SQLite loads the whole of a TEXT value into memory before "
+            "length() or substr(CAST(... AS BLOB)) sees it, and only SQLite 3.45+ checks SQLITE_LIMIT_LENGTH before "
+            "that load. Android below 12 (SQLite 3.18-3.28) has neither a length limit nor a heap cap, iOS 16-18 "
+            "ship SQLite older than 3.45, and the schema load at the first statement reads every schema row before "
+            "any check of ours. A cell's first varint is its whole record size, so nothing SQLite reads from that "
+            "row can be bigger. Reading only page headers, cell pointers and that varint bounds what SQLite can be "
+            "made to load from a schema or metadata table row, on every platform and SQLite version, without "
+            "reading a metadata value. The schema load also reads every row of the ANALYZE tables (sqlite_stat1, "
+            "sqlite_stat4) whole, which neither walk reached (PROBE-RT-1, unbounded below Android 12), so "
+            "the schema probe reads the schema's own records (already capped at maxSchemaBytes) to find them and "
+            "holds them to the schema caps too (statistics). Index b-trees aren't walked, and an index seek still "
+            "loads each key it compares whole (contract s15.2 rule 7, a documented residual)"),
+        "header": (
+            "the file is at least 100 bytes and starts with 'SQLite format 3' and a NUL. Page size = big endian "
+            "16 bit at offset 16, 1 meaning 65536, a power of two from 512 to 65536. Usable size U = page size - "
+            "the byte at offset 20 (reserved), at least 480. Text encoding = big endian 32 bit at offset 56, its low "
+            "two bits (SQLite's own reading, 0 meaning UTF-8) must be 0 or 1, UTF-8: the statistics step reads "
+            "schema text as UTF-8, and admission refuses any other encoding anyway. Page count = file size / page "
+            "size, rounded down. Any failure: reason header. Only the main file is read: packs are opened read only "
+            "and nothing writes a -wal next to them, so it is what SQLite reads"),
+        "walk": (
+            "walk(root, maxRows, maxRecord, maxTotal?): pages in b-tree order from root (depth 0), as a stack: "
+            "each interior page's children are its cells' left child pointers in cell pointer order, then its right "
+            "most pointer, and they're visited in that order before the next sibling (pre-order). Visiting page p "
+            "at depth d: structure unless 1 <= p <= page count, p not visited before in this walk, d < maxDepth and "
+            "fewer than maxPages pages visited so far. The page's b-tree header is at byte 100 on page 1, else at 0 "
+            "(cell offsets always count from the start of the page). Byte 0 of it is the type: 0x05 interior table, "
+            "0x0D leaf table, anything else pageType. n = big endian 16 bit at header + 3. Interior: the pointer "
+            "array starts at header + 12, header + 12 + 2n > U is structure, each cell offset o needs header + 12 + "
+            "2n <= o and o + 4 <= U (else structure) and its first 4 bytes are the left child, the right most "
+            "pointer is the 4 bytes at header + 8. Leaf: the pointer array starts at header + 8, header + 8 + 2n > U "
+            "is structure, each cell offset o needs header + 8 + 2n <= o < U (else structure), and the varint at o "
+            "(SQLite's: up to 8 bytes of 7 bits with the high bit meaning more, a 9th byte giving all 8, unsigned "
+            "64 bit) has to end before U (else structure). That varint is the row's record size. Per row, in "
+            "order: the row count so far > maxRows is rows, the record size > maxRecord is recordBytes, the running "
+            "total > maxTotal (when given) is totalBytes. The first problem in walk order is the reason. Nothing "
+            "else is read: no overflow page, no record header, no value. walk([roots], ...) walks several b-trees as "
+            "one: each root at depth 0, in list order, sharing the pages visited (a page reached twice is "
+            "structure), the row count and the running total"),
+        "schemaProbe": (
+            "walk(1, maxSchemaRows, maxSchemaBytes, maxSchemaBytes) on the file, then statistics, before SQLite "
+            "opens it (the schema load is SQLite's first act on the first statement, and it reads the ANALYZE "
+            "tables with it). Every MBTiles open: admission, the lazy prevalidated open, import, the library "
+            "rebuild and migration name reads"),
+        "statistics": (
+            "3.0.3 PROBE-RT-1, after the schema walk passed. Every schema leaf cell, in walk order, is read whole: "
+            "after its record size and rowid varints (the rowid's must end before U, else structure) the local part "
+            "is all of it when size <= U - 35, else M = (U - 12) * 32 / 255 - 23 (integer division) and K = M + "
+            "(size - M) % (U - 4), K when K <= U - 35 else M; the local part, plus a 4 byte first overflow page "
+            "number when it is short of size, must end at or before U (else structure); then each overflow page, "
+            "which must be 1 to page count (else structure), gives the U - 4 bytes after its own 4 byte next pointer "
+            "(the last one only what is left). A record that contains 'sqlite_stat' with ASCII A-Z folded to a-z, "
+            "anywhere in it (name, tbl_name or sql: older SQLite takes the name from the sql), must be what SQLite "
+            "writes for its own statistics tables, else statistics: a header size varint h with its own length <= h "
+            "<= the record size, serial type varints (each ending at or before h) filling the header exactly, exactly "
+            "five of them, no 10 or 11, bodies (0, 8, 9: 0 bytes; 1-4: that many; 5: 6; 6, 7: 8; even n >= 12: "
+            "(n - 12) / 2; odd n >= 13: (n - 13) / 2) filling the record exactly, column 3 (rootpage) of type 1-6 "
+            "(big endian two's complement), 8 (0) or 9 (1), and column 4 (sql) text (odd type >= 13) whose bytes "
+            "start with 'CREATE TABLE ' exactly. Then walk([those rootpages], maxSchemaRows, maxSchemaBytes, "
+            "maxSchemaBytes), when there are any. SQLite writes exactly that for sqlite_stat1 and sqlite_stat4, a "
+            "view or virtual table by that name would run SQL from the file when SQLite reads it, and an analyzed "
+            "real pack holds a few rows and KB there (mbutil runs ANALYZE on everything it writes)"),
+        "metadataProbe": (
+            "walk(rootpage, maxMetadataRows, maxMetadataRecordBytes) for each table the metadata relation reads "
+            "(metadata itself when it is a table, else its view's base tables), rootpage from the sqlite_master row "
+            "the relation and base table checks already found (exactly one, type table; a rootpage that isn't an "
+            "integer fails closed). Runs after those checks and before the admission budget starts and anything "
+            "reads metadata; the lazy prevalidated open runs it too, before the bake extension reader's first "
+            "read. The tiles relation is not walked (millions of rows): tile_data is length-checked as a BLOB "
+            "before it is read (a TEXT tile_data is no tile) and zoom, column and row are type-checked by the "
+            "aggregate"),
+        "casesRule": (
+            "sql[] rows: build the pack with the platform SQLite (as relationCases), look each metadataTables[].table "
+            "up with SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE, then run "
+            "the probe on the file. packBase64 rows: hand made page images only the probe reads (no SQLite), "
+            "metadataTables[].root is the page. schema is the schema probe's result (statistics included), each "
+            "metadataTables[] entry the metadata probe's on that root. Compare ok and reason exactly"),
+        "cases": out,
     }
 
 
@@ -4024,7 +4749,11 @@ def mbtiles_admission():
         "admission budget (3.0.1 gave them one): their aggregate is a single scan the file size bounds, and it "
         "now runs off the main thread. After admission, statements against a relation that is a VIEW (tile "
         "reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing "
-        "extension. Tables get no per-read budget")
+        "extension. Tables get no per-read budget. 3.0.3 U2: recordProbe's schema probe runs on the file before "
+        "SQLite opens it, and its metadata probe on each table the metadata relation reads right after the "
+        "relation and base table checks, before the budget starts and before any metadata read. Either refusing "
+        "means not admitted (a lazy open serves nothing). Every tile length read is CASE WHEN typeof(tile_data)="
+        "'blob' THEN length(tile_data) END, so a TEXT tile_data is no tile and never loaded")
     adm["connection"] = mbtiles_connection()
     adm["viewShape"] = {
         "maxSqlBytes": MBT_MAX_SCHEMA_SQL_BYTES,
@@ -4068,6 +4797,7 @@ def mbtiles_admission():
     adm["variantRule"] = ("every cases[] and extensionCases[] row gives the same verdict and values after its own "
                           "setup plus metadataView or bothViews; every tileZoomCases[] row after tilesView or "
                           "bothViews. The generator proves it against its reference admission")
+    adm["recordProbe"] = mbtiles_record_probe()
     adm["relationCases"] = mbtiles_relation_cases()
     adm["relationCasesRule"] = ("run sql[] in order on an empty database file with an ordinary connection (a row "
                                 "with packBase64 is that exact file instead: write the decoded bytes and skip sql[], "
@@ -4110,6 +4840,8 @@ def import_doc():
             "reasonText": "map_import_georef_rejected {reason} gets a georefRejectReasons code; the contract has "
                           "no per-reason copy yet",
             "entryStates": "s8.2 derived state: unavailable (file missing or size/mtime mismatch) overrides; "
+                           "3.0.3 (s15.1): then an mbtiles entry with packRefused (this process's open of these "
+                           "bytes was refused) -> openFailed (durable, row tap = a fresh guarded open, Delete); "
                            "mbtiles -> offlineTiles or derived; manual -> calibrated; embedded -> geoPDF; "
                            "embeddedIssue -> rejected; else needsCalibration. effective georef = manual ?? embedded. "
                            "Subtitle: unavailable, else a draft's map_state_draft, else the state's. rowTap: "
