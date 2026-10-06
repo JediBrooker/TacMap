@@ -601,6 +601,58 @@ class MbtilesOpenGuardInstrumentedTest {
     }
 
     @Test
+    fun aRetryThatsAdmittedAfterTheyPickedSomethingElseStillClearsTheRefusal() {
+        // s15.1 rule 1: an admitted open of the key drops the refusal, shown or not. only the
+        // current one did, so a superseded retry left the row on couldn't be opened for good,
+        // even once the next tap put the pack up from the admitted cache
+        val a = packEntry()
+        assertTrue(library.write(LibraryState(
+            active = ActiveRef.online(BasemapStyle.OSM_TOPO.name), preferredOnlineStyle = BasemapStyle.OSM_TOPO.name, entries = listOf(a),
+        )))
+        relaunch()
+        val refuse = java.util.concurrent.atomic.AtomicBoolean(true)
+        val gate = CountDownLatch(1).also { gates += it }
+        val opened = Collections.synchronizedList(mutableListOf<OfflineTileMapSourceAndroid>())
+        admitMbtilesPack = { path, name ->
+            if (refuse.get()) null
+            else {
+                gate.await(5, TimeUnit.SECONDS)
+                OfflineTileMapSourceAndroid.open(path, name)?.also { opened += it }
+            }
+        }
+        val vm = viewModel()
+        var ok = false
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        waitUntil(what = "refused") { vm.packOpenAlerts.value.isNotEmpty() }
+        onMain { vm.dismissPackOpenAlert() }
+        assertTrue(vm.packRefused(a))
+
+        // the row's retry, and while it's being checked they pick an online style instead
+        refuse.set(false)
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        onMain { ok = vm.selectBaseMap(BasemapStyle.OSM_STREET) }
+        assertTrue(ok)
+        gate.countDown()
+        waitUntil(what = "superseded admission closed") { opened.singleOrNull()?.isClosedForTesting() == true }
+        onMain { }
+        assertEquals(BasemapStyle.OSM_STREET, (vm.mapSource.value as OnlineRasterMapSourceAndroid).style)
+        assertNull(activeId())
+        assertFalse("admitted and still refused", vm.packRefused(a))
+        val row = LibraryEntryRules.present(LibraryEntryRules.facts(a), vm.fileStatus(a), null, vm.packRefused(a))
+        assertEquals(EntryState.OFFLINE_TILES, row.state)
+
+        // next tap: up from the admitted cache, no second admission, nothing refused
+        onMain { ok = vm.activateImportedMap(a.id) }
+        assertTrue(ok)
+        waitUntil(what = "picked pack up") { vm.shownEntryId() == a.id && activeId() == a.id }
+        assertEquals(1, opened.size)
+        assertFalse(vm.packRefused(a))
+        assertEquals(emptyList<PackOpenAlert>(), vm.packOpenAlerts.value)
+    }
+
+    @Test
     fun theRestoreNoticeWaitsBehindALaunchAlertInsteadOfReplacingIt() {
         val pack = packEntry()
         seed(pack)

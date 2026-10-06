@@ -730,7 +730,12 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                     val size = file.length()
                     val modified = file.lastModified()
                     opened = admitMbtilesPack(file.path, entry.displayName)
-                    opened?.let { com.tacmap.calibration.AdmittedMbtiles.put(id, entry.contentKey, size, modified, it.metadata) }
+                    opened?.let {
+                        com.tacmap.calibration.AdmittedMbtiles.put(id, entry.contentKey, size, modified, it.metadata)
+                        // admitted drops the refusal even if nobody wants it anymore (s15.1 rule 1),
+                        // the next tap puts it up from the cache and that never looks at refusals
+                        com.tacmap.calibration.RefusedMbtiles.admitted(entry)
+                    }
                 }
             } catch (c: kotlinx.coroutines.CancellationException) {
                 opened?.close()
@@ -776,7 +781,6 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             else -> {
-                com.tacmap.calibration.RefusedMbtiles.admitted(entry)
                 offlineSources.put(id, pack)?.let { old -> closeSupersededOfflineSources(listOf(old), listOf(_mapSource.value, pack)) }
                 putUp(id, pack, how)
             }
