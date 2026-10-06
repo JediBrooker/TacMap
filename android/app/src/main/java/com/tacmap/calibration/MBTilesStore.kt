@@ -4,7 +4,6 @@ import com.tacmap.localization.L10n
 
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.os.Build
 import android.os.CancellationSignal
 import androidx.annotation.VisibleForTesting
 import java.io.Closeable
@@ -27,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class MBTilesStore private constructor(
     private val db: SQLiteDatabase,
     admissionBudgetMs: Long,
+    /** metadata an earlier admission of these bytes gave, so the aggregate's skipped (s14.2) */
+    prevalidated: Metadata? = null,
 ) : Closeable {
 
     data class Metadata(
@@ -37,32 +38,58 @@ class MBTilesStore private constructor(
         val bounds: Wgs84Bounds? = null
     )
 
-    // one deadline for every admission statement, a view's row count isn't bounded by the file
-    private val admissionDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(admissionBudgetMs)
+    // one deadline for every admission statement once a relation turns out to be a view, a view's
+    // join isn't bounded by the file. two tables get none (s14.2), null = no budget
+    private var admissionDeadlineNanos: Long? = null
     private val metadataIsView: Boolean
     private val tilesIsView: Boolean
 
     init {
-        // stops a hostile view calling non-innocuous functions. API 31+ only, older SQLite
-        // doesn't know the pragma and ignores it
-        if (Build.VERSION.SDK_INT >= 31) {
-            runCatching { db.rawQuery("PRAGMA trusted_schema=OFF", null).use { it.moveToFirst() } }
-        }
+        // s14.1: nothing names tiles or metadata before the connection's hardened and the schema's checked
+        val version = harden(db)
         // MBTiles 1.3 lets either one be a view (node-mbtiles/TileMill/MapTiler dedup packs)
         val types = listOf("metadata", "tiles").map { relation ->
-            admit("SELECT type FROM sqlite_master WHERE name=?", arrayOf(relation)) { c ->
+            val (type, sql) = query("SELECT type, sql FROM sqlite_master WHERE name=?", arrayOf(relation), null) { c ->
                 require(c.moveToFirst())
-                val type = c.getString(0)
-                require(type in RELATION_TYPES && !c.moveToNext())
-                type
+                val found = c.getString(0) to (if (c.isNull(1)) null else c.getString(1))
+                require(found.first in RELATION_TYPES && !c.moveToNext())
+                found
             }
+            // a view only as plain column refs over ordinary tables, so no SQL from the file runs on a read
+            val bases = if (type == "view") {
+                when (val shape = MBTilesViewShape.check(sql, relation)) {
+                    is MBTilesViewShape.Result.Accepted -> shape.tables
+                    is MBTilesViewShape.Result.Refused -> throw IllegalArgumentException("MBTiles view refused: ${shape.reason}")
+                }
+            } else listOf(relation)
+            bases.forEach { requireBaseTable(it, version) }
+            type
         }
         metadataIsView = types[0] == "view"
         tilesIsView = types[1] == "view"
+        if (prevalidated == null && (metadataIsView || tilesIsView)) {
+            admissionDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(admissionBudgetMs)
+        }
+    }
+
+    /** exactly one ordinary table by that name (any case): not a view, not virtual, no generated column */
+    private fun requireBaseTable(name: String, version: SqliteVersion) {
+        query("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", arrayOf(name), null) { c ->
+            require(c.moveToFirst())
+            val type = c.getString(0)
+            val sql = if (c.isNull(1)) null else c.getString(1)
+            require(!c.moveToNext() && type == "table" && MBTilesViewShape.isOrdinaryTableSql(sql))
+        }
+        // older sqlite can't have generated columns, it wouldn't even parse the schema
+        if (version >= GENERATED_COLUMNS_MIN_SQLITE) {
+            query("SELECT hidden FROM pragma_table_xinfo(?)", arrayOf(name), null) { c ->
+                while (c.moveToNext()) require(c.getInt(0) != 2 && c.getInt(0) != 3)
+            }
+        }
     }
 
     private val rows = linkedMapOf<String, String>()
-    val metadata: Metadata = loadMetadata()
+    val metadata: Metadata = prevalidated ?: loadMetadata()
     private val closed = AtomicBoolean(false)
 
     /** Only the two provenance fields consumed by our bake reader are read.
@@ -163,6 +190,8 @@ class MBTilesStore private constructor(
         }
         for (descriptor in descriptors) {
             require(descriptor.nameType == "text")
+            // no sqlite3_limit on android, so the value cap is checked here (s14.1)
+            require(requireNotNull(descriptor.nameLength) <= MAX_VALUE_BYTES)
             val key = decodeBoundedPrefix(
                 requireNotNull(descriptor.nameLength), requireNotNull(descriptor.namePrefix),
                 MAX_METADATA_KEY_CHARACTERS, true,
@@ -174,7 +203,7 @@ class MBTilesStore private constructor(
     }
 
     /** exactly one TEXT row for [key] or null, only the bounded prefix crosses into Java */
-    private fun readValueByKey(key: String, characters: Int, truncates: Boolean, budgetMs: Long): String? {
+    private fun readValueByKey(key: String, characters: Int, truncates: Boolean, budgetMs: Long?): String? {
         val maxBytes = characters * UTF8_BYTES_PER_CHARACTER
         return query(
             "SELECT typeof(value), length(CAST(value AS BLOB)), substr(CAST(value AS BLOB), 1, ?) " +
@@ -184,7 +213,8 @@ class MBTilesStore private constructor(
             if (!c.moveToFirst() || c.getString(0) != "text" || c.isNull(1) || c.isNull(2)) return@query null
             val length = c.getLong(1)
             val prefix = c.getBlob(2)
-            if (c.moveToNext()) return@query null
+            // over the value cap is a fail, like SQLITE_TOOBIG on iOS. an extension just reads as missing
+            if (length > MAX_VALUE_BYTES || c.moveToNext()) return@query null
             decodeBoundedPrefix(length, prefix, characters, truncates)
         }
     }
@@ -224,8 +254,10 @@ class MBTilesStore private constructor(
         return if (count > characters) text.substring(0, text.offsetByCodePoints(0, characters)) else text
     }
 
-    private fun admissionLeftMs(): Long {
-        val left = TimeUnit.NANOSECONDS.toMillis(admissionDeadlineNanos - System.nanoTime())
+    /** null = two tables, no budget */
+    private fun admissionLeftMs(): Long? {
+        val deadline = admissionDeadlineNanos ?: return null
+        val left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
         require(left > 0) { "MBTiles admission budget spent" }
         return left
     }
@@ -279,6 +311,14 @@ class MBTilesStore private constructor(
 
     internal fun isClosedForTesting(): Boolean = closed.get() || !db.isOpen
 
+    /** what the hardening left on this connection, for the instrumented tests */
+    @VisibleForTesting
+    @Synchronized
+    internal fun pragmaForTesting(name: String): String? {
+        require(name in setOf("automatic_index", "trusted_schema", "hard_heap_limit"))
+        return db.rawQuery("PRAGMA $name", null).use { if (it.moveToFirst()) it.getString(0) else null }
+    }
+
     companion object {
         internal const val MAX_METADATA_ROWS = 64
         internal const val MAX_METADATA_KEY_CHARACTERS = 32
@@ -290,11 +330,44 @@ class MBTilesStore private constructor(
         )
         internal const val MAX_BAKE_EXTENSION_CHARACTERS = 128
         private val BAKE_EXTENSION_KEYS = setOf("tacmap_bake_key", "tacmap_tile_px")
-        private const val MAX_TILE_BYTES = 4 * 1024 * 1024
+        internal const val MAX_TILE_BYTES = 4 * 1024 * 1024
+        // s14.1 connection caps. android has no sqlite3_limit, these get checked by hand
+        internal const val MAX_VALUE_BYTES = MAX_TILE_BYTES + 65_536
+        internal const val MAX_SCHEMA_SQL_BYTES = MBTilesViewShape.MAX_SQL_BYTES
+        internal const val HARD_HEAP_LIMIT_BYTES = 128L * 1024 * 1024
+        internal val HARD_HEAP_LIMIT_MIN_SQLITE = SqliteVersion(3, 31, 0)
+        internal val GENERATED_COLUMNS_MIN_SQLITE = SqliteVersion(3, 31, 0)
         internal const val MAX_ZOOM = 30
         internal val RELATION_TYPES = setOf("table", "view")
         internal const val ADMISSION_BUDGET_MS = 30_000L
         internal const val VIEW_QUERY_BUDGET_MS = 2_000L
+
+        // process wide, so once is enough. only the MBTiles readers and the bake writer use sqlite here
+        private val heapLimitSet = AtomicBoolean(false)
+
+        /**
+         * s14.1 hardening, before the connection's first statement that names tiles or metadata:
+         * the heap cap (3.31+, once per process), no automatic indexes, no untrusted schema
+         * functions (3.31+), and no schema statement over the cap. Throws = not admitted
+         */
+        private fun harden(db: SQLiteDatabase): SqliteVersion {
+            val version = db.rawQuery("SELECT sqlite_version()", null).use { c ->
+                require(c.moveToFirst())
+                requireNotNull(SqliteVersion.parse(c.getString(0)))
+            }
+            if (version >= HARD_HEAP_LIMIT_MIN_SQLITE && !heapLimitSet.get()) {
+                runCatching { db.rawQuery("PRAGMA hard_heap_limit=$HARD_HEAP_LIMIT_BYTES", null).use { it.moveToFirst() } }
+                    .onSuccess { heapLimitSet.set(true) }
+            }
+            // an unindexed join would otherwise copy every image into a temp index on each read
+            db.rawQuery("PRAGMA automatic_index=OFF", null).use { it.moveToFirst() }
+            // older sqlite doesn't know it and ignores it, the view shape check covers those
+            if (version >= SqliteVersion(3, 31, 0)) db.rawQuery("PRAGMA trusted_schema=OFF", null).use { it.moveToFirst() }
+            db.rawQuery(
+                "SELECT 1 FROM sqlite_master WHERE length(CAST(sql AS BLOB)) > $MAX_SCHEMA_SQL_BYTES LIMIT 1", null,
+            ).use { require(!it.moveToFirst()) { "MBTiles schema statement too long" } }
+            return version
+        }
 
         // one daemon thread fires the budget cancels, cancelled timers drop out right away
         private val WATCHDOG by lazy {
@@ -306,18 +379,42 @@ class MBTilesStore private constructor(
 
         /** the budget seam, tests shorten it so an endless view gives up quickly */
         @VisibleForTesting
-        internal fun open(path: String, admissionBudgetMs: Long): MBTilesStore? {
+        internal fun open(path: String, admissionBudgetMs: Long): MBTilesStore? =
+            open(path, admissionBudgetMs, null)
+
+        /**
+         * the lazy open of a pack admitted before (import worker or the in-memory cache, s14.2):
+         * hardening + relation, shape and base table checks, no aggregate. null = serve nothing
+         */
+        internal fun openPrevalidated(path: String, metadata: Metadata): MBTilesStore? =
+            open(path, ADMISSION_BUDGET_MS, metadata)
+
+        private fun open(path: String, admissionBudgetMs: Long, prevalidated: Metadata?): MBTilesStore? {
             val db = try {
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
             } catch (_: Throwable) {
                 return null
             }
             return try {
-                MBTilesStore(db, admissionBudgetMs)
+                MBTilesStore(db, admissionBudgetMs, prevalidated)
             } catch (_: Throwable) {
                 runCatching { db.close() }
                 null
             }
+        }
+    }
+}
+
+/** sqlite_version() as numbers, the gates go by the runtime library, not the API level */
+internal data class SqliteVersion(val major: Int, val minor: Int, val patch: Int) : Comparable<SqliteVersion> {
+    override fun compareTo(other: SqliteVersion): Int =
+        compareValuesBy(this, other, SqliteVersion::major, SqliteVersion::minor, SqliteVersion::patch)
+
+    companion object {
+        fun parse(text: String?): SqliteVersion? {
+            val parts = text?.trim()?.split('.')?.map { it.toIntOrNull() ?: return null } ?: return null
+            if (parts.isEmpty() || parts.size > 4) return null
+            return SqliteVersion(parts[0], parts.getOrElse(1) { 0 }, parts.getOrElse(2) { 0 })
         }
     }
 }

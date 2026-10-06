@@ -63,6 +63,10 @@ class SyncClientBehaviourFixtureTest {
     private fun scenario(id: String): JsonObject =
         fixture.arr("scenarios").map { it.jsonObject }.single { it.str("id") == id }
 
+    /** The object every v2.vectors.remember row is about, as this device stores it. */
+    private val v2LocalId = "3f2a1b4c-0d5e-4f60-8a7b-9c8d7e6f5a4b"
+    private val v2RoomId = "q3w8x2kz5r9m1n4p7t0v6y3b8c2d5f1g9h4j7k0l3m6"
+
     @Test
     fun relayLimitDependenciesMatchTheRelayFixture() {
         val deps = fixture.obj("relayLimitsDependencies")
@@ -921,11 +925,15 @@ class SyncClientBehaviourFixtureTest {
             ))
         }
 
-        // 3.0.1: android sends the remembered 2.x iOS casing, else its own lowercase id
+        // android sends the pinned casing, else its own lowercase id. a later inbound record in
+        // another casing never re-pins (3.0.2, interop-v2-2xandroid-regression)
         val outbound = vectors.arr("outbound").map { it.jsonObject }.filter { it.str("platform") == "android" }
-        assertEquals(3, outbound.size)
+        assertEquals(4, outbound.size)
         for (case in outbound) {
-            val frameId = LegacyV2Ids.outboundId(case.str("localId"), case.strOrNull("rememberedRawId"))
+            val pinned = case.strOrNull("lastInboundRawId")?.let { inbound ->
+                LegacyV2Ids.remember(case.strOrNull("rememberedRawId"), inbound)
+            } ?: case.strOrNull("rememberedRawId")
+            val frameId = LegacyV2Ids.outboundId(case.str("localId"), pinned)
             assertEquals(case.str("id"), case.str("expectFrameId"), frameId)
             assertEquals(case.str("id"), case.str("expectStateKey"), LegacyV2Ids.stateKey(frameId))
             // the local object never changes id, only the wire does
@@ -945,10 +953,16 @@ class SyncClientBehaviourFixtureTest {
         )
 
         val remember = vectors.arr("remember").map { it.jsonObject }
-        assertEquals(7, remember.size)
+        assertEquals(12, remember.size)
         for (case in remember) {
             var remembered: String? = null
             for (event in case.arr("events").map { it.jsonObject }) {
+                // this device's own put or del for the vector's object, sent under its lowercase id
+                if (event.strOrNull("own") != null) {
+                    assertTrue(event.str("own") in setOf("put", "del"))
+                    remembered = LegacyV2Ids.pinOwn(remembered, v2LocalId)
+                    continue
+                }
                 val raw = event.str("raw")
                 // the rule itself refuses anything that isnt a canonical id
                 if (LegacyV2Ids.stateKey(raw) == null) assertNull(LegacyV2Ids.remember(null, raw))
@@ -956,6 +970,46 @@ class SyncClientBehaviourFixtureTest {
                 remembered = LegacyV2Ids.remember(remembered, raw)
             }
             assertEquals(case.str("id"), case.strOrNull("expectRemembered"), remembered)
+        }
+
+        // the same rows through the real store, own events via pinOwn
+        SyncHarness.installStoreKey()
+        val dir = java.nio.file.Files.createTempDirectory("v2-pins").toFile()
+        try {
+            for (case in remember) {
+                val store = LegacyV2IdStore(File(dir, case.str("id")), v2RoomId)
+                for (event in case.arr("events").map { it.jsonObject }) {
+                    if (event.strOrNull("own") != null) store.pinOwn(v2LocalId)
+                    else if (event.getValue("accepted").jsonPrimitive.boolean) store.learn(event.str("raw"))
+                }
+                assertEquals(case.str("id"), case.strOrNull("expectRemembered"), store.remembered(v2LocalId))
+            }
+
+            val storeRows = vectors.arr("rememberStore").map { it.jsonObject }
+            assertEquals(5, storeRows.size)
+            for (case in storeRows) {
+                val id = case.str("id")
+                val roomDir = File(dir, "store-$id")
+                assertTrue(id, LegacyV2IdStore(roomDir, v2RoomId).write(case.obj("file").toString()))
+                val loaded = LegacyV2IdStore(roomDir, v2RoomId).apply { load() }
+                val expect = case.obj("expect")
+                val pinned = expect.obj("pinned").mapValues { it.value.jsonPrimitive.content }
+                assertEquals(id, pinned.size, loaded.count)
+                assertEquals(id, expect.getValue("loads").jsonPrimitive.boolean, loaded.count > 0)
+                for ((key, raw) in pinned) assertEquals(id, raw, loaded.remembered(key))
+                assertNull("$id: loading isnt pinning", loaded.takePendingWrite())
+                if (pinned.isEmpty()) continue
+                // what comes back out is version 2, every pin, sorted
+                loaded.pinOwn("b0b0b0b0-0000-4000-8000-0000000000b0")
+                val written = Json.parseToJsonElement(loaded.takePendingWrite()!!).jsonObject
+                assertEquals(id, setOf("version", "ids"), written.keys)
+                assertEquals(id, 2, written.int("version"))
+                val ids = written.getValue("ids").strings()
+                assertEquals(id, (pinned.values + "b0b0b0b0-0000-4000-8000-0000000000b0").sorted(), ids)
+            }
+        } finally {
+            dir.deleteRecursively()
+            SyncHarness.restoreStoreKey()
         }
     }
 

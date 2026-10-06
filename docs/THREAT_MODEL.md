@@ -536,7 +536,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   (device-mode resume, the App Lock PIN, a platform credential or a confirmed
   protection change). A write still in flight behind the lock fails closed
   instead of re-caching the key: a Unit Sync write that missed the two seconds
-  is dropped without a security stop, and a map import still copying, or a
+  is dropped without a security stop (if it carried the sync revision record of
+  a local edit, only the object ids are remembered, in memory, and that record
+  is written after the foreground unlock, before Unit Sync reconnects), and a
+  map import still copying, or a
   map-library change still being written, when the app leaves the foreground
   (or while the Activity is recreated for a configuration change it doesn't
   handle) fails without deleting anything and has to be retried. A PDF bake that
@@ -704,8 +707,9 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   record that the library was ever written: Android records a sealed store as sealed-only only after its new
   bytes are flushed to a temporary file and just before they are renamed into place (the record still always
   comes before sealed bytes reach the real file, so a sealed store never accepts plaintext again), and iOS
-  records it after the bytes. If the app dies in the instant between Android's record and the rename while
-  the old stores are still waiting, the next launch treats it as the migration it was and salvages (below:
+  records it after the bytes. If the app dies in the instant between Android's record and the rename, or the
+  rename itself fails, while the old stores are still waiting, the next launch or Retry treats it as the
+  migration it was and salvages (below:
   what converts keeps its name and calibration, every other map file is adopted, nothing is cleaned up or
   deleted) rather than as a damaged library. On iOS, if saving the record fails after the bytes went down, the
   library is already written. The migration then keeps the opaque links that library names, clears and

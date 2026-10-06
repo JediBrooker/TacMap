@@ -11,7 +11,7 @@ import org.junit.Test
 import java.io.File
 import java.nio.file.Files
 
-/** The sealed per-room store behind the v2 casing rule (plans/04 section 16, 3.0.1). */
+/** The sealed per-room store behind the v2 casing rule (plans/04 section 16, 3.0.1 and 3.0.2). */
 class LegacyV2IdStoreTest {
     private val dir: File = Files.createTempDirectory("v2-ids").toFile()
     private val roomId = "q3w8x2kz5r9m1n4p7t0v6y3b8c2d5f1g9h4j7k0l3m6"
@@ -35,10 +35,10 @@ class LegacyV2IdStoreTest {
         val store = LegacyV2IdStore(dir, roomId)
         store.learn(upper)
         store.learn(key) // lowercase later never replaces it
-        store.learn("aaaaaaaa-0000-4000-8000-000000000001") // nothing to remember
+        store.learn("aaaaaaaa-0000-4000-8000-000000000001") // lowercase first pins lowercase (3.0.2)
         store.learn("Bbbbbbbb-0000-4000-8000-000000000002") // mixed case kept as is
         store.learn("3F2A1B4C0D5E4F608A7B9C8D7E6F5A4B") // not canonical
-        assertEquals(2, store.count)
+        assertEquals(3, store.count)
         val text = store.takePendingWrite()!!
         assertNull("one write per batch", store.takePendingWrite())
         assertTrue(store.write(text))
@@ -51,9 +51,49 @@ class LegacyV2IdStoreTest {
         val reloaded = loaded()
         assertEquals(upper, reloaded.remembered(key))
         assertEquals("Bbbbbbbb-0000-4000-8000-000000000002", reloaded.remembered("bbbbbbbb-0000-4000-8000-000000000002"))
-        assertNull(reloaded.remembered("aaaaaaaa-0000-4000-8000-000000000001"))
+        assertEquals("aaaaaaaa-0000-4000-8000-000000000001", reloaded.remembered("aaaaaaaa-0000-4000-8000-000000000001"))
         assertNull("loading isnt learning", reloaded.takePendingWrite())
         assertEquals(0, loaded(otherRoomId).count)
+    }
+
+    @Test
+    fun ourOwnFirstSendPinsLowercaseAndALaterUppercaseRecordNeverFlipsItEvenAfterARestart() {
+        // interop-v2-2xandroid-regression: we created it, then a 3.0.1 iOS edit came in uppercase
+        val store = LegacyV2IdStore(dir, roomId)
+        assertTrue(store.pinOwn(key))
+        assertFalse("already pinned", store.pinOwn(key))
+        store.learn(upper)
+        assertEquals(key, store.remembered(key))
+        assertTrue(store.write(store.takePendingWrite()!!))
+
+        val reloaded = loaded()
+        assertEquals(key, reloaded.remembered(key))
+        reloaded.learn(upper)
+        assertEquals(key, reloaded.remembered(key))
+        assertNull("nothing new pinned", reloaded.takePendingWrite())
+        assertFalse("not a uuid", reloaded.pinOwn("3f2a1b4c0d5e4f608a7b9c8d7e6f5a4b"))
+    }
+
+    @Test
+    fun anUppercasePinFrom301StillWinsOverOurOwnSend() {
+        // 3.0.1 wrote version 1, uppercase only. those load as they are and stick
+        val store = LegacyV2IdStore(dir, roomId)
+        assertTrue(store.write("""{"version":1,"ids":["$upper"]}"""))
+        val reloaded = loaded()
+        assertFalse(reloaded.pinOwn(key))
+        assertEquals(upper, reloaded.remembered(key))
+    }
+
+    @Test
+    fun aFullStorePinsNothingNewAndThoseKeysSendTheirLocalId() {
+        fun id(i: Int) = "%08x-0000-4000-8000-000000000000".format(i)
+        val store = LegacyV2IdStore(dir, roomId)
+        repeat(LegacyV2IdStore.MAX_ENTRIES) { assertTrue(store.pinOwn(id(it))) }
+        assertFalse(store.pinOwn(id(LegacyV2IdStore.MAX_ENTRIES)))
+        store.learn(id(LegacyV2IdStore.MAX_ENTRIES + 1).uppercase())
+        assertEquals(LegacyV2IdStore.MAX_ENTRIES, store.count)
+        val unpinned = id(LegacyV2IdStore.MAX_ENTRIES)
+        assertEquals(unpinned, LegacyV2Ids.outboundId(unpinned, store.remembered(unpinned)))
     }
 
     @Test

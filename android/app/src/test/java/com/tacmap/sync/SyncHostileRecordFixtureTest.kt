@@ -66,6 +66,7 @@ class SyncHostileRecordFixtureTest {
         val outerBytesHex: String,
         val category: SnapshotRecordCategory?,
         val localId: String?,
+        val stateKey: String?,
         val reason: String?,
         val paths: List<String>,
     ) {
@@ -91,12 +92,54 @@ class SyncHostileRecordFixtureTest {
                     else -> error("unknown category $c")
                 },
                 localId = str(expect, "localId"),
+                stateKey = str(expect, "stateKey"),
                 reason = str(expect, "reason"),
                 paths = expect.getValue("paths").jsonArray.map { it.jsonPrimitive.content },
             )
         }.also { rows ->
             assertTrue(rows.any { it.valid } && rows.any { !it.valid })
         }
+    }
+
+    /** One row of snapshot.embeddedIdCasingCases (Android, plans/04 2.7, 3.0.2 amendment). */
+    private class EmbeddedIdCasingCase(
+        val id: String,
+        val storedLocalId: String?,
+        val embeddedId: String,
+        val localId: String,
+        val stateKey: String,
+        val outboundEmbeddedId: String,
+        val localObjects: Int,
+    )
+
+    private val embeddedIdCasingCases by lazy {
+        snapshotFixture.getValue("embeddedIdCasingCases").jsonArray.map { it.jsonObject }
+            .filter { row -> row.getValue("platforms").jsonArray.any { it.jsonPrimitive.content == "android" } }
+            .map { row ->
+                val expect = row.getValue("expect").jsonObject
+                fun str(o: kotlinx.serialization.json.JsonObject, key: String) =
+                    (o[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+                EmbeddedIdCasingCase(
+                    id = str(row, "id")!!,
+                    storedLocalId = str(row, "storedLocalId"),
+                    embeddedId = str(row, "embeddedId")!!,
+                    localId = str(expect, "localId")!!,
+                    stateKey = str(expect, "stateKey")!!,
+                    outboundEmbeddedId = str(expect, "outboundEmbeddedId")!!,
+                    localObjects = expect.getValue("localObjects").jsonPrimitive.content.toInt(),
+                )
+            }
+    }
+
+    /** The embedded feature id inside one of our own v3 puts. */
+    private fun sentEmbeddedId(h: SyncHarness, frame: JSONObject): String {
+        val keys = h.keys()
+        val plain = SyncCrypto.open(
+            keys.roomKey, SyncCrypto.decodeBase64(frame.getString("ct")),
+            SyncCrypto.aadV3(frame.getString("id"), frame.getString("vs"), frame.getString("kind")),
+        )!!
+        val content = JSONObject(String(plain, Charsets.UTF_8)).getString("c")
+        return JSONObject(content).getJSONArray("features").getJSONObject(0).getString("id")
     }
 
     private fun hexBytes(hex: String) = ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
@@ -142,7 +185,7 @@ class SyncHostileRecordFixtureTest {
         val ids = h.waypointStore.committedWaypoints.value.map { it.id }.toSet()
         val replay = h.manager.replayStateForTests!!
         if (row.valid) {
-            // folded to the lowercase local id, one object, nothing echoed back
+            // kept in the sender's casing with nothing local to resolve to, one object, nothing echoed back
             assertEquals(row.id, setOf(good.id, row.localId), ids)
             assertNull(row.id, h.manager.skippedCategoryForTests(wire))
             assertNotNull(row.id, replay.getStamp(wire))
@@ -357,8 +400,10 @@ class SyncHostileRecordFixtureTest {
                 assertNotNull("${row.id}: $check", put)
                 assertEquals(row.id, row.localId, put!!.localId)
                 assertEquals(row.id, listOf(row.localId), put.parsed.waypoints.map { it.id })
-                // whatever the validator accepts the replay commit has to accept too
-                assertEquals(row.id, put.localId, UUID.fromString(put.localId).toString())
+                // whatever the validator accepts the replay commit has to accept too, and it folds
+                // to the state key every lookup goes through
+                assertEquals(row.id, row.stateKey, UUID.fromString(put.localId).toString())
+                assertEquals(row.id, row.stateKey, SyncIdentity.canonicalUuid(put.localId))
                 assertEquals(row.id, row.outerBytesHex, SyncIdentity.bytesToHex(SyncIdentity.uuidToBytes(row.embeddedId)!!))
                 assertEquals(row.id, rec.getString("id"), hasher.wireId(row.embeddedId))
             } else {
@@ -406,6 +451,76 @@ class SyncHostileRecordFixtureTest {
             assertSyncStillRunning(h, row.id)
             assertEmbeddedIdOutcome(h, row, rec.getString("id"), good)
         }
+    }
+
+    // ---- interop-v3-android-fold-duplicates-on-300: the received casing is kept ----
+
+    @Test
+    fun everyEmbeddedIdCasingCaseLandsOnOneObjectAndOurEditKeepsItsCasing() {
+        val rows = embeddedIdCasingCases
+        assertEquals(6, rows.size)
+        val failures = ArrayList<String>()
+        for (path in listOf("snapshot", "live")) for (row in rows) {
+            try {
+                val h = harness()
+                val peer = FakeV3Peer(h.keys())
+                row.storedLocalId?.let { assertTrue(h.waypointStore.add(waypoint("mine", id = it))) }
+                h.join()
+                val wire = peer.wireId(row.stateKey)
+                val theirs = FakeV3Peer.waypointContent(waypoint("theirs", id = row.embeddedId))
+                if (path == "snapshot") {
+                    h.completeHandshake(listOf(peer.record(wire, 50, "waypoint", theirs)))
+                } else {
+                    h.completeHandshake()
+                    // our stored copy went out on connect, let that settle first
+                    h.socket.sentOfType("put").filter { it.getString("id") == wire }.forEach { h.ackPut(it) }
+                    h.deliver(peer.hello())
+                    h.deliver(peer.record(wire, 50, "waypoint", theirs, t = "put"))
+                }
+                h.advance(1_000)
+                assertSyncStillRunning(h, row.id)
+
+                val sameUuid = h.waypointStore.committedWaypoints.value.filter { it.id.lowercase() == row.stateKey }
+                assertEquals(row.id, row.localObjects, sameUuid.size)
+                assertEquals(row.id, row.localId, sameUuid.single().id)
+                assertEquals(row.id, "theirs", sameUuid.single().name)
+
+                // the next local edit exports the id as we keep it, under the same wire id
+                val before = h.socket.sentOfType("put").size
+                assertTrue(h.waypointStore.update(sameUuid.single().copy(name = "edited")))
+                h.advance(1_000)
+                val edit = h.socket.sentOfType("put").drop(before).single()
+                assertEquals(row.id, wire, edit.getString("id"))
+                assertEquals(row.id, row.outboundEmbeddedId, sentEmbeddedId(h, edit))
+                assertEquals(row.id, row.localObjects, h.waypointStore.committedWaypoints.value.count { it.id.lowercase() == row.stateKey })
+            } catch (e: Throwable) {
+                failures += "$path ${row.id}: $e"
+            }
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    @Test
+    fun aLegacyUppercaseObjectMetForTheFirstTimeGoesBackOutUppercase() {
+        // the finding: shipped 3.0.0/2.x android holders upsert by exact id. if we fold their
+        // 3F2A to 3f2a and edit it, every one of them grows a second copy
+        val h = harness()
+        val peer = FakeV3Peer(h.keys())
+        val upper = UUID.randomUUID().toString().uppercase()
+        h.join()
+        h.completeHandshake()
+        h.deliver(peer.hello())
+        val wire = peer.wireId(upper)
+        h.deliver(peer.record(wire, 50, "waypoint", FakeV3Peer.waypointContent(waypoint("legacy", id = upper)), t = "put"))
+        h.advance(1_000)
+        assertEquals(listOf(upper), h.waypointStore.committedWaypoints.value.map { it.id })
+
+        assertTrue(h.waypointStore.update(h.waypointStore.committedWaypoints.value.single().copy(name = "moved")))
+        h.advance(1_000)
+        val edit = h.socket.sentOfType("put").single()
+        assertEquals(wire, edit.getString("id"))
+        assertEquals(upper, sentEmbeddedId(h, edit))
+        assertSyncStillRunning(h, "legacy")
     }
 
     // ---- structural: the two fatal rows SyncMaliciousFrameHandlerTest doesn't script ----

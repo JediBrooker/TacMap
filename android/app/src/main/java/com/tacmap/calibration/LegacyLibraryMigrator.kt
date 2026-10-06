@@ -6,10 +6,10 @@ import java.util.UUID
 
 /**
  * The legacy half of a library restore (s8.2 r1 + the 3.0.1 s13.1 amendment): whether an
- * Empty library needs the migration hop, the hop itself (run, write empty, salvage, adopt
- * orphans: drafts first, then the one library write) and what the pass comes to once the
- * library's been read again. MapViewModel restores through this, the JVM row tests run the
- * same thing over real store files.
+ * Empty (or ledger-only, s14.3) library needs the migration hop, the hop itself (run, write
+ * empty, salvage, adopt orphans: drafts first, then the one library write) and what the pass
+ * comes to once the library's been read again. MapViewModel restores through this, the JVM
+ * row tests run the same thing over real store files.
  *
  * The rule it keeps: only a locked key or a failed write leaves a restore pending, and no
  * Empty library is ever authoritative while there's a map file it could delete.
@@ -25,7 +25,6 @@ internal class LegacyLibraryMigrator(
     private val validateMbtiles: (File) -> Boolean,
     /** the copies a stuck s9.8 import marker names. the launch sweep deletes those, nobody adopts them */
     private val interruptedImports: () -> Set<File> = { emptySet() },
-    private val writeLibrary: (LibraryState) -> LibraryCommit = library::create,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
 ) {
@@ -55,19 +54,30 @@ internal class LegacyLibraryMigrator(
     /** cheap, main thread is fine: an Empty library has old stores to read or map files to adopt */
     fun isDue(): Boolean = legacy.hasLegacyState() || managedFiles()
 
+    /**
+     * whether the restore that read [load] needs the hop first. Unfinished only with old stores
+     * waiting (s14.3), its map files alone never make it an orphan adoption
+     */
+    fun isDue(load: LibraryLoad): Boolean = when (load) {
+        LibraryLoad.Empty -> isDue()
+        LibraryLoad.Unfinished -> legacy.hasLegacyState()
+        else -> false
+    }
+
     /** the hop: reads, hashes and parses. null = nothing was due after all */
     @WorkerThread
-    fun migrate(): Outcome? = try {
-        migrateOnce()
+    fun migrate(load: LibraryLoad = LibraryLoad.Empty): Outcome? = try {
+        migrateOnce(salvageOnly = load == LibraryLoad.Unfinished)
     } catch (e: Exception) {
         QuietLog.w(TAG, "legacy map migration failed")
         Outcome.Blocked(LegacyLibraryState.LOCKED, managedFiles = true, writes = LibraryWrites.OK)
     }
 
-    private fun migrateOnce(): Outcome? {
+    /** [salvageOnly]: the ledger-only library (s14.3). old stores that read fine still salvage, never run */
+    private fun migrateOnce(salvageOnly: Boolean): Outcome? {
         val skip = skipped()
         val managed = LibraryRebuild.hasManagedFiles(filesDir, skip)
-        if (!legacy.hasLegacyState()) return if (managed) adoptOrphans(skip) else null
+        if (!legacy.hasLegacyState()) return if (managed && !salvageOnly) adoptOrphans(skip) else null
         val read = legacy.read(defaultStyle)
         val built = when (read) {
             is LegacyMapReader.Read.Present -> build(read.inputs)
@@ -80,16 +90,18 @@ internal class LegacyLibraryMigrator(
         } else {
             LibraryRestoreRules.legacyState(read)
         }
-        return when (LibraryRestoreRules.plan(LibraryLoad.Empty, state, managed).migration) {
+        val load = if (salvageOnly) LibraryLoad.Unfinished else LibraryLoad.Empty
+        return when (LibraryRestoreRules.plan(load, state, managed).migration) {
             RestoreMigration.RUN -> commit(RestoreMigration.RUN, state, managed, requireNotNull(built))
-            RestoreMigration.WRITE_EMPTY_AND_CLEAR -> {
-                val empty = LibraryState(active = ActiveRef.online(defaultStyle), preferredOnlineStyle = defaultStyle)
-                commit(RestoreMigration.WRITE_EMPTY_AND_CLEAR, state, managed, MigrationResult(empty, emptyList(), null))
-            }
-            RestoreMigration.SALVAGE -> commit(RestoreMigration.SALVAGE, state, managed, salvaged(requireNotNull(built), skip))
+            RestoreMigration.WRITE_EMPTY_AND_CLEAR -> commit(RestoreMigration.WRITE_EMPTY_AND_CLEAR, state, managed, empty())
+            // a ledger-only read that names nothing has nothing to convert, the rest still gets adopted
+            RestoreMigration.SALVAGE -> commit(RestoreMigration.SALVAGE, state, managed, salvaged(built ?: empty(), skip))
             else -> Outcome.Blocked(state, managed, LibraryWrites.OK)
         }
     }
+
+    private fun empty(): MigrationResult =
+        MigrationResult(LibraryState(active = ActiveRef.online(defaultStyle), preferredOnlineStyle = defaultStyle), emptyList(), null)
 
     private fun build(inputs: LegacyMapInputs): MigrationResult =
         ImportedMapLibraryMigration.build(inputs, filesDir, nowMs(), newId)
@@ -136,7 +148,7 @@ internal class LegacyLibraryMigrator(
     private fun commit(migration: RestoreMigration, state: LegacyLibraryState, managed: Boolean, r: MigrationResult): Outcome {
         val saved = r.drafts.all { d -> runCatching { drafts.save(d) }.getOrDefault(false) }
         if (!saved) return Outcome.Blocked(state, managed, LibraryWrites.DRAFT_FAILS)
-        return when (val c = writeLibrary(r.state)) {
+        return when (val c = library.create(r.state)) {
             is LibraryCommit.Written -> {
                 val clears = migration == RestoreMigration.RUN || migration == RestoreMigration.WRITE_EMPTY_AND_CLEAR
                 if (clears) legacy.clearAfterMigration()
@@ -155,12 +167,16 @@ internal class LegacyLibraryMigrator(
         val plan = when {
             load is LibraryLoad.Loaded && migrated is Outcome.Written -> afterWrite(load.state, migrated.migration)
             load is LibraryLoad.Loaded -> LibraryRestoreRules.plan(load, legacy.loadedLegacyState())
-            load == LibraryLoad.Empty && migrated is Outcome.Blocked ->
+            (load == LibraryLoad.Empty || load == LibraryLoad.Unfinished) && migrated is Outcome.Blocked ->
                 LibraryRestoreRules.plan(load, migrated.legacy, migrated.managedFiles, migrated.writes)
             // only a genuine first launch stands in as empty, nothing to migrate and nothing in
             // the map dirs, so the cleanup it allows has nothing to delete
             load == LibraryLoad.Empty ->
                 if (migrated == null && !isDue()) LibraryRestoreRules.plan(load, LegacyLibraryState.NONE)
+                else LibraryRestoreRules.pending()
+            // ledger only with no old store to salvage from is corrupt (s14.3)
+            load == LibraryLoad.Unfinished ->
+                if (migrated == null && !isDue(load)) LibraryRestoreRules.plan(load, LegacyLibraryState.NONE)
                 else LibraryRestoreRules.pending()
             else -> LibraryRestoreRules.plan(load, LegacyLibraryState.NONE)
         }

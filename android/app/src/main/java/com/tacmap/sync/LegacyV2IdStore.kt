@@ -7,18 +7,20 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Raw v2 ids that 2.x iOS peers used, one per object (plans/04 section 16,
- * 3.0.1 amendment). Shipped 2.x iOS echo-deletes an edit of its own object that
- * comes back lowercase, so our put and del for it reuse the id it arrived with.
- * Sealed per room under a DEK-bound opaque name, object UUIDs only. A lost or
- * unreadable file just means lowercase sends until a snapshot teaches it again.
+ * The v2 id casing pinned per object (plans/04 section 16, 3.0.1 and 3.0.2
+ * amendments). Shipped 2.x iOS echo-deletes an edit of its own object that
+ * comes back lowercase, and shipped 2.x Android drops anything uppercase, so
+ * the first casing this device sent or accepted for an object is what our
+ * put and del keep using. Sealed per room under a DEK-bound opaque name,
+ * object UUIDs only. A lost or unreadable file just means lowercase sends
+ * until a snapshot or our next send pins it again.
  *
- * Not thread safe: learn, remembered and takePendingWrite belong to the sync
- * owner thread. load runs before the store is handed over, write only touches
- * the file.
+ * Not thread safe: learn, pinOwn, remembered and takePendingWrite belong to
+ * the sync owner thread. load runs before the store is handed over, write
+ * only touches the file.
  */
 internal class LegacyV2IdStore(private val directory: File, private val roomId: String) {
-    private val ids = HashMap<String, String>() // state key -> raw id exactly as received
+    private val ids = HashMap<String, String>() // state key -> pinned raw id, exact casing
     private var dirty = false
     private val storeLabel = "sync/v2-ids/$roomId"
 
@@ -29,13 +31,22 @@ internal class LegacyV2IdStore(private val directory: File, private val roomId: 
     /** Only for a record that already passed beats, AEAD, signature and, for a put, the embedded id check. */
     fun learn(rawId: String) {
         val key = LegacyV2Ids.stateKey(rawId) ?: return
-        val current = ids[key]
-        val next = LegacyV2Ids.remember(current, rawId) ?: return
-        if (next == current) return
-        // full means we stop learning, nothing gets evicted
-        if (ids.size >= MAX_ENTRIES) return
+        pin(key, LegacyV2Ids.remember(ids[key], rawId))
+    }
+
+    /** Our own put or del, before its wire id. True when that pinned something new. */
+    fun pinOwn(localId: String): Boolean {
+        val key = LegacyV2Ids.stateKey(localId) ?: return false
+        return pin(key, LegacyV2Ids.pinOwn(ids[key], localId))
+    }
+
+    private fun pin(key: String, next: String?): Boolean {
+        if (next == null || next == ids[key]) return false
+        // full means nothing new gets pinned, nothing gets evicted either
+        if (ids.size >= MAX_ENTRIES) return false
         ids[key] = next
         dirty = true
+        return true
     }
 
     /** Missing, locked and damaged all come back empty. Off main. */
@@ -89,15 +100,16 @@ internal class LegacyV2IdStore(private val directory: File, private val roomId: 
     private fun decode(text: String): Map<String, String> {
         val root = JSONObject(text)
         require(root.keys().asSequence().toSet() == setOf("version", "ids"))
-        require(root.opt("version") as? Int == VERSION)
+        val version = root.opt("version") as? Int
+        require(version == VERSION || version == VERSION_301)
         val list = root.getJSONArray("ids")
         require(list.length() <= MAX_ENTRIES)
         val out = HashMap<String, String>(list.length())
         for (i in 0 until list.length()) {
             val raw = list.get(i) as? String ?: error("id isnt a string")
             val key = LegacyV2Ids.stateKey(raw) ?: error("id isnt a uuid")
-            // only uppercase bearing ids ever get written
-            require(LegacyV2Ids.remember(null, raw) == raw)
+            // 3.0.1 only ever wrote uppercase bearing ids, they load as they are and stick
+            if (version == VERSION_301) require(raw.any { it in 'A'..'F' })
             require(out.put(key, raw) == null)
         }
         return out
@@ -106,7 +118,10 @@ internal class LegacyV2IdStore(private val directory: File, private val roomId: 
     companion object {
         const val DIRECTORY_NAME = "sync_v2_ids"
         const val MAX_ENTRIES = 10_000
-        private const val VERSION = 1
+        /** 3.0.2, pins in either case. */
+        private const val VERSION = 2
+        /** 3.0.1, uppercase only. */
+        private const val VERSION_301 = 1
         private const val MAX_FILE_BYTES = 1_048_576
     }
 }

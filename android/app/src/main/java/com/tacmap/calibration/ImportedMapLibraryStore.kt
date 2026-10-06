@@ -13,6 +13,12 @@ internal sealed class LibraryLoad {
     data object Empty : LibraryLoad()
     data object Locked : LibraryLoad()
     data object Corrupt : LibraryLoad()
+    /**
+     * no file, no marker, no quarantine copy, but the ledger names it: a first write died
+     * between its ledger mark and the rename (WP4 s14.3). never Empty. the restore salvages it
+     * when old stores are waiting, else it's Corrupt. create() writes over it like Empty
+     */
+    data object Unfinished : LibraryLoad()
 }
 
 /** what a guarded library write got */
@@ -48,12 +54,12 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
             newestGeneration.accumulateAndGet(r.value.generation) { a, b -> maxOf(a, b) }
             LibraryLoad.Loaded(r.value)
         }
-        // gone is only empty if we never wrote one. a quarantined copy next to it, or our own
-        // record that it was written, means it vanished: corrupt, never "start fresh" (S1)
+        // gone is only empty if we never wrote one. a quarantined copy next to it, or the marker a
+        // finished write leaves, means it vanished: corrupt, never "start fresh" (S1)
         SafeStore.LoadResult.Empty -> when {
-            hasQuarantine() -> LibraryLoad.Corrupt
-            else -> when (writtenBefore()) {
-                true -> LibraryLoad.Corrupt
+            hasQuarantine() || SafeStore.wasWritten(file) -> LibraryLoad.Corrupt
+            else -> when (ledgerNamesIt()) {
+                true -> LibraryLoad.Unfinished
                 false -> LibraryLoad.Empty
                 null -> LibraryLoad.Locked
             }
@@ -94,7 +100,8 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
 
     /**
      * First write of a library that doesn't load: the migration, the S4 empty library, the S2
-     * rebuild. Never over one that does, whoever got there first stands and this says Stale
+     * rebuild (Empty, Unfinished or Corrupt). Never over one that does, whoever got there first
+     * stands and this says Stale
      */
     fun create(state: LibraryState): LibraryCommit = ActiveMapSelectionStore.withManagedFilesLock {
         when (val current = loadOrLocked()) {
@@ -115,14 +122,12 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
         filesDir.listFiles()?.any { it.name.startsWith("$FILE_NAME.corrupt-") } == true
 
     /**
-     * did this device ever write the library? the sealed-only marker next to it says so without
-     * the key, the authenticated ledger in the DataKey sentinel says so even if someone deleted
-     * the marker too. null = can't tell right now (key locked), the caller treats that as locked
+     * the authenticated ledger in the DataKey sentinel, with no file and no marker. SafeStore marks
+     * it before the rename and the marker after, so this alone is a write that never landed (or a
+     * library someone deleted with its marker). null = can't tell right now (key locked), the
+     * caller treats that as locked
      */
-    private fun writtenBefore(): Boolean? {
-        if (SafeStore.wasWritten(file)) return true
-        return runCatching { SafeStore.isSealedOnlyAuthenticated(LABEL) }.getOrNull()
-    }
+    private fun ledgerNamesIt(): Boolean? = runCatching { SafeStore.isSealedOnlyAuthenticated(LABEL) }.getOrNull()
 
     /** the entry's file, only if its opaque relative name stays inside one of our map dirs */
     fun fileOf(entry: ImportedMapEntry): File? = resolveManaged(filesDir, entry.fileName)

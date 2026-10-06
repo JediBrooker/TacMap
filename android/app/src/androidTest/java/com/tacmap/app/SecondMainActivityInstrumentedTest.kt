@@ -178,6 +178,52 @@ class SecondMainActivityInstrumentedTest {
         assertEquals(Stage.RESUMED, stageOf(first))
     }
 
+    private fun shell(cmd: String) {
+        instr.uiAutomation.executeShellCommand(cmd).use { fd ->
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(fd).use { it.readBytes() }
+        }
+    }
+
+    /** am start -n, so the task's root intent is NOT what the launcher sends */
+    private fun startFromShellWithoutLauncherIntent(): MainActivity {
+        shell("am start -n ${app.packageName}/${MainActivity::class.java.name}")
+        waitUntil("first map screen up") { mainActivities().any { stageOf(it) == Stage.RESUMED } }
+        return mainActivities().single()
+    }
+
+    @Test
+    fun launcherTapOnATaskStartedByComponentDoesntStackASecondMap() {
+        val first = startFromShellWithoutLauncherIntent()
+        device.pressHome()
+        waitUntil("backgrounded") { stageOf(first) == Stage.STOPPED }
+
+        // exactly what the home screen sends: MAIN/LAUNCHER, NEW_TASK | RESET_TASK_IF_NEEDED
+        shell(
+            "am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER " +
+                "-f 0x10200000 -n ${app.packageName}/${MainActivity::class.java.name}"
+        )
+
+        waitUntil("something in front again") { mainActivities().any { stageOf(it) == Stage.RESUMED } }
+        Thread.sleep(1_500)
+        assertEquals("the launcher tap stacked another MainActivity", listOf(first), mainActivities())
+        assertEquals(Stage.RESUMED, stageOf(first))
+    }
+
+    @Test
+    fun notificationTapOnATaskStartedByComponentDoesntStackASecondMap() {
+        val first = startFromShellWithoutLauncherIntent()
+        device.pressHome()
+        waitUntil("backgrounded") { stageOf(first) == Stage.STOPPED }
+
+        BackgroundUnitSyncLocationService.postPausedNotification(app, "12:00")
+        tapPausedNotification()
+
+        waitUntil("something in front again") { mainActivities().any { stageOf(it) == Stage.RESUMED } }
+        Thread.sleep(1_500)
+        assertEquals("the notification tap stacked another MainActivity", listOf(first), mainActivities())
+        assertEquals(Stage.RESUMED, stageOf(first))
+    }
+
     @Test
     fun aSecondMainActivityCantMakeTheFirstDeleteWhatItImported() {
         val sheetA = fixture("tacmap_grid_sf_iso.pdf")

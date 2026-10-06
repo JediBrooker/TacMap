@@ -62,6 +62,28 @@ class UnitSyncSettingsContractTest {
     }
 
     @Test
+    fun aLegacyCodeShowsTheRedWarningThenWhatMixedVersionsCost() {
+        // gap-v2-room-2x-interop-3: under the LEGACY ROOM line, in the join form while a 2: code
+        // is typed and in the joined room section
+        val catalog = org.json.JSONObject(sourceText("localization/catalog.json"))
+        val mixedVersions = catalog.getJSONObject("sync_legacy_room_mixed_versions").getString("en")
+        val expected = listOf("LEGACY ROOM: weaker replay, identity, and metadata protections.", mixedVersions)
+        assertEquals(expected, LegacyRoomCopy.lines("2:ABCDEFGHJKMNPQRS"))
+        assertEquals(expected, LegacyRoomCopy.lines("  2:typed with spaces "))
+        assertTrue(mixedVersions.contains("3:"))
+        for (code in listOf(null, "", "   ", "3:ABCDEFGHJKMNPQRS", "2", "3:2:", "x2:abc")) {
+            assertEquals("$code", emptyList<String>(), LegacyRoomCopy.lines(code))
+        }
+
+        val syncDialog = sourceText("android/app/src/main/java/com/tacmap/sync/SyncDialog.kt")
+        assertTrue(syncDialog.contains("LegacyRoomLines(joinedRoom)"))
+        assertTrue(syncDialog.contains("LegacyRoomLines(code)"))
+        // one copy of the red line left, the helper's
+        assertEquals(1, Regex("LEGACY ROOM: weaker").findAll(syncDialog).count())
+        assertTrue(syncDialog.contains("Text(lines[1], fontSize = 12.sp, color = Color.Gray)"))
+    }
+
+    @Test
     fun consentCopyNamesBothPersistentControlsAndSelectedCadence() {
         val message = unitSyncJoinConsentMessage(BackgroundUnitSyncInterval.THIRTY_MINUTES)
 

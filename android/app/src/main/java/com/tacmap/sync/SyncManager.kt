@@ -726,8 +726,13 @@ class SyncManager internal constructor(
 
     private fun reloadRevisionJournal() {
         revisionJournalAvailable = false
+        // local edits whose bump a pause cut off get redone here, before any generation is
+        // read and before the foreground attach reconnects. edits from now on are the new
+        // observer's job. a failure with the key usable is the same stop as a failed live bump
+        val stranded = modelRevisionJournal.awaitingBumpIds()
         revisionJournalLoad = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-            val ok = modelRevisionJournal.loadOffMain(env.persistenceDispatcher)
+            val ok = modelRevisionJournal.loadOffMain(env.persistenceDispatcher) &&
+                modelRevisionJournal.redoAwaitingOffMain(stranded, env.persistenceDispatcher)
             if (!lifecycleGate.isDisposed) revisionJournalAvailable = ok
             ok
         }
@@ -1434,7 +1439,7 @@ class SyncManager internal constructor(
                 )
                 return
             }
-            // learned 2.x iOS casing goes in before the first diff can send anything
+            // pinned casing goes in before the first diff can send anything
             val v2Ids = LegacyV2IdStore(File(appFilesDir, LegacyV2IdStore.DIRECTORY_NAME), keys.roomId)
             withContext(env.persistenceDispatcher) { v2Ids.load() }
             if (lifecycleGate.isDisposed || token != joinToken) {
@@ -1967,7 +1972,10 @@ class SyncManager internal constructor(
         persistLegacyV2Ids()
     }
 
-    /** At most one sealed write per inbound batch (a v2 snapshot lands in one), and only if something new was learned. */
+    /**
+     * At most one sealed write per inbound batch (a v2 snapshot lands in one) or diff pass,
+     * and only if something new got pinned.
+     */
     private suspend fun persistLegacyV2Ids() {
         val store = legacyV2Ids ?: return
         // nothing durable behind the key lock, it stays dirty for the next batch after unlock
@@ -2586,6 +2594,10 @@ class SyncManager internal constructor(
         revisionJob?.cancel()
         val observedWaypoints = waypointStore
         val observedDrawings = drawingStore
+        // noted the moment the store commits, so an edit this observer never gets to (a pause
+        // cancels it mid-handoff, or mid-bump) is redone by the next journal load
+        observedWaypoints.mutationTap = ::noteAwaitingBump
+        observedDrawings.mutationTap = ::noteAwaitingBump
         revisionJob = scope.launch {
             merge(observedWaypoints.mutations, observedDrawings.mutations)
                 .collect { event ->
@@ -2596,8 +2608,8 @@ class SyncManager internal constructor(
                         !modelRevisionJournal.bumpAllOffMain(event.localIds, env.persistenceDispatcher)) {
                         // the bump is NonCancellable, so it comes back here even after a pause
                         // detached the stores and relocked the key it needed. thats not a
-                        // security stop and must not kill background presence, the foreground
-                        // attach reloads the journal from disk
+                        // security stop and must not kill background presence. the ids stay
+                        // noted, the foreground attach reloads the journal and redoes the bump
                         if (!currentCoroutineContext().isActive || lifecycleGate.isDisposed ||
                             waypointStoreRef !== observedWaypoints || drawingStoreRef !== observedDrawings) return@collect
                         revisionJournalAvailable = false
@@ -2607,6 +2619,10 @@ class SyncManager internal constructor(
                     }
                 }
         }
+    }
+
+    private fun noteAwaitingBump(event: com.tacmap.models.ModelMutationEvent) {
+        if (event.origin != ModelMutationOrigin.REMOTE_SYNC) modelRevisionJournal.noteAwaitingBump(event.localIds)
     }
 
     /**
@@ -2651,6 +2667,8 @@ class SyncManager internal constructor(
     }
 
     private fun syncLocalStateV2(current: HashMap<String, Pair<String, String>>) {
+        // pins only ever get added, so a bigger count means this pass pinned something
+        val pinsBefore = legacyV2Ids?.count ?: 0
         for ((id, kc) in current) {
             val (kind, content) = kc
             if (forcedLegacyDeletes.containsKey(id)) {
@@ -2680,6 +2698,8 @@ class SyncManager internal constructor(
             lastByV2[id] = clientId
             sendDel(id, clock)
         }
+        // our own first sends pin too, one write per pass so a restart keeps the casing
+        if ((legacyV2Ids?.count ?: 0) > pinsBefore) scope.launch { persistLegacyV2Ids() }
     }
 
     private fun syncLocalStateV3(current: HashMap<String, Pair<String, String>>) {
@@ -2763,13 +2783,18 @@ class SyncManager internal constructor(
     }
 
     /**
-     * v2 frame id for a local object. An object that reached us under a 2.x
-     * iOS uppercase id goes back out under that exact id, AAD and signature
+     * v2 frame id for our own put or del. An object that reached us under a
+     * 2.x iOS uppercase id goes back out under that exact id, AAD and signature
      * included, or 2.x iOS echoes a put plus a del of our casing and the
-     * object is gone room wide (gap-v2-room-2x-interop-2).
+     * object is gone room wide (gap-v2-room-2x-interop-2). One we sent first
+     * pins its lowercase id here, so a later 3.0.1 iOS edit of it can't flip
+     * us to uppercase and cut 2.x Android off (interop-v2-2xandroid-regression).
      */
-    private fun legacyV2WireId(localId: String): String =
-        LegacyV2Ids.outboundId(localId, LegacyV2Ids.stateKey(localId)?.let { legacyV2Ids?.remembered(it) })
+    private fun legacyV2WireId(localId: String): String {
+        val store = legacyV2Ids
+        store?.pinOwn(localId)
+        return LegacyV2Ids.outboundId(localId, LegacyV2Ids.stateKey(localId)?.let { store?.remembered(it) })
+    }
 
     private fun sendPut(id: String, v: Long, kind: String, content: String) {
         val key = roomKey ?: return
@@ -4019,7 +4044,7 @@ class SyncManager internal constructor(
             )
         }.getOrNull() ?: return
         if (!isValidLegacySyncPut(rawId, kind, imported)) return
-        // accepted, applied or not, so learn the casing a 2.x iOS sender used
+        // accepted, applied or not, so pin its casing unless we already have one
         legacyV2Ids?.learn(rawId)
         // the local object lives under the lowercase key too, otherwise the next
         // diff would see two ids and echo a delete back (S3-01 in reverse)

@@ -33,6 +33,10 @@ class TacticalApp : Application() {
     lateinit var pdfRenderGuard: com.tacmap.map.render.pdf.PdfRenderGuard
         private set
 
+    /** MBTiles open crash loop breaker (s14.1), entry ids only, no backup. tests swap in a fresh one as a relaunch */
+    lateinit var mbtilesOpenGuard: com.tacmap.map.render.MbtilesOpenGuard
+        @androidx.annotation.VisibleForTesting internal set
+
     /** Generate Offline Tiles lives here so it outlives the Layers sheet and the Activity */
     lateinit var pdfBakeManager: com.tacmap.calibration.PdfBakeManager
         private set
@@ -57,6 +61,9 @@ class TacticalApp : Application() {
         com.tacmap.map.render.pdf.PdfRenderSessions.init(this)
         pdfRenderGuard = com.tacmap.map.render.pdf.PdfRenderGuard(
             java.io.File(noBackupFilesDir, com.tacmap.map.render.pdf.PdfRenderGuard.FILE_NAME)
+        )
+        mbtilesOpenGuard = com.tacmap.map.render.MbtilesOpenGuard(
+            java.io.File(noBackupFilesDir, com.tacmap.map.render.MbtilesOpenGuard.FILE_NAME)
         )
         pdfBakeManager = com.tacmap.calibration.PdfBakeManager(this, pdfRenderGuard)
         // no bake can be running at process start, anything in the work dir is dead

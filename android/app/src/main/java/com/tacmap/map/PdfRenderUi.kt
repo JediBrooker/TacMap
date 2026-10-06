@@ -73,7 +73,8 @@ internal fun PdfRenderDialogs(
     dismissedRenderFailure: String?,
     onDismissRenderFailure: (String) -> Unit,
     onRetry: () -> Unit,
-    pdfRecovery: PdfMapSource?,
+    /** a held back PDF, or an MBTiles pack (s14.1) that reuses the same alert as is */
+    pdfRecovery: CrashSuspect?,
     confirmDeleteSuspect: Boolean,
     onConfirmDeleteSuspect: (Boolean) -> Unit,
     pdfLaunchNotice: PdfLaunchNotice?,

@@ -144,7 +144,9 @@ class SyncClientScenarioFixtureTest {
             "SyncHostileRecordFixtureTest#everyEmbeddedIdCaseClassifiesExactlyAndTheHasherIsStrict",
             "SyncHostileRecordFixtureTest#everyEmbeddedIdCaseInASnapshotKeepsSyncRunning",
             "SyncHostileRecordFixtureTest#everyEmbeddedIdCaseLiveKeepsSyncRunning",
-            "SyncManagerSp3Test#uppercaseEmbeddedIdStaysFoldedWhenTheSnapshotIsRestaged",
+            "SyncHostileRecordFixtureTest#everyEmbeddedIdCasingCaseLandsOnOneObjectAndOurEditKeepsItsCasing",
+            "SyncHostileRecordFixtureTest#aLegacyUppercaseObjectMetForTheFirstTimeGoesBackOutUppercase",
+            "SyncManagerSp3Test#uppercaseEmbeddedIdKeepsItsCasingWhenTheSnapshotIsRestaged",
         ),
         "structural_snapshot_stops_after_three" to listOf(
             "SyncClientScenarioFixtureTest#structuralSnapshotStopsAfterThree",
@@ -251,7 +253,11 @@ class SyncClientScenarioFixtureTest {
             "SyncManagerScenarioTest#v2DeleteAndUndoOfA2xIosObjectKeepItsUppercaseId",
             "SyncManagerScenarioTest#v2RememberedUppercaseIdSurvivesARestart",
             "SyncManagerScenarioTest#v2RememberVectorsLearnThroughTheRealManager",
+            "SyncManagerScenarioTest#v2ObjectsWeSentOrMetLowercaseStayVisibleTo2xAndroidAfterAnUppercaseIosEdit",
+            "SyncManagerScenarioTest#v2OwnPinIsWrittenByTheDiffPassBeforeAnythingComesBack",
             "LegacyV2IdStoreTest#learningStopsAtTenThousandEntries",
+            "LegacyV2IdStoreTest#ourOwnFirstSendPinsLowercaseAndALaterUppercaseRecordNeverFlipsItEvenAfterARestart",
+            "LegacyV2IdStoreTest#aFullStorePinsNothingNewAndThoseKeysSendTheirLocalId",
         ),
     )
 
