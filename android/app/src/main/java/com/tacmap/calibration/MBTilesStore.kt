@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.os.CancellationSignal
 import androidx.annotation.VisibleForTesting
 import java.io.Closeable
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.util.Locale
@@ -25,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class MBTilesStore private constructor(
     private val db: SQLiteDatabase,
+    /** the pack itself, the record probe reads its pages (s15.2) */
+    file: File,
     admissionBudgetMs: Long,
     /** metadata an earlier admission of these bytes gave, so the aggregate's skipped (s14.2) */
     prevalidated: Metadata? = null,
@@ -47,6 +50,8 @@ class MBTilesStore private constructor(
     init {
         // s14.1: nothing names tiles or metadata before the connection's hardened and the schema's checked
         val version = harden(db)
+        // root pages of the tables the metadata reads touch, for the record probe below
+        var metadataRoots = emptyList<Long>()
         // MBTiles 1.3 lets either one be a view (node-mbtiles/TileMill/MapTiler dedup packs).
         // SEC-M1-SHADOW: NOCASE like sqlite resolves FROM tiles, a case-exact lookup checked a dormant
         // 'tiles' row while every read ran a live 'TILES' view. two rows in any case fail closed
@@ -66,8 +71,15 @@ class MBTilesStore private constructor(
                     is MBTilesViewShape.Result.Refused -> throw IllegalArgumentException("MBTiles view refused: ${shape.reason}")
                 }
             } else listOf(relation)
-            bases.forEach { requireBaseTable(it, version) }
+            val roots = bases.map { requireBaseTable(it, version) }
+            if (relation == "metadata") metadataRoots = roots
             type
+        }
+        // s15.2: sqlite loads a whole name or value before we get to cut it, and below 12 nothing caps
+        // that. so every table the metadata reads touch gets its rows and record sizes read off the
+        // file first, before the budget and before any metadata read (the lazy open's included)
+        metadataRoots.forEach { root ->
+            require(MBTilesRecordProbe.metadataTable(file, root) == null) { "MBTiles metadata rows too many or too big" }
         }
         metadataIsView = types[0] == "view"
         tilesIsView = types[1] == "view"
@@ -77,13 +89,19 @@ class MBTilesStore private constructor(
     }
 
     /** exactly one ordinary table by that name (any case): not a view, not virtual, no generated column, and its
-     * sql declares that very name with no IF NOT EXISTS, so it's the table sqlite loaded (SEC-M1-SHADOW) */
-    private fun requireBaseTable(name: String, version: SqliteVersion) {
-        query("SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", arrayOf(name), null) { c ->
+     * sql declares that very name with no IF NOT EXISTS, so it's the table sqlite loaded (SEC-M1-SHADOW).
+     * gives that row's rootpage for the record probe, which has to be an integer or it fails closed */
+    private fun requireBaseTable(name: String, version: SqliteVersion): Long {
+        val root = query(
+            "SELECT type, sql, rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2", arrayOf(name), null,
+        ) { c ->
             require(c.moveToFirst())
             val type = c.getString(0)
             val sql = if (c.isNull(1)) null else c.getString(1)
+            require(c.getType(2) == Cursor.FIELD_TYPE_INTEGER)
+            val rootpage = c.getLong(2)
             require(!c.moveToNext() && type == "table" && MBTilesViewShape.tableDeclares(sql, name))
+            rootpage
         }
         // older sqlite can't have generated columns, it wouldn't even parse the schema
         if (version >= GENERATED_COLUMNS_MIN_SQLITE) {
@@ -91,6 +109,7 @@ class MBTilesStore private constructor(
                 while (c.moveToNext()) require(c.getInt(0) != 2 && c.getInt(0) != 3)
             }
         }
+        return root
     }
 
     private val rows = linkedMapOf<String, String>()
@@ -230,6 +249,7 @@ class MBTilesStore private constructor(
         val maxBytes = characters * UTF8_BYTES_PER_CHARACTER
         // SQLite may inspect its own record internally; only this bounded prefix
         // crosses into CursorWindow/Java. Do not select the unbounded TEXT first.
+        // sqlite still loads the whole value to CAST it, the record probe caps that (s15.2)
         val sql = "SELECT length(CAST($column AS BLOB)), substr(CAST($column AS BLOB), 1, ?) " +
             "FROM metadata WHERE rowid=?"
         return query(sql, arrayOf(maxBytes.toString(), rowId.toString()), budgetMs) { c ->
@@ -294,16 +314,20 @@ class MBTilesStore private constructor(
         // a view gets a per-statement budget, an interrupted read is just a missing tile
         val budget = if (tilesIsView) VIEW_QUERY_BUDGET_MS else null
         return runCatching {
+            // s15.2: sqlite skips loading a value only for typeof() and a blob's length(), length() of a
+            // TEXT tile_data loaded all of it. so it's a blob or no tile. LIMIT 1 on both, iOS steps once
+            // too: a CursorWindow fill steps every row, and a second row on the key would get loaded
             val length = query(
-                "SELECT length(tile_data) FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                "SELECT CASE WHEN typeof(tile_data)='blob' THEN length(tile_data) END FROM tiles " +
+                    "WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",
                 args, budget,
-            ) { c -> if (c.moveToFirst()) c.getLong(0) else return null }
+            ) { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else return null }
             if (length <= 0L || length > MAX_TILE_BYTES) return null
             // Query the blob only after the length-only CursorWindow proves it is
             // bounded; selecting both columns could materialize an attacker-sized
             // blob before getLong() had a chance to reject it.
             query(
-                "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",
                 args, budget,
             ) { c -> if (c.moveToFirst()) c.getBlob(0)?.takeIf { it.size <= MAX_TILE_BYTES } else null }
         }.getOrNull()
@@ -395,13 +419,23 @@ class MBTilesStore private constructor(
             open(path, ADMISSION_BUDGET_MS, metadata)
 
         private fun open(path: String, admissionBudgetMs: Long, prevalidated: Metadata?): MBTilesStore? {
+            val file = File(path)
+            // s15.2: sqlite loads and parses every schema row at the first statement, before any check of
+            // ours, so a schema too big to load is refused off the file before sqlite even opens it.
+            // every MBTiles open comes through here: admission, lazy open, import, rebuild, migration
+            val schemaOk = try {
+                MBTilesRecordProbe.schema(file) == null
+            } catch (_: Exception) {
+                false
+            }
+            if (!schemaOk) return null
             val db = try {
                 SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
             } catch (_: Throwable) {
                 return null
             }
             return try {
-                MBTilesStore(db, admissionBudgetMs, prevalidated)
+                MBTilesStore(db, file, admissionBudgetMs, prevalidated)
             } catch (_: Throwable) {
                 runCatching { db.close() }
                 null
