@@ -536,7 +536,10 @@ Stated plainly, because a tool that hides its limits cannot be trusted.
   (device-mode resume, the App Lock PIN, a platform credential or a confirmed
   protection change). A write still in flight behind the lock fails closed
   instead of re-caching the key: a Unit Sync write that missed the two seconds
-  is dropped without a security stop, and a map import still copying, or a
+  is dropped without a security stop (if it carried the sync revision record of
+  a local edit, only the object ids are remembered, in memory, and that record
+  is written after the foreground unlock, before Unit Sync reconnects), and a
+  map import still copying, or a
   map-library change still being written, when the app leaves the foreground
   (or while the Activity is recreated for a configuration change it doesn't
   handle) fails without deleting anything and has to be retried. A PDF bake that

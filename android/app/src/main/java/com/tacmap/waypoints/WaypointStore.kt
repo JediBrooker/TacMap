@@ -351,8 +351,14 @@ class WaypointStore private constructor(
     }
 
     private fun emit(ids: Set<String>, origin: ModelMutationOrigin) {
-        if (ids.isNotEmpty()) check(mutationChannel.trySend(ModelMutationEvent(ids, origin)).isSuccess)
+        if (ids.isEmpty()) return
+        val event = ModelMutationEvent(ids, origin)
+        mutationTap?.invoke(event)
+        check(mutationChannel.trySend(event).isSuccess)
     }
+
+    /** Sync notes every event here, synchronously. A channel handoff a pause cancels just drops it. */
+    internal var mutationTap: ((ModelMutationEvent) -> Unit)? = null
 
     private fun changedIds(before: List<Waypoint>, after: List<Waypoint>): Set<String> {
         val a = before.associateBy { it.id }; val b = after.associateBy { it.id }

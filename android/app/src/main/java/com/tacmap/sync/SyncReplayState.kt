@@ -1302,8 +1302,31 @@ class LocalModelRevisionJournal(
     private val label = "sync/model-revisions"
     private val persistenceMutex = Mutex()
     val isPersistenceInFlight: Boolean get() = persistenceMutex.isLocked
+    private val awaitingKey = file.absolutePath
 
     suspend fun awaitPersistence() = persistenceMutex.withLock { }
+
+    /**
+     * A local edit sync has seen but whose bump hasn't landed yet. Stays noted till a bump
+     * with that id lands, so one the pause cut off (key relocked under it, or the observer
+     * cancelled before it ran) gets redone by the next load instead of vanishing.
+     */
+    fun noteAwaitingBump(localIds: Collection<String>) {
+        // ids the journal refuses anyway would only turn a pause into a stop on replay
+        val ids = localIds.filter { runCatching { UUID.fromString(it) }.isSuccess }
+        if (ids.isEmpty()) return
+        synchronized(awaitingBumps) { awaitingBumps.getOrPut(awaitingKey) { LinkedHashSet() }.addAll(ids) }
+    }
+
+    private fun bumpLanded(ids: Collection<String>) = synchronized(awaitingBumps) {
+        val left = awaitingBumps[awaitingKey] ?: return@synchronized
+        left.removeAll(ids.toSet())
+        if (left.isEmpty()) awaitingBumps.remove(awaitingKey)
+    }
+
+    /** What's noted right now. Bump these again after a load, that's what proves the key is usable. */
+    fun awaitingBumpIds(): Set<String> =
+        synchronized(awaitingBumps) { awaitingBumps[awaitingKey]?.toSet().orEmpty() }
 
     /** Ordered event collector awaits durability without occupying the UI thread. */
     suspend fun bumpAllOffMain(localIds: Set<String>, io: CoroutineContext): Boolean = persistenceMutex.withLock {
@@ -1323,6 +1346,7 @@ class LocalModelRevisionJournal(
             if (ok) synchronized(this@LocalModelRevisionJournal) {
                 for ((id, value) in patch) generations[id] = checkNotNull(value)
             }
+            if (ok) bumpLanded(patch.keys)
             ok
         }
     }
@@ -1352,7 +1376,7 @@ class LocalModelRevisionJournal(
         }
         for ((localId, current) in previous) generations[localId] = current + 1
 
-        if (save()) return true
+        if (save()) { bumpLanded(previous.keys); return true }
         for ((localId, current) in previous) {
             if (current == 0L) generations.remove(localId) else generations[localId] = current
         }
@@ -1403,6 +1427,13 @@ class LocalModelRevisionJournal(
             out[id] = java.lang.Long.parseUnsignedLong(encoded, 16)
         }
         return out
+    }
+
+    private companion object {
+        // per journal file and process wide: a pause with no room joined drops the whole
+        // manager, the next one still has to redo these. memory only, the key is locked
+        // when they get stranded
+        val awaitingBumps = HashMap<String, LinkedHashSet<String>>()
     }
 }
 

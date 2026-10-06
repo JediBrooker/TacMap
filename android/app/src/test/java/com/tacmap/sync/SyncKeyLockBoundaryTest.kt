@@ -280,4 +280,80 @@ class SyncKeyLockBoundaryTest {
         assertBackgroundPresenceStillSends(h)
         assertTrue(h.uncaught.isEmpty())
     }
+
+    private fun generationOnDisk(h: SyncHarness, localId: String): Long {
+        val disk = LocalModelRevisionJournal(h.env.filesDir)
+        assertTrue(disk.load())
+        return disk.generation(localId)
+    }
+
+    @Test fun revisionBumpsThePauseCutOffAreRedoneAfterTheUnlockBeforeReconnecting() {
+        val key = InstrumentedDataKey().also { it.install() }
+        val h = connected()
+        h.socket.progress()
+        settle(h)
+        val busy = occupyWorker()
+        // first one's bump is stuck on the worker, the second is committed but the observer
+        // hasn't even run for it yet when Home lands
+        val first = h.addWaypoint("edited right before Home")
+        h.runCurrent()
+        val second = h.addWaypoint("edited as Home was pressed")
+
+        assertTrue(h.manager.suspendUntilForegroundStores())
+        assertFalse(h.manager.awaitPersistenceWorkerIdle(100))
+        val unwrapsAtLock = key.unwraps.get()
+        key.lock()
+        busy.countDown()
+        settle(h)
+        assertTrue("the bump did run behind the lock", key.refusedWhileLocked.get() > 0)
+        assertEquals("nothing unwrapped the key while locked", unwrapsAtLock, key.unwraps.get())
+        assertFalse(key.cache.isCached)
+        assertNull(h.manager.currentIssueKind)
+        assertEquals(1, h.transport.sockets.size)
+
+        // the user's own unlock, then the stores come back
+        key.unlock()
+        h.manager.prepareForForegroundUnlock()
+        assertTrue(h.manager.attachForegroundStores(h.waypointStore, h.drawingStore) { null })
+        var atReconnect: Pair<Long, Long>? = null
+        pump({
+            h.runCurrent()
+            if (atReconnect == null && h.transport.sockets.size == 2) {
+                atReconnect = generationOnDisk(h, first.id) to generationOnDisk(h, second.id)
+            }
+        }) { atReconnect != null }
+        assertEquals("both lost bumps landed before the reconnect", 1L to 1L, atReconnect)
+        settle(h)
+        assertNotEquals(SyncIssueKind.SECURITY, h.manager.currentIssueKind)
+        assertEquals(1L, generationOnDisk(h, first.id))
+        assertTrue(h.uncaught.isEmpty())
+    }
+
+    @Test fun revisionBumpsCutOffWithNoRoomAreRedoneByTheNextManager() {
+        val key = InstrumentedDataKey().also { it.install() }
+        val before = SyncHarness(persistenceWorker = io)
+        settle(before)
+        val busy = occupyWorker()
+        val first = before.addWaypoint("edited right before Home")
+        before.runCurrent()
+        val second = before.addWaypoint("edited as Home was pressed")
+
+        // no room joined, so UnitSyncRuntime drops the whole manager on the pause
+        before.manager.dispose()
+        key.lock()
+        busy.countDown()
+        settle(before)
+        assertTrue(key.refusedWhileLocked.get() > 0)
+        assertFalse(key.cache.isCached)
+        before.close(deleteFiles = false)
+
+        key.unlock()
+        val after = SyncHarness(dir = before.dir, persistenceWorker = io).also { harness = it }
+        settle(after)
+        assertEquals(1L, generationOnDisk(after, first.id))
+        assertEquals(1L, generationOnDisk(after, second.id))
+        assertNull(after.manager.currentIssueKind)
+        assertTrue(before.uncaught.isEmpty())
+        assertTrue(after.uncaught.isEmpty())
+    }
 }

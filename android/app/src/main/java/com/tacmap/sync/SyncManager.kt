@@ -726,8 +726,13 @@ class SyncManager internal constructor(
 
     private fun reloadRevisionJournal() {
         revisionJournalAvailable = false
+        // local edits whose bump a pause cut off get redone here, before any generation is
+        // read and before the foreground attach reconnects. edits from now on are the new
+        // observer's job. a failure with the key usable is the same stop as a failed live bump
+        val stranded = modelRevisionJournal.awaitingBumpIds()
         revisionJournalLoad = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-            val ok = modelRevisionJournal.loadOffMain(env.persistenceDispatcher)
+            val ok = modelRevisionJournal.loadOffMain(env.persistenceDispatcher) &&
+                modelRevisionJournal.bumpAllOffMain(stranded, env.persistenceDispatcher)
             if (!lifecycleGate.isDisposed) revisionJournalAvailable = ok
             ok
         }
@@ -2589,6 +2594,10 @@ class SyncManager internal constructor(
         revisionJob?.cancel()
         val observedWaypoints = waypointStore
         val observedDrawings = drawingStore
+        // noted the moment the store commits, so an edit this observer never gets to (a pause
+        // cancels it mid-handoff, or mid-bump) is redone by the next journal load
+        observedWaypoints.mutationTap = ::noteAwaitingBump
+        observedDrawings.mutationTap = ::noteAwaitingBump
         revisionJob = scope.launch {
             merge(observedWaypoints.mutations, observedDrawings.mutations)
                 .collect { event ->
@@ -2599,8 +2608,8 @@ class SyncManager internal constructor(
                         !modelRevisionJournal.bumpAllOffMain(event.localIds, env.persistenceDispatcher)) {
                         // the bump is NonCancellable, so it comes back here even after a pause
                         // detached the stores and relocked the key it needed. thats not a
-                        // security stop and must not kill background presence, the foreground
-                        // attach reloads the journal from disk
+                        // security stop and must not kill background presence. the ids stay
+                        // noted, the foreground attach reloads the journal and redoes the bump
                         if (!currentCoroutineContext().isActive || lifecycleGate.isDisposed ||
                             waypointStoreRef !== observedWaypoints || drawingStoreRef !== observedDrawings) return@collect
                         revisionJournalAvailable = false
@@ -2610,6 +2619,10 @@ class SyncManager internal constructor(
                     }
                 }
         }
+    }
+
+    private fun noteAwaitingBump(event: com.tacmap.models.ModelMutationEvent) {
+        if (event.origin != ModelMutationOrigin.REMOTE_SYNC) modelRevisionJournal.noteAwaitingBump(event.localIds)
     }
 
     /**
