@@ -356,4 +356,32 @@ class SyncKeyLockBoundaryTest {
         assertTrue(before.uncaught.isEmpty())
         assertTrue(after.uncaught.isEmpty())
     }
+
+    @Test fun aCutOffBumpThatStillLandsAfterTheUnlockIsNotRedoneOnTop() {
+        val key = InstrumentedDataKey().also { it.install() }
+        val h = connected()
+        h.socket.progress()
+        settle(h)
+        val busy = occupyWorker()
+        // its bump is stuck on the worker when Home lands, holding the journal's mutex
+        val edited = h.addWaypoint("edited right before Home")
+        h.runCurrent()
+        assertTrue(h.manager.suspendUntilForegroundStores())
+        assertFalse(h.manager.awaitPersistenceWorkerIdle(100))
+        key.lock()
+
+        // the user's back before the worker gets to it: the attach notes the edit as stranded,
+        // then the old bump lands with the key usable, ahead of the reload and its redo
+        key.unlock()
+        h.manager.prepareForForegroundUnlock()
+        assertTrue(h.manager.attachForegroundStores(h.waypointStore, h.drawingStore) { null })
+        busy.countDown()
+        settle(h)
+        pump(h::runCurrent) { h.transport.sockets.size == 2 }
+        settle(h)
+
+        assertEquals("one edit, one bump", 1L, generationOnDisk(h, edited.id))
+        assertNotEquals(SyncIssueKind.SECURITY, h.manager.currentIssueKind)
+        assertTrue(h.uncaught.isEmpty())
+    }
 }

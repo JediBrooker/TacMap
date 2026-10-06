@@ -1329,19 +1329,30 @@ class LocalModelRevisionJournal(
         synchronized(awaitingBumps) { awaitingBumps[awaitingKey]?.toSet().orEmpty() }
 
     /** Ordered event collector awaits durability without occupying the UI thread. */
-    suspend fun bumpAllOffMain(localIds: Set<String>, io: CoroutineContext): Boolean = persistenceMutex.withLock {
-        if (localIds.isEmpty()) return@withLock true
+    suspend fun bumpAllOffMain(localIds: Set<String>, io: CoroutineContext): Boolean =
+        persistenceMutex.withLock { bumpHoldingMutex(localIds, io) }
+
+    /**
+     * The load's redo of [noted]: only the ones still waiting once it has the mutex. A cut off
+     * bump can still land late (the key came back before its worker got to it), redoing that
+     * one too would count the edit twice.
+     */
+    suspend fun redoAwaitingOffMain(noted: Set<String>, io: CoroutineContext): Boolean =
+        persistenceMutex.withLock { bumpHoldingMutex(noted intersect awaitingBumpIds(), io) }
+
+    private suspend fun bumpHoldingMutex(localIds: Set<String>, io: CoroutineContext): Boolean {
+        if (localIds.isEmpty()) return true
         val patch = synchronized(this) {
             LinkedHashMap<String, Long?>().also { values ->
                 for (id in localIds) {
-                    if (runCatching { UUID.fromString(id) }.isFailure) return@withLock false
+                    if (runCatching { UUID.fromString(id) }.isFailure) return false
                     val value = generations[id] ?: 0L
-                    if (value >= VersionStamp.MAX_COUNTER) return@withLock false
+                    if (value >= VersionStamp.MAX_COUNTER) return false
                     values[id] = value + 1
                 }
             }
         }
-        withContext(NonCancellable) {
+        return withContext(NonCancellable) {
             val ok = withContext(io) { save(SyncSparseMapView(generations, patch)) }
             if (ok) synchronized(this@LocalModelRevisionJournal) {
                 for ((id, value) in patch) generations[id] = checkNotNull(value)

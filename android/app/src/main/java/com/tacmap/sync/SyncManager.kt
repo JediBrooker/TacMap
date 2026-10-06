@@ -732,7 +732,7 @@ class SyncManager internal constructor(
         val stranded = modelRevisionJournal.awaitingBumpIds()
         revisionJournalLoad = scope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             val ok = modelRevisionJournal.loadOffMain(env.persistenceDispatcher) &&
-                modelRevisionJournal.bumpAllOffMain(stranded, env.persistenceDispatcher)
+                modelRevisionJournal.redoAwaitingOffMain(stranded, env.persistenceDispatcher)
             if (!lifecycleGate.isDisposed) revisionJournalAvailable = ok
             ok
         }
