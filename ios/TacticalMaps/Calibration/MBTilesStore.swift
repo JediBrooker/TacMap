@@ -100,7 +100,8 @@ final class MBTilesStore: @unchecked Sendable {
         // "valid" but blank basemap. Both relations are mandatory, and all
         // security-sensitive metadata is validated before publishing a source.
         // Relations, view shape and base tables first, they read sqlite_master
-        // only. The budget's for views, two tables get none
+        // only, then the metadata record probe. The budget's for views, two
+        // tables get none
         var validated: Metadata?
         if loadRelationTypes() {
             validated = tilesRelation == .view || metadataRelation == .view
@@ -126,6 +127,13 @@ final class MBTilesStore: @unchecked Sendable {
     deinit { sqlite3_close(db) }
 
     private func openConnection() -> Bool {
+        // s15.2 schema probe: sqlite loads and parses every schema row at the
+        // first statement, before any check of ours, and below 3.45 it loads a
+        // value whole before SQLITE_LIMIT_LENGTH gets a look. so a schema too
+        // big to load gets refused off the file before sqlite even opens it.
+        // every MBTiles open comes through here: admission, the lazy
+        // prevalidated open, import, the library rebuild/salvage and migration
+        guard Self.probeAllows({ try MBTilesRecordProbe.schema(url) }) else { return false }
         guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             sqlite3_close(db)
             db = nil
@@ -181,11 +189,23 @@ final class MBTilesStore: @unchecked Sendable {
         return true
     }
 
+    /// a probe that throws (file gone, short read) refuses like one that says no
+    private static func probeAllows(_ probe: () throws -> MBTilesRecordProbe.Refusal?) -> Bool {
+        do {
+            return try probe() == nil
+        } catch {
+            return false
+        }
+    }
+
     /// 3.0.2 SEC-1: both relations, a view's shape and every table a read
     /// touches, all from sqlite_master before any statement names tiles or
-    /// metadata. After this no expression stored in the file can run on a read
+    /// metadata. After this no expression stored in the file can run on a read.
+    /// 3.0.3 U2: then the metadata probe, before the admission budget and
+    /// before anything reads metadata. the lazy open comes through here too
     private func loadRelationTypes() -> Bool {
         var found: [Relation] = []
+        var metadataRoots: [Int64?] = []
         for name in ["tiles", "metadata"] {
             guard let row = relationType(name) else { return false }
             let relation = row.relation
@@ -199,8 +219,24 @@ final class MBTilesStore: @unchecked Sendable {
             } else {
                 bases = [name]
             }
-            guard bases.allSatisfy(isOrdinaryTable) else { return false }
+            var roots: [Int64?] = []
+            for base in bases {
+                guard let table = ordinaryTable(base) else { return false }
+                roots.append(table.rootPage)
+            }
+            if name == "metadata" { metadataRoots = roots }
             found.append(relation)
+        }
+        // s15.2: sqlite loads a whole name or value before length() or substr()
+        // gets to cut it, and iOS 16-18 ship sqlite older than 3.45, which only
+        // checks SQLITE_LIMIT_LENGTH after that load. so each table the metadata
+        // reads touch (metadata, or its view's base tables) gets its rows and
+        // record sizes read off the file first. a rootpage that isn't an
+        // integer fails closed
+        for root in metadataRoots {
+            guard let root, Self.probeAllows({ try MBTilesRecordProbe.metadataTable(url, root: root) }) else {
+                return false
+            }
         }
         tilesRelation = found[0]
         metadataRelation = found[1]
@@ -235,17 +271,24 @@ final class MBTilesStore: @unchecked Sendable {
         }
     }
 
+    private struct OrdinaryTable {
+        /// that row's rootpage for the record probe, nil when it isn't an
+        /// integer (only the metadata probe cares, it fails closed on that)
+        let rootPage: Int64?
+    }
+
     /// a table a read touches: one sqlite_master row (NOCASE, like SQLite
     /// resolves it), a real table not CREATE VIRTUAL TABLE (module code on
     /// every read), and no generated column (an expression on every read).
     /// its sql has to declare that very name too, no IF NOT EXISTS, so the
-    /// row we checked is the table sqlite loaded (SEC-M1-SHADOW)
-    private func isOrdinaryTable(_ name: String) -> Bool {
+    /// row we checked is the table sqlite loaded (SEC-M1-SHADOW). nil if it
+    /// isn't one
+    private func ordinaryTable(_ name: String) -> OrdinaryTable? {
         var stmt: OpaquePointer?
         defer { sqlite3_finalize(stmt) }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        guard sqlite3_prepare_v2(db, "SELECT type, sql FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 2",
-                                 -1, &stmt, nil) == SQLITE_OK else { return false }
+        guard sqlite3_prepare_v2(db, "SELECT type, sql, rootpage FROM sqlite_master WHERE name = ? COLLATE NOCASE " +
+                                 "LIMIT 2", -1, &stmt, nil) == SQLITE_OK else { return nil }
         sqlite3_bind_text(stmt, 1, name, -1, transient)
         guard sqlite3_step(stmt) == SQLITE_ROW,
               sqlite3_column_type(stmt, 0) == SQLITE_TEXT,
@@ -253,22 +296,25 @@ final class MBTilesStore: @unchecked Sendable {
               String(cString: typePointer) == "table",
               sqlite3_column_type(stmt, 1) == SQLITE_TEXT,
               let sqlPointer = sqlite3_column_text(stmt, 1),
-              MBTilesViewShape.tableDeclares(sql: String(cString: sqlPointer), name: name),
-              sqlite3_step(stmt) == SQLITE_DONE else { return false }
+              MBTilesViewShape.tableDeclares(sql: String(cString: sqlPointer), name: name) else { return nil }
+        let rootPage = sqlite3_column_type(stmt, 2) == SQLITE_INTEGER ? sqlite3_column_int64(stmt, 2) : nil
+        guard sqlite3_step(stmt) == SQLITE_DONE else { return nil }
         // below 3.31 a generated column can't exist, the schema wouldnt parse
-        guard sqlite3_libversion_number() >= Self.generatedColumnsMinimumSQLite else { return true }
+        guard sqlite3_libversion_number() >= Self.generatedColumnsMinimumSQLite else {
+            return OrdinaryTable(rootPage: rootPage)
+        }
         var info: OpaquePointer?
         defer { sqlite3_finalize(info) }
         guard sqlite3_prepare_v2(db, "SELECT hidden FROM pragma_table_xinfo(?)", -1, &info, nil) == SQLITE_OK else {
-            return false
+            return nil
         }
         sqlite3_bind_text(info, 1, name, -1, transient)
         while true {
             let step = sqlite3_step(info)
-            if step == SQLITE_DONE { return true }
-            guard step == SQLITE_ROW else { return false }
+            if step == SQLITE_DONE { return OrdinaryTable(rootPage: rootPage) }
+            guard step == SQLITE_ROW else { return nil }
             let hidden = sqlite3_column_int(info, 0)
-            if hidden == 2 || hidden == 3 { return false }
+            if hidden == 2 || hidden == 3 { return nil }
         }
     }
 
