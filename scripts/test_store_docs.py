@@ -40,11 +40,11 @@ class StoreCopyTests(unittest.TestCase):
             if re.search(r'photo', line, re.I):
                 self.assertRegex(line, SAVED_AS_PDF)
 
-    def test_release_notes_are_for_3_0_1(self):
+    def test_release_notes_are_for_3_0_2(self):
         for path in LOCALES:
             data = json.loads(path.read_text())
-            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.1'), path.name)
-            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.1'), path.name)
+            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.2'), path.name)
+            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.2'), path.name)
 
 
 class PrivacyPolicyTests(unittest.TestCase):
