@@ -474,7 +474,7 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertEqual(fixture["viewQueryBudgetMs"] as? Int, MBTilesStore.viewQueryBudgetMs)
         XCTAssertEqual(fixture["admissionBudgetAppliesTo"] as? String, "views")
         let cases = try XCTUnwrap(fixture["relationCases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 50)
+        XCTAssertEqual(cases.count, 57)
         var seen: Set<String> = []
         for vector in cases {
             let id = try XCTUnwrap(vector["id"] as? String)
@@ -530,7 +530,13 @@ final class MBTilesStoreTests: XCTestCase {
                                            "metadataLargeRecordUnderProbeCap", "metadataRecordOverProbeCap",
                                            "metadataViewJoinBaseRows", "schemaTooManyObjects", "textTileData",
                                            // PROBE-RT-1: ANALYZE'd opens, a stat row over the schema caps doesn't
-                                           "analyzedPack", "statisticsOverProbeCap"]))
+                                           "analyzedPack", "statisticsOverProbeCap",
+                                           // 3.0.4 P1 index keys, 3.0.3 admitted the four over the cap
+                                           "tilesIndexKeyUnderProbeCap", "tilesIndexKeyOverProbeCap",
+                                           "metadataExpressionIndexOverProbeCap", "dedupOrphanImageKeyOverProbeCap",
+                                           "planetilerShallowRowOverProbeCap",
+                                           // P2, 3.0.3 refused both over a name that only looks like a stat table
+                                           "tilesColumnLikeStatistics", "indexNamedLikeStatistics"]))
     }
 
     /// "3.31.0" -> 3031000, what sqlite3_libversion_number gives
@@ -671,6 +677,7 @@ final class MBTilesStoreTests: XCTestCase {
                        MBTilesRecordProbe.maximumMetadataRecordBytes)
         XCTAssertEqual(probe["maxDepth"] as? Int, MBTilesRecordProbe.maximumDepth)
         XCTAssertEqual(probe["maxPages"] as? Int, MBTilesRecordProbe.maximumPages)
+        XCTAssertEqual((probe["maxIndexKeyBytes"] as? Int).map(UInt64.init), MBTilesRecordProbe.maximumIndexKeyBytes)
         // the admission's own 64 row cap, and a record that holds two values at the value cap
         XCTAssertEqual(fixture["maxRows"] as? Int, MBTilesRecordProbe.maximumMetadataRows)
         let connection = try XCTUnwrap(fixture["connection"] as? [String: Any])
@@ -682,14 +689,21 @@ final class MBTilesStoreTests: XCTestCase {
     /// root looked up like the reader does, packBase64 rows are the exact files
     func testSharedRecordProbeCasesGiveTheSharedVerdicts() throws {
         let cases = try XCTUnwrap(try recordProbeFixture()["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 51)
-        XCTAssertEqual(cases.filter { $0["sql"] != nil }.count, 11)
+        XCTAssertEqual(cases.count, 92)
+        XCTAssertEqual(cases.filter { $0["sql"] != nil }.count, 22)
         // the 9 byte varint is 2^64 - 1, a signed compare would let it through as -1
         XCTAssertTrue(cases.contains { $0["id"] as? String == "nineByteVarint" })
         // PROBE-RT-1: the ANALYZE tables, built by this sqlite and by hand, one
-        // only findable on its schema row's overflow page
+        // only findable on its schema row's overflow page. 3.0.4: index keys
+        // built by this sqlite, the walk's edges by hand, schema rows sqlite
+        // never writes, and names that only look like stat tables
         for id in ["analyzedPack", "analyzedStatisticsOverCap", "analyzedStatisticsTooManyRows",
-                   "statisticsMarkOnOverflowPage", "statisticsView"] {
+                   "statisticsMarkOnOverflowPage", "statisticsView",
+                   "realPackIndexes", "indexPagesPastMaxPages", "tilesIndexKeyOverCap",
+                   "metadataExpressionIndexOverCap", "withoutRowidRowOverCap", "dedupOrphanImageKeyOverCap",
+                   "indexKeyNineByteVarint", "indexInteriorKeyOverCap", "indexChildCycle", "indexTypeColumnLies",
+                   "schemaRecordTextRootpage", "schemaRootpageNegative", "tilesColumnLikeStatistics",
+                   "statisticsMarkInsideWords", "statisticsCommentBeforeName"] {
             XCTAssertTrue(cases.contains { $0["id"] as? String == id }, id)
         }
         var reasons: Set<String> = []
@@ -719,7 +733,7 @@ final class MBTilesStoreTests: XCTestCase {
             }
         }
         XCTAssertEqual(reasons, ["header", "structure", "pageType", "rows", "recordBytes", "totalBytes",
-                                 "statistics"])
+                                 "statistics", "keyBytes", "schemaRecord"])
     }
 
     /// every door a pack comes through refuses what the probe refuses: the
@@ -789,12 +803,28 @@ final class MBTilesStoreTests: XCTestCase {
     }
 
     /// a table leaf page, b-tree header at headerAt, one cell per record size
-    /// packed at the end. offsets count from the page start. withRecords puts
-    /// that many zero bytes in as well, the schema's rows get read whole now
-    private func leafPage(size: Int, records: [UInt64], headerAt: Int = 0, withRecords: Bool = false) -> [UInt8] {
-        cellPage(size: size, cells: records.map {
-            (size: $0, body: withRecords ? [UInt8](repeating: 0, count: Int($0)) : [])
-        }, headerAt: headerAt)
+    /// packed at the end. offsets count from the page start. no record bytes,
+    /// only for pages the probe never reads past each cell's size
+    private func leafPage(size: Int, records: [UInt64], headerAt: Int = 0) -> [UInt8] {
+        cellPage(size: size, cells: records.map { (size: $0, body: []) }, headerAt: headerAt)
+    }
+
+    /// an index leaf page (0x0A), a cell per key that's only its payload size
+    /// varint. the probe never reads past it
+    private func indexLeafPage(size: Int, keys: [UInt64]) -> [UInt8] {
+        var page = [UInt8](repeating: 0, count: size)
+        page[0] = 0x0A
+        page[3] = UInt8(keys.count >> 8 & 0xFF)
+        page[4] = UInt8(keys.count & 0xFF)
+        var at = size
+        for (i, key) in keys.enumerated() {
+            let cell = sqliteVarint(key)
+            at -= cell.count
+            page.replaceSubrange(at..<at + cell.count, with: cell)
+            page[8 + 2 * i] = UInt8(at >> 8 & 0xFF)
+            page[9 + 2 * i] = UInt8(at & 0xFF)
+        }
+        return page
     }
 
     /// the same with what goes after each cell's size and rowid varints
@@ -851,7 +881,10 @@ final class MBTilesStoreTests: XCTestCase {
         let size = 4096
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-huge-\(UUID().uuidString).mbtiles")
         defer { try? FileManager.default.removeItem(at: url) }
-        var first = leafPage(size: size, records: [60], headerAt: 100, withRecords: true)
+        // a real sqlite_master row, the schema probe reads them whole and refuses anything else
+        var first = cellPage(size: size, cells: [recordCell("table", "metadata", "metadata", Int64(2),
+                                                           "CREATE TABLE metadata (name text, value text)")],
+                             headerAt: 100)
         first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
         func write(_ record: UInt64) throws {
             try Data(first + leafPage(size: size, records: [record])).write(to: url)
@@ -906,6 +939,45 @@ final class MBTilesStoreTests: XCTestCase {
                                            "CREATE TABLE SQLITE_STAT1(tbl,idx,stat)"))
         try Data(hidden + leafPage(size: size, records: [20, 2_000_000])).write(to: url)
         XCTAssertEqual(try MBTilesRecordProbe.schema(url)?.rawValue, "recordBytes")
+    }
+
+    /// 3.0.4 P1: a tiles index with one key claiming 300 MB. a tile read that
+    /// seeks past it makes sqlite malloc that whole key, SQLITE_LIMIT_LENGTH
+    /// never gets a look at a b-tree compare, and 3.0.3 never read an index
+    /// page. the file really is that long (sparse), the probe reads 2 pages:
+    /// the key's payload size decides, its bytes never get read
+    func testAHugeIndexKeyIsJudgedOffItsPayloadSizeBeforeSQLiteOpensTheFile() throws {
+        let size = 4096
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-key-\(UUID().uuidString).mbtiles")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var first = cellPage(size: size, cells: [recordCell("index", "tiles_note", "tiles", Int64(2),
+                                                           "CREATE INDEX tiles_note ON tiles (zoom_level, " +
+                                                           "tile_column, tile_row, note)")], headerAt: 100)
+        first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
+        func write(_ key: UInt64) throws {
+            try Data(first + indexLeafPage(size: size, keys: [12, key])).write(to: url)
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: UInt64(2 * size) + 300_000_000)
+            try handle.close()
+        }
+        let started = Date()
+        try write(300_000_000)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url), .keyBytes)
+        XCTAssertNil(MBTilesStore(url: url))
+        // right at the cap is fine, a byte over isn't
+        try write(MBTilesRecordProbe.maximumIndexKeyBytes)
+        XCTAssertNil(try MBTilesRecordProbe.schema(url))
+        try write(MBTilesRecordProbe.maximumIndexKeyBytes + 1)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url), .keyBytes)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "nothing of the key gets read")
+
+        // the row can say table all it likes, the page decides. sqlite never
+        // checks type or tbl_name against what the page is
+        first = cellPage(size: size, cells: [recordCell("table", "sqlite_autoindex_tiles_1", "tiles", Int64(2),
+                                                       "CREATE TABLE x (a)")], headerAt: 100)
+        first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: size))
+        try write(300_000_000)
+        XCTAssertEqual(try MBTilesRecordProbe.schema(url), .keyBytes)
     }
 
     func testAFileThatCantBeReadThrowsSoTheOpenRefusesIt() {
@@ -972,6 +1044,88 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 30)
     }
 
+    /// 3.0.4 P1 + P2, same idea for the index step and the schema rows: a
+    /// real pack with a few levels of index on 512 byte pages, its index pages
+    /// mangled (cell counts, pointers, child pages pointed back up for cycles,
+    /// key sizes at and over the cap and 9 bytes long) and sqlite_master's
+    /// cells too (serial types, rootpages, a stat name written into the text).
+    /// every probe comes back with a verdict, quick
+    func testMangledIndexesAndSchemaRowsNeverTrapTheProbe() throws {
+        let url = try makePack([
+            "PRAGMA page_size=512",
+            "CREATE TABLE metadata (name text, value text)",
+            "CREATE UNIQUE INDEX name ON metadata (name)",
+            "INSERT INTO metadata VALUES ('name', 'Sample'), ('format', 'png')",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 2999) " +
+                "INSERT INTO tiles SELECT 14, i % 64, i / 64, X'01' FROM n"
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertNil(try MBTilesRecordProbe.schema(url), "untouched it's fine")
+        let original = [UInt8](try Data(contentsOf: url))
+        let size = 512
+        let pages = original.count / size
+        let indexPages = (2...pages).filter { [0x02, 0x0A].contains(original[($0 - 1) * size]) }
+        let interior = indexPages.filter { original[($0 - 1) * size] == 0x02 }
+        XCTAssertFalse(interior.isEmpty, "needs a multi level index")
+        // sqlite_master's cell content on page 1, from its content start to the end
+        let content = max(108, Int(original[105]) << 8 | Int(original[106]))
+        let keys: [UInt64] = [MBTilesRecordProbe.maximumIndexKeyBytes, MBTilesRecordProbe.maximumIndexKeyBytes + 1,
+                              300_000_000, 1 << 55, 0]
+        let marks = ["sqlite_stat1", "SQLITE_STAT4", "sqlite_stat", "xsqlite_stat1", "sqlite_stat1_", "[sqlite_stat1]",
+                     "sqlite_stat_1"].map { Array($0.utf8) }
+        func put(_ bytes: [UInt8], at: Int, in b: inout [UInt8]) {
+            guard at >= 0, at + bytes.count <= b.count else { return }
+            b.replaceSubrange(at..<at + bytes.count, with: bytes)
+        }
+        func be32(_ v: Int) -> [UInt8] { (0..<4).map { UInt8(truncatingIfNeeded: v >> (24 - 8 * $0)) } }
+        var rng = SplitMix64(state: 0x7AC_3A9_0304)
+        var verdicts: Set<String> = []
+        let started = Date()
+        for _ in 0..<500 {
+            var bytes = original
+            for _ in 0..<(1 + Int(rng.next() % 3)) {
+                let p = indexPages[Int(rng.next() % UInt64(indexPages.count))]
+                let base = (p - 1) * size
+                let n = Int(bytes[base + 3]) << 8 | Int(bytes[base + 4])
+                let array = base + (bytes[base] == 0x02 ? 12 : 8)
+                // a cell off the page's own pointer array, kept on the page
+                let at = array + 2 * (n > 0 ? Int(rng.next() % UInt64(n)) : 0)
+                let pointer = at + 2 <= base + size ? Int(bytes[at]) << 8 | Int(bytes[at + 1]) : size - 9
+                let cell = base + min(pointer, size - 9)
+                switch rng.next() % 8 {
+                case 0: bytes[base + Int(rng.next() % 12)] = UInt8(truncatingIfNeeded: rng.next())
+                case 1: put([UInt8(truncatingIfNeeded: rng.next()), UInt8(truncatingIfNeeded: rng.next())],
+                            at: array + 2 * Int(rng.next() % UInt64(max(n, 1))), in: &bytes)
+                case 2:
+                    // a child back up to an index page, itself, page 1, past the end
+                    let to = [indexPages[Int(rng.next() % UInt64(indexPages.count))], p, 1, pages + 1, 0][
+                        Int(rng.next() % 5)]
+                    let q = interior[Int(rng.next() % UInt64(interior.count))]
+                    put(be32(to), at: (q - 1) * size + 8, in: &bytes)
+                case 3:
+                    let key = sqliteVarint(keys[Int(rng.next() % UInt64(keys.count))])
+                    put(key, at: cell + (bytes[base] == 0x02 ? 4 : 0), in: &bytes)
+                case 4: put([UInt8](repeating: 0xFF, count: 9), at: cell + (bytes[base] == 0x02 ? 4 : 0), in: &bytes)
+                case 5: bytes[content + Int(rng.next() % UInt64(size - content))] = UInt8(truncatingIfNeeded: rng.next())
+                case 6:
+                    let mark = marks[Int(rng.next() % UInt64(marks.count))]
+                    put(mark, at: content + Int(rng.next() % UInt64(max(1, size - content - mark.count))), in: &bytes)
+                default:
+                    let q = 1 + Int(rng.next() % UInt64(pages))
+                    bytes[(q - 1) * size + (q == 1 ? 100 : 0)] = [0x02, 0x0A, 0x05, 0x0D, 0x00][Int(rng.next() % 5)]
+                }
+            }
+            try Data(bytes).write(to: url)
+            verdicts.insert(try MBTilesRecordProbe.schema(url)?.rawValue ?? "ok")
+        }
+        // the mangling has to get into the index walk and the row checks
+        XCTAssertTrue(verdicts.isSuperset(of: ["ok", "structure", "pageType", "keyBytes", "schemaRecord"]),
+                      "\(verdicts)")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 30)
+    }
+
     /// the widest interior page there is (64 KiB, ~32k children) all pointing at
     /// one page, and a chain of interior pages that goes one level too deep.
     /// both are refused as structure without walking forever
@@ -1023,9 +1177,67 @@ final class MBTilesStoreTests: XCTestCase {
         XCTAssertNil(try MBTilesRecordProbe.metadataTable(url, root: 3))
     }
 
+    /// 3.0.4 P1: the index walk has no page cap and can read most of a big
+    /// pack, so a page has to be gone once it's walked. FileHandle reads left an
+    /// autoreleased NSData per page alive till the thread's pool drained (~275
+    /// MB in one probe of a 16M tile planetiler pack, 3.0.3's capped table walk
+    /// could already do 256 MB at 64 KiB pages). 2,000 64 KiB index leaves
+    /// here, measured inside one pool so anything autoreleased is still around
+    func testABigIndexIsWalkedAPageAtATime() throws {
+        let size = 65_536
+        let leaves = 2_000
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("probe-big-\(UUID().uuidString).mbtiles")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var first = cellPage(size: size, cells: [recordCell("index", "tile_index", "tiles", Int64(2),
+                                                           "CREATE UNIQUE INDEX tile_index ON tiles " +
+                                                           "(zoom_level, tile_column, tile_row)")], headerAt: 100)
+        first.replaceSubrange(0..<100, with: sqliteHeader(pageSize: 1))
+        // page 2: interior index page, a 1 byte key per left child 3...2001, 2002 right most
+        var interior = [UInt8](repeating: 0, count: size)
+        let n = leaves - 1
+        interior[0] = 0x02
+        interior[3] = UInt8(n >> 8 & 0xFF)
+        interior[4] = UInt8(n & 0xFF)
+        for i in 0..<n {
+            let o = 12 + 2 * n + 5 * i
+            interior[12 + 2 * i] = UInt8(o >> 8 & 0xFF)
+            interior[13 + 2 * i] = UInt8(o & 0xFF)
+            interior[o + 2] = UInt8((3 + i) >> 8 & 0xFF)
+            interior[o + 3] = UInt8((3 + i) & 0xFF)
+            interior[o + 4] = 1
+        }
+        interior[10] = UInt8((2 + leaves) >> 8 & 0xFF)
+        interior[11] = UInt8((2 + leaves) & 0xFF)
+        var leaf = [UInt8](repeating: 0, count: size)
+        leaf[0] = 0x0A
+        try Data(first + interior).write(to: url)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        let page = Data(leaf)
+        for _ in 0..<leaves { try handle.write(contentsOf: page) }
+        try handle.close()
+
+        var grew = 0
+        try autoreleasepool {
+            let before = residentNow()
+            XCTAssertNil(try MBTilesRecordProbe.schema(url))
+            grew = residentNow() - before
+        }
+        XCTAssertLessThan(grew, 32 << 20, "\(grew >> 20) MB still around after walking \((leaves * size) >> 20) MB")
+    }
+
     /// the process's resident high water mark. SQLite fills what it allocates
     /// (random bytes, hex digits, printf output) so a big value shows up here
     private func residentHighWater() -> Int {
+        Int(basicTaskInfo()?.resident_size_max ?? 0)
+    }
+
+    /// what's resident right now
+    private func residentNow() -> Int {
+        Int(basicTaskInfo()?.resident_size ?? 0)
+    }
+
+    private func basicTaskInfo() -> mach_task_basic_info? {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
         let kr = withUnsafeMutablePointer(to: &info) {
@@ -1033,7 +1245,7 @@ final class MBTilesStoreTests: XCTestCase {
                 task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
             }
         }
-        return kr == KERN_SUCCESS ? Int(info.resident_size_max) : 0
+        return kr == KERN_SUCCESS ? info : nil
     }
 
     /// SEC-1: built-ins that allocate inside one uninterruptible step. 3.0.1
@@ -1157,7 +1369,9 @@ final class MBTilesStoreTests: XCTestCase {
     /// in a base table's row is a hand edit. android refused that for every
     /// base table, iOS only for the metadata ones (the probe needs the page),
     /// so a tiles table or a tiles view's table with a text rootpage still
-    /// opened here. both platforms refuse it now, every open
+    /// opened here. both platforms refuse it now, every open. 3.0.4 P1: the
+    /// schema probe gets there first (schemaRecord, any row), before sqlite
+    /// opens the file, ordinaryTable's own check is the backstop
     func testABaseTableWhoseRootpageIsntAnIntegerIsRefused() throws {
         let table = [
             "CREATE TABLE metadata (name text, value text)",
@@ -1174,7 +1388,7 @@ final class MBTilesStoreTests: XCTestCase {
             XCTAssertEqual(hex(admitted.tileData(z: 0, x: 0, y: 0)), "01", base)
             admitted.closeForDeletion()
             try storeRootpageAsText(base, in: url)
-            XCTAssertNil(try MBTilesRecordProbe.schema(url), "\(base): nothing the probe minds")
+            XCTAssertEqual(try MBTilesRecordProbe.schema(url), .schemaRecord, "\(base): not a row sqlite writes")
             XCTAssertNil(MBTilesStore(url: url), "\(base): admission")
             let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
                 name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))

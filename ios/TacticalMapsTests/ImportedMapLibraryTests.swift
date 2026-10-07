@@ -1345,7 +1345,13 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
                                          pending: nil, active: false, updatedAtMs: 0))
         var dependencies = liveDependencies(drafts)
         var reconciled = false, swept = false, cleared = false
-        dependencies.reconcile = { _ in reconciled = true; return true }
+        // residue rows need the real reconcile to see it go. the others keep the
+        // stub, their legacy-named maps would get reconciled away
+        let realReconcile = given["residueFiles"] as? Bool == true
+        dependencies.reconcile = { s in
+            reconciled = true
+            return realReconcile ? ImportedMapLibrary.reconcile(s, inFlight: []) : true
+        }
         dependencies.sweepBakes = { _ in swept = true; return true }
         dependencies.clearLegacy = { cleared = true; ImportedMapLibraryMigration.clearLegacy() }
         let vm = MapViewModel(libraryDependencies: dependencies, initialMapSource: OnlineRasterBasemapSource(.osmTopo))
@@ -1370,9 +1376,9 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
         let table = try XCTUnwrap(json["libraryLoad"] as? [String: Any])
         let allRows = try XCTUnwrap(table["rows"] as? [[String: Any]])
-        XCTAssertEqual(allRows.count, 32)
+        XCTAssertEqual(allRows.count, 34)
         let rows = allRows.filter { ($0["platforms"] as? [String])?.contains("ios") == true }
-        XCTAssertEqual(rows.count, 27, "the retained-selector and ledger-only rows are Android only")
+        XCTAssertEqual(rows.count, 29, "the retained-selector and ledger-only rows are Android only")
         let codes = try XCTUnwrap(table["legacyCodes"] as? [String: Any])
         let geoPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_iso.pdf"))
         let plainPDF = try XCTUnwrap(PDFTileRenderFixtureTests.testdataURL("geopdf/tacmap_grid_sf_plain.pdf"))
@@ -1423,6 +1429,15 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
                 // an opaque map file no store names, what a lost library or an earlier pass leaves
                 try FileManager.default.copyItem(at: plainPDF, to: imported.appendingPathComponent("map-\(UUID().uuidString.lowercased()).pdf"))
             }
+            // s16.3: crash residue nobody owns, a .partial copy and a lone journal
+            var residue: [URL] = []
+            if given["residueFiles"] as? Bool == true {
+                let tiles = directory.appendingPathComponent(ImportedMapStorage.tilesDirectoryName)
+                try FileManager.default.createDirectory(at: tiles, withIntermediateDirectories: true)
+                residue = [imported.appendingPathComponent("map-\(UUID().uuidString.lowercased()).pdf.partial"),
+                           tiles.appendingPathComponent("pack.mbtiles-journal")]
+                for url in residue { try Data("crash residue".utf8).write(to: url) }
+            }
             XCTAssertEqual(ImportedMapLibraryRecovery.managedFilesPresent(inFlight: []),
                            try !mapHashes(imported).isEmpty, "\(id) managedFiles")
             let mapsBefore = try mapHashes(imported)
@@ -1431,7 +1446,7 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
             let sessionBefore = PDFSessionStore.defaultsProvider().data(forKey: "active_pdf_v1")
             let parkedBefore = PDFSessionStore.defaultsProvider().data(forKey: "pdf_calibrations_v1")
 
-            var everCleared = false
+            var everCleared = false, everReconciled = false
             for (n, e) in [expected, next].enumerated() {
                 let ctx = "\(id) pass \(n + 1)"
                 let p = try restorePass(given: given, legacy: legacy, directory: directory, n: n)
@@ -1441,6 +1456,24 @@ final class ImportedMapLibraryMigrationTests: XCTestCase {
                 XCTAssertEqual(p.reconciled, e["reconcile"] as? Bool, ctx)
                 XCTAssertEqual(p.cleared, e["clearLegacy"] as? Bool, ctx)
                 XCTAssertEqual(vm.mapSelectionPersistenceIssue != nil, !(e["issue"] is NSNull), ctx)
+                // C2: copyKept vs missing. nextRestore leaves it out, same disk so same text
+                if e["issue"] as? String == "corruptRetry" {
+                    let key = try XCTUnwrap(expected["corruptMessage"] as? String, ctx)
+                    XCTAssertEqual(vm.mapSelectionPersistenceIssue?.pendingMessage.id, "id." + key, ctx)
+                } else if n == 0 {
+                    XCTAssertTrue(e["corruptMessage"] is NSNull, ctx)
+                }
+                everReconciled = everReconciled || p.reconciled
+                for url in residue {
+                    XCTAssertEqual(FileManager.default.fileExists(atPath: url.path), !everReconciled,
+                                   "\(ctx) residue \(url.lastPathComponent)")
+                }
+                if !residue.isEmpty {
+                    let names = Set(residue.map(\.lastPathComponent))
+                    XCTAssertFalse(vm.library?.entries.contains {
+                        names.contains(($0.fileName as NSString).lastPathComponent)
+                    } ?? false, ctx)
+                }
                 XCTAssertEqual(p.notice, e["notice"] as? String == "recovered", ctx)
                 XCTAssertEqual(vm.libraryStatus == .loaded, e["importAllowed"] as? Bool, ctx)
                 if e["recoveryPreservesOrphans"] is NSNull {

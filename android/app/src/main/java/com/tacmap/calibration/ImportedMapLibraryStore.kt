@@ -118,6 +118,10 @@ internal class ImportedMapLibraryStore(private val filesDir: File) {
 
     fun exists(): Boolean = file.exists()
 
+    /** the library's bytes are still on the device somewhere: the file, or a quarantined copy of it (s16.4) */
+    @Synchronized
+    fun bytesKept(): Boolean = file.exists() || hasQuarantine()
+
     private fun hasQuarantine(): Boolean =
         filesDir.listFiles()?.any { it.name.startsWith("$FILE_NAME.corrupt-") } == true
 

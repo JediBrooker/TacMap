@@ -48,29 +48,30 @@ class StoreCopyTests(unittest.TestCase):
                 if isinstance(value, str):
                     self.assertNotIn('android', value.lower(), f'{path.name} appStore.{field}')
 
-    def test_release_notes_are_for_3_0_3(self):
+    def test_release_notes_are_for_3_0_4(self):
         for path in LOCALES:
             data = json.loads(path.read_text())
-            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.3: '), path.name)
-            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.3\n'), path.name)
-            # the notes for the release before go to RELEASE_NOTES.md, not in here
+            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.4: '), path.name)
+            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.4\n'), path.name)
+            # the notes for older releases go to RELEASE_NOTES.md, not in here
             for field, value in text_fields(data):
-                self.assertNotIn('3.0.2', value, f'{path.name} {field}')
+                for old in ('3.0.2', '3.0.3'):
+                    self.assertNotIn(old, value, f'{path.name} {field}')
 
-    def test_release_notes_history_has_3_0_3(self):
+    def test_release_notes_history_has_3_0_4(self):
         # RELEASE_NOTES.md carries the text that ships, so it can't drift from the json
         history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
-        self.assertIn('## 3.0.3 (build 76)', history)
+        self.assertIn('## 3.0.4 (build 77)', history)
         for path in LOCALES:
             data = json.loads(path.read_text())
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
                 self.assertIn(f'```\n{text}\n```', history, path.name)
 
     def test_memory_note_only_says_more_packs_are_refused(self):
-        # F1: THREAT_MODEL s7 keeps the index residual (a huge index key still gets loaded whole, with no cap
-        # on iOS or android before 12), so the notes can say more packs built that way are refused, never
-        # all of them. if that residual ever goes, this can go too
-        self.assertIn("What remains: indexes aren't checked", (ROOT / 'docs/THREAT_MODEL.md').read_text())
+        # F1: THREAT_MODEL s7 keeps a residual (3.0.4 closed the index one, a tiles view's join can still get a
+        # huge base table value loaded whole on older sqlite), so the notes can say more packs built that way
+        # are refused, never all of them. if that residual ever goes, this can go too
+        self.assertIn("What remains: on a pack whose tiles are a view", (ROOT / 'docs/THREAT_MODEL.md').read_text())
         words = {'en-US.json': ('too much memory', r'\b[Mm]ore\b', 'built to'),
                  'de-DE.json': ('zu viel Speicher', r'\b[Ww]eitere\b', 'so gebaut')}
         for name, (memory, partial, built) in words.items():
@@ -80,6 +81,32 @@ class StoreCopyTests(unittest.TestCase):
                 self.assertEqual(len(lines), 1, name)
                 self.assertRegex(lines[0], partial, name)
                 self.assertIn(built, lines[0], name)
+
+    def test_notes_dont_say_checking_a_pack_takes_less_memory(self):
+        # REST-1: 3.0.3's probe only read sqlite_master, the stat tables and metadata, a few pages on a real
+        # pack, so checking one took ~2 MB then and still does (the 3.0.4 index walk just makes it slower).
+        # the pread change only beat an unreleased FileHandle walk and crafted 64 KiB page packs, so no store
+        # note or README entry gets to promise a cheaper check
+        claim = re.compile(r'less memory|weniger Speicher', re.I)
+        for path in LOCALES:
+            data = json.loads(path.read_text())
+            for field, value in text_fields(data):
+                self.assertNotRegex(value, claim, f'{path.name} {field}')
+        history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text().split('\n## 3.0.3 ', 1)[0]
+        self.assertNotRegex(history, claim, 'RELEASE_NOTES.md 3.0.4')
+        readme = (ROOT / 'README.md').read_text().split('\n### 3.0.4 ', 1)[1].split('\n### ', 1)[0]
+        self.assertNotRegex(readme, claim, 'README.md 3.0.4')
+
+    def test_release_notes_history_counts_match_the_text(self):
+        # the (n / limit) headers are hand typed, so check the 3.0.4 ones against the json they copy
+        history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
+        languages = {'en-US.json': 'English', 'de-DE.json': 'German'}
+        for name, language in languages.items():
+            data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
+            for store, text, limit in (('App Store', data['appStore']['whatsNew'], '4,000'),
+                                       ('Google Play', data['googlePlay']['releaseNotes'], '500')):
+                header = f'### 3.0.4: {store}, {language} ({len(text):,} / {limit})'
+                self.assertIn(f'{header}\n\n```\n{text}\n```', history, name)
 
     def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):
         # F2: a missing or changed pack is unavailable, Delete only, and just a refused one (openFailed) has
@@ -102,7 +129,7 @@ class StoreCopyTests(unittest.TestCase):
     def test_play_room_note_is_about_edits_not_visibility(self):
         # 3.0.1 never hid an android-made object from 2.x android, it was the later edits and deletes
         # that stopped arriving once an iOS edit flipped the id casing. so a note about those rooms
-        # promises edits, not visibility. 3.0.3 has none, the check stays for the next one that does
+        # promises edits, not visibility. 3.0.4 has none, the check stays for the next one that does
         words = {'en-US.json': ('changes', 'visible'), 'de-DE.json': ('Änderungen', 'sichtbar')}
         for name, (must, mustnt) in words.items():
             notes = json.loads((ROOT / 'docs/store/localizations' / name).read_text())['googlePlay']['releaseNotes']

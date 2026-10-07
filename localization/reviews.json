@@ -14678,6 +14678,20 @@
         "translation": "b29da6c91824337c03031c40111718f1b39fb0e00858db9624704ca6f420689f",
         "status": "reviewed"
       }
+    },
+    "map_library_missing_message": {
+      "de": {
+        "source": "3a835246d982fc0856a21700080a29899d0b129ad15f2b4eca6260538dcc46f3",
+        "translation": "25f8b7deb079d3ac58975b12c3871c5343541499cc3619529821fbf686f3beb1",
+        "status": "reviewed"
+      }
+    },
+    "map_library_unfinished_message": {
+      "de": {
+        "source": "d03f738eeb445379a04b898eee6f1fb999c0cc7ff149b4343f7fa19e99014cc7",
+        "translation": "884cc866238c81abfc408da13c78dc3b27217817bf86b420df95c8d4f2c59aa4",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

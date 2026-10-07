@@ -486,10 +486,11 @@ enum ImportedMapLibraryRecovery {
         return (kept, extra)
     }
 
-    /// L7 managedFiles: after s9.8 a regular file in ImportedMaps or offline_tiles
-    /// that the reconcile or the bake sweep would delete and nothing in flight
-    /// owns. An Empty library next to one of those is never the authoritative
-    /// first launch. Doesn't make the dirs, just looks
+    /// L7 managedFiles: after s9.8 a regular .pdf/.mbtiles in ImportedMaps or
+    /// offline_tiles that nothing in flight owns. An Empty library next to one of
+    /// those is never the authoritative first launch. .partial copies and lone
+    /// sqlite sidecars don't count (s16.3, same as Android), the first launch's
+    /// reconcile just deletes them. Doesn't make the dirs, just looks
     static func managedFilesPresent(inFlight: Set<URL> = InFlightImportFiles.snapshot,
                                     fileManager fm: FileManager = .default) -> Bool {
         let support = ImportedMapStorage.applicationSupportDirectory()
@@ -499,7 +500,7 @@ enum ImportedMapLibraryRecovery {
             let dir = support.appendingPathComponent(name, isDirectory: true)
             let kids = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
                                                     options: [.skipsSubdirectoryDescendants])) ?? []
-            for u in kids where ManagedImportedMapFileLifecycle.isCleanupCandidateName(u.lastPathComponent) {
+            for u in kids where ManagedImportedMapFileLifecycle.isAuthoritativeMapName(u.lastPathComponent) {
                 guard !busy.contains(u.standardizedFileURL.resolvingSymlinksInPath().path),
                       let v = try? u.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
                       v.isRegularFile == true, v.isSymbolicLink != true else { continue }

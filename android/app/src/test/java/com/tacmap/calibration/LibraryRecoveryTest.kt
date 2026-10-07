@@ -129,6 +129,8 @@ class LibraryRecoveryTest {
         val writes = given.str("writes")
         /** every map file put down for the row. no pass may delete one of them */
         val seeded = ArrayList<File>()
+        /** given.residueFiles: crash leftovers nobody owns. never a map, gone only when a cleanup ran (s16.3) */
+        val residue = ArrayList<File>()
         val migrator = LegacyLibraryMigrator(
             filesDir = dir,
             library = store,
@@ -170,7 +172,12 @@ class LibraryRecoveryTest {
                 map("pdf_maps/import-bbbbbbbbbbbbbbbb.pdf", 4_000L, pdf = true)
                 map("pdf_maps/import-cccccccccccccccc.pdf", 5_000L)
                 map("offline_tiles/tacmap-bake-1234.mbtiles", 6_000L)
-                map("pdf_maps/import-dddddddddddddddd.pdf.partial", 7_000L)
+            }
+            // a killed copy's .partial and a sqlite sidecar whose pack is gone, no import owns either
+            if (given.bool("residueFiles")) {
+                for (rel in listOf("pdf_maps/import-dddddddddddddddd.pdf.partial", "mbtiles/import-9999999999999999.mbtiles-journal")) {
+                    residue += File(dir, rel).apply { parentFile!!.mkdirs(); writeBytes(ByteArray(64) { 5 }); setLastModified(7_000L) }
+                }
             }
             // the library's temp file can't be written (a full disk), so the real write fails in
             // SafeStore. a directory there stops root too
@@ -278,6 +285,13 @@ class LibraryRecoveryTest {
         }
 
         fun quarantineCopies(): List<String> = dir.list().orEmpty().filter { ".corrupt-" in it }
+
+        /** residue goes with a cleanup and only then, and it's never listed as a map */
+        fun assertResidue(id: String, cleaned: Boolean) {
+            residue.forEach { assertEquals("$id ${it.parentFile!!.name}/${it.name} left", !cleaned, it.exists()) }
+            val listed = (store.load() as? LibraryLoad.Loaded)?.state?.entries.orEmpty().map { it.fileName }
+            residue.forEach { assertFalse("$id ${it.name} listed", "${it.parentFile!!.name}/${it.name}" in listed) }
+        }
     }
 
     private fun assertPass(id: String, expect: JsonObject, seen: RowDevice.Seen) {
@@ -300,8 +314,8 @@ class LibraryRecoveryTest {
         val section = limits["libraryLoad"]!!.jsonObject
         val rows = section["rows"]!!.jsonArray.map { it.jsonObject }
         val android = rows.filter { r -> r["platforms"]!!.jsonArray.any { it.jsonPrimitive.content == "android" } }
-        assertEquals("libraryLoad rows", 32, rows.size)
-        assertEquals("android rows", 31, android.size)
+        assertEquals("libraryLoad rows", 34, rows.size)
+        assertEquals("android rows", 33, android.size)
         // every legacy code an android row uses is one the reader can come back with
         val codes = section["legacyCodes"]!!.jsonObject.keys
         android.forEach { assertTrue(it.str("id"), it["given"]!!.jsonObject.str("legacy") in codes) }
@@ -311,6 +325,10 @@ class LibraryRecoveryTest {
             val given = row["given"]!!.jsonObject
             val device = RowDevice(given)
             assertPass(id, expect, device.pass())
+            // s16.4: the corrupt issue's text, picked the way MapViewModel picks it
+            val says = CorruptLibraryText.of(device.store, device.migrator).code.takeIf { expect.strOrNull("issue") == "corruptRetry" }
+            assertEquals("$id corruptMessage", expect.strOrNull("corruptMessage"), says)
+            device.assertResidue(id, cleaned = expect.bool("reconcile"))
             if (given.str("writes") == "libraryFails") {
                 // the real write failed in SafeStore and left no record of a library that never landed
                 assertFalse("$id ledger", ImportedMapLibraryStore.LABEL in sealedLabels)
@@ -334,13 +352,42 @@ class LibraryRecoveryTest {
                 assertTrue("$id calibration", library.entries.none { it.pdf?.manual != null })
             }
             // nextRestore: Retry, an unlock or the next launch, on whatever this pass left
-            assertPass("$id nextRestore", expect["nextRestore"]!!.jsonObject, device.pass())
+            val next = expect["nextRestore"]!!.jsonObject
+            assertPass("$id nextRestore", next, device.pass())
+            device.assertResidue("$id nextRestore", cleaned = expect.bool("reconcile") || next.bool("reconcile"))
         }
     }
 
-    private fun given(legacy: String, files: Boolean = true) = Json.parseToJsonElement(
-        """{"libraryFile":"absent","missionKey":"unlocked","corruptSibling":false,"writtenBefore":false,"ledgerOnly":false,"legacy":"$legacy","recoveryPreservesOrphans":false,"managedFiles":$files,"writes":"ok"}""",
+    private fun given(legacy: String, files: Boolean = true, ledgerOnly: Boolean = false, residue: Boolean = files) = Json.parseToJsonElement(
+        """{"libraryFile":"absent","missionKey":"unlocked","corruptSibling":false,"writtenBefore":false,"ledgerOnly":$ledgerOnly,"legacy":"$legacy","recoveryPreservesOrphans":false,"managedFiles":$files,"residueFiles":$residue,"writes":"ok"}""",
     ).jsonObject
+
+    @Test
+    fun aLibraryThatGoesLedgerOnlyWhileRunningSaysWhatItsRetryWillDo() {
+        // C2 (s16.4): takeDurable reads Unfinished under a loaded copy and puts up the corrupt
+        // issue. 3.0.3 said a recovery copy was kept and the names were lost for good, but with
+        // old stores waiting its Retry is the restore pass, which salvages and gets them back
+        val salvages = RowDevice(given("readable", files = false, ledgerOnly = true))
+        assertEquals(LibraryLoad.Unfinished, salvages.store.load())
+        assertEquals(CorruptLibraryText.UNFINISHED, CorruptLibraryText.of(salvages.store, salvages.migrator))
+        // rebuildCorruptLibrary sends this one to restoreLibrary, not the S2 rebuild
+        assertTrue(salvages.migrator.isDue(salvages.store.load()))
+        val retry = salvages.pass()
+        assertEquals(RestoreMigration.SALVAGE, retry.plan.migration)
+        val old = (salvages.store.load() as LibraryLoad.Loaded).state.entries.single()
+        assertEquals("Old sheet", old.displayName)
+        assertEquals(2, salvages.drafts.load("${old.contentKey}#0")!!.points.size)
+
+        // nothing to salvage from: the S2 rebuild, and nothing was kept to promise
+        val rebuilds = RowDevice(given("none", files = true, ledgerOnly = true))
+        assertEquals(LibraryLoad.Unfinished, rebuilds.store.load())
+        assertEquals(CorruptLibraryText.MISSING, CorruptLibraryText.of(rebuilds.store, rebuilds.migrator))
+        assertEquals(RestoreStatus.CORRUPT, rebuilds.pass().plan.status)
+
+        // a quarantined copy beside it is a copy kept, whatever else is there
+        File(rebuilds.dir, "$libraryName.corrupt-1700000000000").writeBytes(ByteArray(8))
+        assertEquals(CorruptLibraryText.COPY_KEPT, CorruptLibraryText.of(rebuilds.store, rebuilds.migrator))
+    }
 
     @Test
     fun aSalvageConvertsWhatStillReadsAdoptsTheRestAndFreezesTheOldStores() {

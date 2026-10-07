@@ -19355,6 +19355,31 @@
     "context": "Library (WP4 r1, S2). Alert when the imported-map library can't be decrypted or decoded. Retry rebuilds the list from the map files still on the device; nothing is deleted.",
     "parameters": []
   },
+  "map_library_missing_message": {
+    "en": "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.",
+    "de": "Die gespeicherte Kartenbibliothek fehlt. Es wurde keine Kartendatei gelöscht. Tippe auf „Erneut versuchen“, um die Liste aus den Karten auf diesem Gerät neu aufzubauen. Namen und Kalibrierungen lassen sich nicht wiederherstellen.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryMissingMessage",
+    "deferred": true,
+    "context": "Library (3.0.4). Alert with Retry when the saved imported-map library is gone and no recovery copy of it exists (this device saved it before, so it isn't a first launch). Retry rebuilds the list from the map files still on the device under neutral 'Recovered map n' names; nothing is deleted. Shown instead of map_library_corrupt_message, which is for a library that couldn't be read and was kept aside.",
+    "parameters": []
+  },
+  "map_library_unfinished_message": {
+    "en": "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device. Maps from an earlier TacMap version get back the names and calibrations that can still be read; the others are listed as recovered maps.",
+    "de": "Die gespeicherte Kartenbibliothek fehlt. Es wurde keine Kartendatei gelöscht. Tippe auf „Erneut versuchen“, um die Liste aus den Karten auf diesem Gerät neu aufzubauen. Karten aus einer früheren TacMap-Version erhalten dabei die Namen und Kalibrierungen zurück, die sich noch lesen lassen; die übrigen werden als wiederhergestellte Karten aufgeführt.",
+    "platforms": [
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "mapLibraryUnfinishedMessage",
+    "deferred": true,
+    "context": "Library (3.0.4, Android). Alert with Retry when the saved imported-map library goes missing while TacMap is running and data from an earlier TacMap version (2.x) is still on the device. Retry rebuilds the list: maps that older data names get back their names and calibrations where they can still be read, other map files get 'Recovered map n' names; nothing is deleted. The one-time 'Some saved map details couldn't be read' notice follows.",
+    "parameters": []
+  },
   "map_recovered_name": {
     "en": "Recovered map {1}",
     "de": "Wiederhergestellte Karte {1}",

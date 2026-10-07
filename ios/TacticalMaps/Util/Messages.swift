@@ -534,6 +534,12 @@ enum Messages {
     static func mapLibraryLocked() -> String {
         L10n.message("id.map_library_locked", fallback: "Unlock mission data to see and change imported maps.")
     }
+    static func mapLibraryMissingMessage() -> String {
+        L10n.message("id.map_library_missing_message", fallback: "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.")
+    }
+    static func mapLibraryMissingMessageMessage() -> LocalizedMessage {
+        LocalizedMessage(id: "id.map_library_missing_message", fallback: "The saved map library is missing. No map files were deleted. Tap Retry to rebuild the list from the maps on this device; their names and calibrations can't be restored.", arguments: [])
+    }
     static func mapLibraryRecoveredNotice() -> String {
         L10n.message("id.map_library_recovered_notice", fallback: "Some saved map details couldn't be read. Every map file on this device was kept and is listed under Imported maps, but some names or calibrations may be missing. Check your maps and calibrate again where needed. Nothing was deleted.")
     }

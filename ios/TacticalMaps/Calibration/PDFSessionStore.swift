@@ -1086,11 +1086,9 @@ enum ManagedImportedMapFileLifecycle {
         isAuthoritativeMapName(name) || isCrashResidueName(name)
     }
 
-    /// a name the reconcile (or the bake sweep, bakes are .mbtiles) would delete
-    /// if nothing kept it. The 3.0.1 managedFiles check (L7)
-    static func isCleanupCandidateName(_ name: String) -> Bool { isManagedCandidateName(name) }
-
-    private static func isAuthoritativeMapName(_ name: String) -> Bool {
+    /// .pdf / .mbtiles, any case (bakes are .mbtiles too). Also what L7's
+    /// managedFiles counts since 3.0.4, crash residue isn't a map (s16.3)
+    static func isAuthoritativeMapName(_ name: String) -> Bool {
         let lower = name.lowercased()
         return lower.hasSuffix(".pdf") || lower.hasSuffix(".mbtiles")
     }

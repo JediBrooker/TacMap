@@ -211,8 +211,10 @@
     <string name="map_library_empty">"Keine importierten Karten. Füge über „Importieren“ eine PDF-, GeoPDF- oder MBTiles-Karte hinzu."</string>
     <string name="map_library_footer">"%1$s · %2$s auf diesem Gerät. Importierte Karten bleiben auf diesem Gerät, bis du sie löschst, und sind nicht in Backups enthalten."</string>
     <string name="map_library_locked">"Entsperre die Einsatzdaten, um importierte Karten zu sehen und zu ändern."</string>
+    <string name="map_library_missing_message">"Die gespeicherte Kartenbibliothek fehlt. Es wurde keine Kartendatei gelöscht. Tippe auf „Erneut versuchen“, um die Liste aus den Karten auf diesem Gerät neu aufzubauen. Namen und Kalibrierungen lassen sich nicht wiederherstellen."</string>
     <string name="map_library_recovered_notice">"Einige gespeicherte Kartendetails konnten nicht gelesen werden. Jede Kartendatei auf diesem Gerät wurde behalten und steht unter „Importierte Karten“, möglicherweise fehlen aber Namen oder Kalibrierungen. Prüfe deine Karten und kalibriere sie bei Bedarf neu. Es wurde nichts gelöscht."</string>
     <string name="map_library_section">"Importierte Karten"</string>
+    <string name="map_library_unfinished_message">"Die gespeicherte Kartenbibliothek fehlt. Es wurde keine Kartendatei gelöscht. Tippe auf „Erneut versuchen“, um die Liste aus den Karten auf diesem Gerät neu aufzubauen. Karten aus einer früheren TacMap-Version erhalten dabei die Namen und Kalibrierungen zurück, die sich noch lesen lassen; die übrigen werden als wiederhergestellte Karten aufgeführt."</string>
     <string name="map_migration_uncalibrated">"„%1$s“ war nie georeferenziert und wird daher nicht mehr als Grundkarte angezeigt. Kalibriere sie über „Ebenen“."</string>
     <string name="map_pack_open_failed_message">"Das Kartenpaket ist möglicherweise beschädigt oder so aufgebaut, dass TacMap es nicht öffnen kann, oder die Prüfung hat zu lange gedauert. Die angezeigte Karte wurde nicht geändert. Unter „Importierte Karten“ in „Ebenen“ kannst du es erneut versuchen oder das Kartenpaket löschen."</string>
     <string name="map_pack_open_failed_title">"„%1$s“ konnte nicht geöffnet werden"</string>

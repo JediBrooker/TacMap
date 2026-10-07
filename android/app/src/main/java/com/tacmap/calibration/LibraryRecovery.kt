@@ -128,6 +128,32 @@ internal object LibraryRestoreRules {
     }
 }
 
+/**
+ * s16.4 (C2): what the corrupt issue says, libraryLoad retry.corrupt.messages. the issue, its
+ * Retry and every write are the same for all three, only the text follows what's on disk
+ */
+internal enum class CorruptLibraryText(val code: String) {
+    /** the library's bytes are still here: quarantined by the load, or a .corrupt-* copy beside it */
+    COPY_KEPT("map_library_corrupt_message"),
+    /** gone with no copy (the marker, or ledger only with no old store). Retry rebuilds */
+    MISSING("map_library_missing_message"),
+    /** ledger only with old stores waiting, found while running. Retry salvages, names come back */
+    UNFINISHED("map_library_unfinished_message"),
+    ;
+
+    companion object {
+        /** off the store as it is right now. MapViewModel and the fixture rows both pick through here */
+        fun of(library: ImportedMapLibraryStore, migrator: LegacyLibraryMigrator): CorruptLibraryText {
+            val load = runCatching { library.load() }.getOrNull()
+            return when {
+                load == LibraryLoad.Unfinished && migrator.isDue(load) -> UNFINISHED
+                library.bytesKept() -> COPY_KEPT
+                else -> MISSING
+            }
+        }
+    }
+}
+
 internal enum class AutoResumeAction(val code: String) { RESUME("resume"), SKIP("skip"), DEFER_UNTIL_LOADED("deferUntilLoaded") }
 
 internal enum class AutoResumeEntry { OK, UNAVAILABLE, MISSING }

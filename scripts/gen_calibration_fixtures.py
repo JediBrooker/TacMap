@@ -2340,7 +2340,7 @@ def restore_plan(g):
         return {"status": status, "migration": migration, "reconcile": cleanup, "bakeSweep": cleanup,
                 "draftPrune": cleanup, "clearLegacy": clear, "issue": issue, "notice": notice,
                 "recoveryPreservesOrphans": flag_after if usable else None,
-                "importAllowed": usable, "basemapChangeAllowed": usable}
+                "importAllowed": usable, "basemapChangeAllowed": usable, "corruptMessage": None}
 
     def blocked():
         return out("migrationPending", "blocked", False, False, "lockedRetry")
@@ -2351,13 +2351,22 @@ def restore_plan(g):
             return blocked()
         return out("loaded", migration, not flag_after, clear, None, notice, flag_after)
 
+    def corrupt(message):
+        # 3.0.4 C2: the corrupt issue only promises a recovery copy when the library's bytes are still on the device
+        # (the load quarantined an unreadable file, or a .corrupt-* copy is there). Gone with no copy is missing
+        e = out("corrupt", "none", False, False, "corruptRetry")
+        e["corruptMessage"] = message
+        return e
+
     if key_ == "locked":
         return out("locked", "none", False, False, "lockedRetry")
     if lf == "ok":
         # D8 only on a library that may clean up; a recovery-flagged one leaves the old stores frozen
         return out("loaded", "none", not flag, (not flag) and legacy in LEGACY_CLEARABLE, None, flag_after=flag)
-    if lf in ("unreadable", "newerSchema") or g["corruptSibling"] or g["writtenBefore"]:
-        return out("corrupt", "none", False, False, "corruptRetry")
+    if lf in ("unreadable", "newerSchema") or g["corruptSibling"]:
+        return corrupt("map_library_corrupt_message")
+    if g["writtenBefore"]:
+        return corrupt("map_library_missing_message")
     if g["ledgerOnly"]:
         # 3.0.2 (F2, Android): the authenticated ledger names the library but there's no file and no marker, so a
         # first write died between its ledger mark and the rename. Old stores still waiting means it was the
@@ -2365,7 +2374,7 @@ def restore_plan(g):
         # up), never an authoritative run or a Corrupt that strands them behind a rebuild. With no old store
         # nothing says what it was, so Corrupt as before (its Retry rebuild deletes nothing either)
         if legacy == "none":
-            return out("corrupt", "none", False, False, "corruptRetry")
+            return corrupt("map_library_missing_message")
         if legacy == "locked":
             return blocked()
         return write("salvage", False, "recovered", True, legacy != "namesNothing")
@@ -2413,14 +2422,17 @@ def library_load_rows():
         assert e["status"] != "empty" or not given["managedFiles"], cid
         # a ledger-only library (Android) never authorises cleanup, whatever is or isn't around it
         assert not given["ledgerOnly"] or (not e["reconcile"] and not e["clearLegacy"]), cid
+        # 3.0.4 C1: crash residue never changes the plan, only map files do (s16.3)
+        assert restore_plan(dict(given, residueFiles=not given["residueFiles"])) == restore_plan(given), cid
+        assert (e["corruptMessage"] is not None) == (e["issue"] == "corruptRetry"), cid
         platforms = platforms or LEGACY_PLATFORMS.get(given["legacy"], ["ios", "android"])
         rows.append({"id": cid, "platforms": platforms, "given": given, "expect": e, "note": note})
 
     def g(file="absent", key_="unlocked", sibling=False, written=False, legacy="none", recovery=False,
-          files=False, writes="ok", ledger=False):
+          files=False, writes="ok", ledger=False, residue=False):
         return {"libraryFile": file, "missionKey": key_, "corruptSibling": sibling, "writtenBefore": written,
                 "ledgerOnly": ledger, "legacy": legacy, "recoveryPreservesOrphans": recovery, "managedFiles": files,
-                "writes": writes}
+                "residueFiles": residue, "writes": writes}
 
     run("loaded", g("ok"), "the normal launch")
     run("loaded_rebuilt", g("ok", recovery=True),
@@ -2496,13 +2508,29 @@ def library_load_rows():
     run("ledger_only_no_legacy", g(ledger=True, files=True),
         "3.0.2: a ledger-only library with no old store left proves nothing either way: Corrupt as before, Retry "
         "rebuilds and deletes nothing", platforms=["android"])
+    # 3.0.4 C1 (s16.3): what an interrupted copy leaves behind isn't a map file on either platform (Android since 3.0.3
+    # F4, iOS from 3.0.4)
+    run("first_launch_residue_only", g(residue=True),
+        "3.0.4: no library, no old store, only crash residue (a .partial copy and a lone SQLite sidecar no import "
+        "owns): a genuine first launch, authoritative, and its cleanup deletes the residue. 3.0.3 iOS wrote a flagged "
+        "empty library with the recovered notice and never cleaned up on that install again")
+    run("first_launch_residue_next_to_maps", g(files=True, residue=True),
+        "3.0.4: a map file next to the residue still adopts, and the residue is never adopted as a map")
     return {"rows": rows,
             "legacyCodes": LEGACY_CODES,
             "givenFields": {
                 "managedFiles": "after s9.8 interrupted-import recovery, the managed directories (iOS ImportedMaps + "
-                                "offline_tiles, Android pdf_maps + mbtiles + offline_tiles) hold a regular file the "
-                                "reconcile or the bake sweep would delete (map file, sidecar, .partial, bake) that no "
-                                "in-flight import owns",
+                                "offline_tiles, Android pdf_maps + mbtiles + offline_tiles) hold a map file: a regular "
+                                "file (not a symlink) whose name ends .pdf or .mbtiles (bakes included, they are "
+                                ".mbtiles), any letter case, that no in-flight import owns and no pending s9.8 marker "
+                                "or journal names. 3.0.4 (s16.3): crash residue is not a map file on either platform "
+                                "(Android since 3.0.3 F4); 3.0.1 to 3.0.3 iOS counted it",
+                "residueFiles": "3.0.4: the managed directories also hold crash residue no in-flight import owns: "
+                                "tests lay out a .pdf.partial and a lone .mbtiles-journal (iOS ImportedMaps/map-<uuid>"
+                                ".pdf.partial, offline_tiles/<name>.mbtiles-journal; Android pdf_maps/import-<hex>.pdf"
+                                ".partial, mbtiles/<name>.mbtiles-journal). Never changes the plan. After the restore "
+                                "(and the cleanup it allows) the residue is gone when expect.reconcile is true and still "
+                                "there when it is false, and it is never an entry",
                 "writes": "ok | draftFails (a migration draft save returns false or throws) | libraryFails "
                           "(the sealed library write fails). 3.0.2: on both platforms a failing write leaves no "
                           "written-before record, so tests make the real store's write fail (a full disk, an "
@@ -2517,6 +2545,18 @@ def library_load_rows():
                               "between the two leaves this. iOS has no such state"},
             "retry": {
                 "corrupt": {"action": "rebuild", "message": key("map_library_corrupt_message"),
+                            "messages": {
+                                "copyKept": key("map_library_corrupt_message"),
+                                "missing": key("map_library_missing_message"),
+                                "unfinished": key("map_library_unfinished_message"),
+                                "rule": "3.0.4 C2 (s16.4): the corrupt issue's text says what is on disk and what "
+                                        "Retry will do. copyKept when the library's bytes are still on the device "
+                                        "(an unreadable or newer-schema file, which the load quarantines, or a "
+                                        ".corrupt-* copy beside it); missing when the file is gone with no copy "
+                                        "(iOS keychain record, Android marker, or Android ledger only with no old "
+                                        "store), Retry rebuilds; unfinished (Android only) when the library reads "
+                                        "ledger only with old stores present while the app runs, Retry runs the "
+                                        "restore pass and salvages (s15.5 item 1). Rows pin expect.corruptMessage"},
                             "adoptedName": msg("map_recovered_name", number=1),
                             "steps": ["re-adopt every opaque map file no in-flight import owns (not tacmap-bake-*)",
                                       "contentKey re-hashed, displayName map_recovered_name {n} in mtime order",
@@ -2724,6 +2764,13 @@ MBT_PROBE_MAX_METADATA_ROWS = 64
 MBT_PROBE_MAX_METADATA_RECORD_BYTES = 2 * MBT_MAX_VALUE_BYTES
 MBT_PROBE_MAX_DEPTH = 20
 MBT_PROBE_MAX_PAGES = 4096
+# 3.0.4 P1 (s15.2 rule 7): an index seek (a metadata read by lower(name), a view's join, a tile read by zoom, column
+# and row) makes SQLite malloc and read each overflowing index key it compares whole, past SQLITE_LIMIT_LENGTH on
+# every version (seen at 200 MB on 3.51). So every index b-tree in the file (indexes, autoindexes and WITHOUT ROWID
+# tables, found from the schema's own rootpages, never from tbl_name) gets each key's payload size checked. Real keys
+# are a few dozen bytes; the cap is the metadata record cap so one rule says what SQLite can be made to load. No row
+# or page cap of its own: a tiles index has a row per tile, each page is visited once, the file bounds it
+MBT_PROBE_MAX_INDEX_KEY_BYTES = MBT_PROBE_MAX_METADATA_RECORD_BYTES
 
 
 class _MbtReject(Exception):
@@ -3059,61 +3106,162 @@ def _probe_record(data, size, usable, count, p, off):
     return bytes(out)
 
 
+def probe_index_walk(data, roots, max_key):
+    """3.0.4 P1: walk index b-trees (page types 0x02 interior, 0x0A leaf) from roots as one, the way probe_walk walks
+    table b-trees, and check every key's payload size: the first varint of a leaf cell, the varint after an interior
+    cell's 4 byte left child. An index b-tree keeps keys in its interior cells too and a seek compares those, so
+    both count. Never a key's bytes or an overflow page: the payload size is the whole key, overflow included, and
+    that's what SQLite mallocs when a key it compares doesn't fit on its page. No row cap and no page cap (a tiles
+    index has a key per tile), a page is visited once so the file's page count bounds it. Raises
+    _ProbeReject(header | structure | pageType | keyBytes)"""
+    size, usable, count = probe_header(data)
+    seen = set()
+    stack = [(r, 0) for r in reversed(roots)]
+    while stack:
+        p, depth = stack.pop()
+        if not 1 <= p <= count or p in seen or depth >= MBT_PROBE_MAX_DEPTH:
+            raise _ProbeReject("structure")
+        seen.add(p)
+        page = data[(p - 1) * size:p * size]
+        h = 100 if p == 1 else 0
+        kind = page[h]
+        if kind == 0x02:
+            n = int.from_bytes(page[h + 3:h + 5], "big")
+            first = h + 12 + 2 * n
+            if first > usable:
+                raise _ProbeReject("structure")
+            children = []
+            for i in range(n):
+                off = int.from_bytes(page[h + 12 + 2 * i:h + 14 + 2 * i], "big")
+                if off < first or off + 4 > usable:
+                    raise _ProbeReject("structure")
+                if _probe_varint(page, off + 4, usable) > max_key:
+                    raise _ProbeReject("keyBytes")
+                children.append(int.from_bytes(page[off:off + 4], "big"))
+            children.append(int.from_bytes(page[h + 8:h + 12], "big"))
+            stack.extend((c, depth + 1) for c in reversed(children))
+        elif kind == 0x0A:
+            n = int.from_bytes(page[h + 3:h + 5], "big")
+            first = h + 8 + 2 * n
+            if first > usable:
+                raise _ProbeReject("structure")
+            for i in range(n):
+                off = int.from_bytes(page[h + 8 + 2 * i:h + 10 + 2 * i], "big")
+                if off < first or off >= usable:
+                    raise _ProbeReject("structure")
+                if _probe_varint(page, off, usable) > max_key:
+                    raise _ProbeReject("keyBytes")
+        else:
+            raise _ProbeReject("pageType")
+
+
 # the tables ANALYZE writes (sqlite_stat1, and sqlite_stat2/3/4 on builds that had them) are named like this, and SQLite
 # reads every row of them whole along with the schema, at the first statement
 MBT_PROBE_STATISTICS_MARK = b"sqlite_stat"
+# 3.0.4 P2: bytes that continue an identifier on both sides of the mark. A subset of SQLite's own identifier bytes
+# (it adds $ and every byte >= 0x80), so treating anything else as a word boundary only ever matches more
+MBT_PROBE_WORD_BYTES = frozenset(b"abcdefghijklmnopqrstuvwxyz0123456789_")
 _PROBE_SERIAL_SIZES = {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 6, 6: 8, 7: 8, 8: 0, 9: 0}
 
 
-def _probe_statistics_root(record):
-    """the rootpage of a schema row whose record mentions sqlite_stat. It has to be what SQLite itself writes for its
-    statistics tables: a record of exactly five columns that fill it exactly (no serial type 10 or 11), rootpage
-    (column 3) an integer and sql (column 4) text starting 'CREATE TABLE '. Anything else is statistics: a view or a
-    virtual table by that name would run SQL from the file when SQLite reads it"""
+def _probe_columns(record):
+    """3.0.4 P1: a schema row's record split the way SQLite writes it: (serial types, column bytes). The header size
+    varint h ends at or before h <= the record size, serial type varints each end at or before h and fill the header
+    exactly, no 10 or 11, and the bodies fill the record exactly. Anything else is schemaRecord"""
     try:
         header, at = _probe_varint_at(record, 0, len(record))
         if not at <= header <= len(record):
-            raise _ProbeReject("statistics")
+            raise _ProbeReject("schemaRecord")
         types = []
         while at < header:
             t, at = _probe_varint_at(record, at, header)
             types.append(t)
     except _ProbeReject:
-        raise _ProbeReject("statistics")
-    if len(types) != 5:
-        raise _ProbeReject("statistics")
+        raise _ProbeReject("schemaRecord")
     body, columns = header, []
     for t in types:
         if t in (10, 11):
-            raise _ProbeReject("statistics")
+            raise _ProbeReject("schemaRecord")
         n = _PROBE_SERIAL_SIZES[t] if t < 12 else (t - 12) // 2
-        columns.append((t, record[body:body + n]))
+        columns.append(record[body:body + n])
         body += n
     if body != len(record):
-        raise _ProbeReject("statistics")
-    (root_type, root_bytes), (sql_type, sql) = columns[3], columns[4]
-    if not (1 <= root_type <= 6 or root_type in (8, 9)) or sql_type < 13 or sql_type % 2 == 0 or \
-            not sql.startswith(b"CREATE TABLE "):
-        raise _ProbeReject("statistics")
-    return {8: 0, 9: 1}.get(root_type) if root_type >= 8 else int.from_bytes(root_bytes, "big", signed=True)
+        raise _ProbeReject("schemaRecord")
+    return types, columns
+
+
+def _probe_mentions_statistics(types, columns):
+    """3.0.4 P2 (RT-STATMARK-OVERMATCH): a text or blob column holding sqlite_stat (ASCII case folded) right before
+    one or more ASCII digits, with no word byte just before it and none just after the digits. SQLite finds its
+    statistics tables by the name it parses from the sql, and a name it parses as sqlite_stat1 (or 2, 3, 4) is
+    exactly those bytes, unquoted or between quote marks, so there's always a non-word byte (or the column's edge) on
+    both sides. 3.0.3 matched the bare substring anywhere, which also caught sqlite_stat_note, app_sqlite_stats and
+    tiles_sqlite_stat_idx and walked or refused perfectly good tables. Every column is looked at, name and tbl_name
+    too (newer SQLite cross-checks the name, older goes by the sql), still only ever more than SQLite loads"""
+    mark = MBT_PROBE_STATISTICS_MARK
+    for t, c in zip(types, columns):
+        if t < 12:
+            continue
+        # bytes.lower() folds ASCII only, like SQLite's identifier compare
+        c = c.lower()
+        i = c.find(mark)
+        while i >= 0:
+            j = k = i + len(mark)
+            while k < len(c) and 0x30 <= c[k] <= 0x39:
+                k += 1
+            if (i == 0 or c[i - 1] not in MBT_PROBE_WORD_BYTES) and k > j and \
+                    (k == len(c) or c[k] not in MBT_PROBE_WORD_BYTES):
+                return True
+            i = c.find(mark, i + 1)
+    return False
+
+
+def _probe_schema_root(types, columns, statistics):
+    """the rootpage of a schema row, which has to be what SQLite writes in sqlite_master: five columns, rootpage
+    (column 3) an integer (serial type 1-6 two's complement, 8 = 0, 9 = 1), sql (column 4) NULL or text. 3.0.4 P1:
+    every row, since the index step needs every root and SQLite reads a text rootpage as a number. Else
+    schemaRecord. A row that mentions statistics has to be SQLite's own kind of statistics table on top (sql text
+    starting 'CREATE TABLE '), else statistics: a view or a virtual table by that name would run SQL from the file
+    when SQLite reads it"""
+    reason = "statistics" if statistics else "schemaRecord"
+    if len(types) != 5 or not (1 <= types[3] <= 6 or types[3] in (8, 9)):
+        raise _ProbeReject(reason)
+    sql_type, sql = types[4], columns[4]
+    if statistics and (sql_type < 13 or sql_type % 2 == 0 or not sql.startswith(b"CREATE TABLE ")):
+        raise _ProbeReject(reason)
+    if sql_type != 0 and (sql_type < 13 or sql_type % 2 == 0):
+        raise _ProbeReject(reason)
+    return {8: 0, 9: 1}.get(types[3]) if types[3] >= 8 else int.from_bytes(columns[3], "big", signed=True)
 
 
 def probe_schema(data):
     """before SQLite opens the file: sqlite_master (rooted at page 1) has at most 1,000 rows and 1 MiB of records,
     so the schema load SQLite does on the first statement can't be made huge. 3.0.3 PROBE-RT-1: that load also reads
-    every row of the ANALYZE tables whole, so each schema row's record is read and every row that mentions sqlite_stat
-    has to be a plain table whose b-tree, walked together with the other ones, stays under the same caps"""
+    every row of the ANALYZE tables whole, so each schema row's record is read and every row that names a statistics
+    table has to be a plain table whose b-tree, walked together with the other ones, stays under the same caps.
+    3.0.4 P1: every schema row is one SQLite would write (5 columns, an integer rootpage from 0 to the page count),
+    and every rootpage whose page is an index page starts an index b-tree; they're walked as one with every key under
+    maxIndexKeyBytes. Table roots aren't walked here (the metadata probe does metadata's, tiles never)"""
     cells = []
     probe_walk(data, 1, MBT_PROBE_MAX_SCHEMA_ROWS, MBT_PROBE_MAX_SCHEMA_BYTES, MBT_PROBE_MAX_SCHEMA_BYTES, cells)
     size, usable, count = probe_header(data)
-    roots = []
+    statistics, roots = [], []
     for p, off in cells:
         record = _probe_record(data, size, usable, count, p, off)
-        # bytes.lower() folds ASCII only, like SQLite's identifier compare
-        if MBT_PROBE_STATISTICS_MARK in record.lower():
-            roots.append(_probe_statistics_root(record))
-    if roots:
-        probe_walk(data, roots, MBT_PROBE_MAX_SCHEMA_ROWS, MBT_PROBE_MAX_SCHEMA_BYTES, MBT_PROBE_MAX_SCHEMA_BYTES)
+        types, columns = _probe_columns(record)
+        mentions = _probe_mentions_statistics(types, columns)
+        root = _probe_schema_root(types, columns, mentions)
+        if not 0 <= root <= count:
+            raise _ProbeReject("structure")
+        if mentions:
+            statistics.append(root)
+        roots.append(root)
+    if statistics:
+        probe_walk(data, statistics, MBT_PROBE_MAX_SCHEMA_ROWS, MBT_PROBE_MAX_SCHEMA_BYTES, MBT_PROBE_MAX_SCHEMA_BYTES)
+    # the page decides, not the type column: SQLite builds the object from its sql and never checks the two agree
+    indexes = [r for r in roots if r >= 1 and data[(r - 1) * size + (100 if r == 1 else 0)] in (0x02, 0x0A)]
+    if indexes:
+        probe_index_walk(data, indexes, MBT_PROBE_MAX_INDEX_KEY_BYTES)
 
 
 def probe_metadata_table(data, root):
@@ -3800,6 +3948,67 @@ def mbtiles_relation_cases():
          None, False, "a 1,060,000 byte sqlite_stat1 row: SQLite loads it whole at the first statement, before any "
                       "check of ours, and Android before 12 has no length limit or heap cap for that. The schema probe "
                       "refuses the file before SQLite opens it (the first 3.0.3 probe let it through)"),
+        # 3.0.4 P1 (s16.1): index keys, which a seek loads whole past every length cap. 3.0.3 opened all four refused
+        # ones (tiles and index b-trees weren't walked)
+        ("tilesIndexKeyUnderProbeCap", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note text)",
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "CREATE INDEX tiles_note ON tiles (note)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(4000000)), '0', "
+            "'n'))"], probes, True,
+         "an index on an extra tiles column with an 8,000,000 byte key: under maxIndexKeyBytes, the pack opens"),
+        ("tilesIndexKeyOverProbeCap", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, note text)",
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "CREATE INDEX tiles_note ON tiles (note)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(4300000)), '0', "
+            "'n'))"], None, False,
+         "the same key at 8,600,000 bytes: the schema probe's index step refuses the file. A seek that compares a key "
+         "loads it whole on every SQLite version and length cap (200 MB seen on 3.51)"),
+        ("metadataExpressionIndexOverProbeCap", meta_table + [
+            "CREATE INDEX metadata_lower ON metadata (lower(name), replace(hex(zeroblob(4300000)), '0', 'x'))",
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "INSERT INTO tiles VALUES " + tiles_rows], None, False,
+         "two tiny metadata rows and an index on lower(name) carrying an 8,600,000 byte expression: the bake "
+         "extension reader's WHERE lower(name) = ? seeks it (the metadata probe walks tables only)"),
+        ("dedupOrphanImageKeyOverProbeCap", meta_table + [
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)",
+            "CREATE TABLE images (tile_data blob, tile_id text)",
+            "CREATE UNIQUE INDEX images_id ON images (tile_id)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a'), (1, 0, 1, 'b')",
+            "INSERT INTO images VALUES (X'01', 'a'), (X'0203', 'b'), (X'05', replace(hex(zeroblob(4300000)), '0', 'k'))",
+            "CREATE VIEW tiles AS SELECT map.zoom_level AS zoom_level, map.tile_column AS tile_column, "
+            "map.tile_row AS tile_row, images.tile_data AS tile_data FROM map JOIN images ON images.tile_id = "
+            "map.tile_id"], None, False,
+         "node-mbtiles' layout with an image no map row uses, its tile_id 8,600,000 bytes: the join's seek on "
+         "images_id can compare it at any tile read"),
+        ("planetilerShallowRowOverProbeCap", meta_table + [
+            "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, "
+            "tile_data_id integer, note text, primary key(zoom_level, tile_column, tile_row)) without rowid",
+            "CREATE TABLE tiles_data (tile_data_id integer primary key, tile_data blob)",
+            "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1, NULL), (1, 0, 1, 2, replace(hex(zeroblob(4300000)), '0', "
+            "'w'))",
+            "INSERT INTO tiles_data VALUES (1, X'01'), (2, X'0203')",
+            "CREATE VIEW tiles AS SELECT tiles_shallow.zoom_level AS zoom_level, tiles_shallow.tile_column AS "
+            "tile_column, tiles_shallow.tile_row AS tile_row, tiles_data.tile_data AS tile_data FROM tiles_shallow "
+            "JOIN tiles_data ON tiles_shallow.tile_data_id = tiles_data.tile_data_id"], None, False,
+         "planetiler's compact layout with an 8,600,000 byte row in the WITHOUT ROWID table, which is an index "
+         "b-tree: every tile read seeks it"),
+        # 3.0.4 P2 (RT-STATMARK-OVERMATCH): sqlite_stat inside another name isn't a statistics table. 3.0.3 refused both
+        ("tilesColumnLikeStatistics", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob, "
+            "sqlite_stat_note text)",
+            "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 1499) INSERT INTO tiles SELECT "
+            "11, i, 0, X'01', NULL FROM n"], {"tiles": [(11, 1499, 2047), (11, 0, 0)]}, True,
+         "1,500 tiles in a table with a column named sqlite_stat_note: 3.0.3 took it for a statistics table, walked "
+         "it under the schema caps and refused the pack"),
+        ("indexNamedLikeStatistics", meta_table + [
+            "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob)",
+            "CREATE UNIQUE INDEX tiles_sqlite_stat_idx ON tiles (zoom_level, tile_column, tile_row)",
+            "INSERT INTO tiles VALUES " + tiles_rows], probes, True,
+         "an index named tiles_sqlite_stat_idx: 3.0.3 refused it (statistics, not a CREATE TABLE)"),
     ]
     min_sqlite = {"tilesTableGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE,
                   "viewOverGeneratedColumn": MBT_GENERATED_COLUMNS_MIN_SQLITE}
@@ -3812,7 +4021,9 @@ def mbtiles_relation_cases():
                    "viewRowNameLieBehindIfNotExists": "schema", "baseRowNameLie": "schema",
                    "baseRowNameLieBehindIfNotExists": "schema", "metadataRecordOverProbeCap": "probe",
                    "metadataViewJoinBaseRows": "probe", "schemaTooManyObjects": "probe",
-                   "statisticsOverProbeCap": "probe"}
+                   "statisticsOverProbeCap": "probe", "tilesIndexKeyOverProbeCap": "probe",
+                   "metadataExpressionIndexOverProbeCap": "probe", "dedupOrphanImageKeyOverProbeCap": "probe",
+                   "planetilerShallowRowOverProbeCap": "probe"}
     out = []
     for cid, sql, pr, accepted, note in rows:
         # a row that writes sqlite_master itself ships its file too: Apple's sqlite has SQLITE_DBCONFIG_DEFENSIVE on,
@@ -4145,7 +4356,8 @@ def _craft_page(size, kind, cells, right=None, first_page=False, reserved=0, poi
     page[h + 3:h + 5] = (len(offsets) if count is None else count).to_bytes(2, "big")
     page[h + 5:h + 7] = (end % 65536).to_bytes(2, "big")
     at = h + 8
-    if kind == 0x05:
+    # interior pages, table (0x05) or index (0x02), carry the right most child after the 8 byte header
+    if kind in (0x05, 0x02):
         page[h + 8:h + 12] = right.to_bytes(4, "big")
         at = h + 12
     for i, off in enumerate(offsets):
@@ -4178,11 +4390,14 @@ def _interior_cell(child, rowid=1):
 
 def _schema_record(*columns):
     """a real SQLite record: its header (own size, then one serial type per column) and the bodies. A column is None,
-    an int (the smallest of the 1, 2, 3, 4, 6 and 8 byte forms) or a str (UTF-8 text)"""
+    an int (the smallest of the 1, 2, 3, 4, 6 and 8 byte forms), a str (UTF-8 text) or bytes (a blob)"""
     types, body = [], b""
     for v in columns:
         if v is None:
             types.append(0)
+        elif isinstance(v, bytes):
+            types.append(12 + 2 * len(v))
+            body += v
         elif isinstance(v, int):
             t, n = next((t, n) for t, n in ((1, 1), (2, 2), (3, 3), (4, 4), (5, 6), (6, 8))
                         if -(1 << (8 * n - 1)) <= v < 1 << (8 * n - 1))
@@ -4256,6 +4471,31 @@ def mbtiles_record_probe():
     long_table = _schema_record("table", "t", "t", 2, "CREATE TABLE t(%s)" % ", ".join("c%d" % i for i in range(150)))
     utf16 = bytearray(crafted(leaf([10])))
     utf16[56:60] = (2).to_bytes(4, "big")
+    # 3.0.4 P1: index b-trees. A key cell only needs its payload size varint here, the probe reads nothing else
+    key_cap = MBT_PROBE_MAX_INDEX_KEY_BYTES
+
+    def ix(root, name="ix", table="t"):
+        return _schema_record("index", name, table, root, "CREATE INDEX %s ON %s(a)" % (name, table))
+
+    def tbl(root, name="t", sql=None):
+        return _schema_record("table", name, name, root, sql or "CREATE TABLE %s(a)" % name)
+
+    def index_leaf(keys, **kw):
+        return _craft_page(S, 0x0A, [_probe_varint_bytes(k) for k in keys], **kw)
+
+    def index_interior(cells, right, **kw):
+        return _craft_page(S, 0x02, [c.to_bytes(4, "big") + _probe_varint_bytes(k) for c, k in cells], right=right,
+                           **kw)
+    index_chain = [index_interior([], right=i + 3) for i in range(MBT_PROBE_MAX_DEPTH)] + [index_leaf([10])]
+    view = _schema_record("view", "v", "v", 0, "CREATE VIEW v AS SELECT 1")
+    tiles_sql = "CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob"
+
+    def note_pack(size):
+        return ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            tiles_sql + ", note text)", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+            "CREATE INDEX tiles_note ON tiles (note)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01', 'a'), (1, 0, 1, X'0203', replace(hex(zeroblob(%d)), '0', 'n'))"
+            % (size // 2)]
     rows = [
         # real packs, built by SQLite
         ("realPack", base, None, schema_ok, [("metadata", ok)], "a plain pack: one leaf each"),
@@ -4337,11 +4577,11 @@ def mbtiles_record_probe():
          bad("totalBytes"), [], "three 400,000 byte schema records: 1,200,000 in all"),
         ("schemaInteriorFirstPage", None, _craft_file(S, {1: _craft_page(S, 0x05, [_interior_cell(2, 1)], right=3,
                                                                          first_page=True),
-                                                         2: _craft_page(S, 0x0D, [_schema_cell(bytes(100))]),
-                                                         3: _craft_page(S, 0x0D, [_schema_cell(bytes(100), i)
+                                                         2: _craft_page(S, 0x0D, [_schema_cell(view)]),
+                                                         3: _craft_page(S, 0x0D, [_schema_cell(view, i)
                                                                                   for i in (2, 3)])}),
          schema_ok, [], "page 1 as an interior page: its header starts at byte 100, cell offsets from the page "
-                        "start. The 100 byte records are there in full (zeros), the statistics step reads them"),
+                        "start. Its leaves hold whole view rows (rootpage 0), which the record step reads"),
         # 3.0.3 PROBE-RT-1: the ANALYZE tables SQLite reads whole with the schema
         ("analyzedPack", base + [index] + ["ANALYZE"], None, schema_ok, [("metadata", ok)],
          "ANALYZE'd like mbutil leaves its packs: sqlite_stat1, and sqlite_stat4 where SQLite has it, a few rows"),
@@ -4379,8 +4619,8 @@ def mbtiles_record_probe():
         ("statisticsNamedOnlyInSql", None, pages(schema(_schema_record("table", "harmless", "harmless", 2,
                                                                      'CREATE TABLE "SQLITE_STAT1"(tbl,idx,stat)')),
                                                  leaf([big + 1])),
-         bad("recordBytes"), [], "the name column says harmless but older SQLite goes by the sql, so the mark is "
-                                 "looked for anywhere in the record, ASCII case folded"),
+         bad("recordBytes"), [], "the name column says harmless but older SQLite goes by the sql, so every column "
+                                 "is looked at, ASCII case folded, and a quote mark is a word boundary"),
         ("statisticsMarkOnOverflowPage", None, pages(schema(cells=[spilled_stat]), leaf([big + 1]), *spilled_pages),
          bad("recordBytes"), [], "512 byte pages: the schema record spills, and its sql (with the mark) is all on "
                                  "the overflow page"),
@@ -4390,6 +4630,158 @@ def mbtiles_record_probe():
          "a schema cell claiming 200 bytes it doesn't have: the local part runs past the usable size"),
         ("textEncodingUtf16", None, bytes(utf16), bad("header"), [(2, bad("header"))],
          "UTF-16le text (header 56 = 2): the statistics step reads schema text as UTF-8, admission refuses it anyway"),
+        # 3.0.4 P1 (s16.1): every index b-tree's keys. Real packs first
+        ("realPackIndexes", ["CREATE TABLE metadata (name text, value text)", "CREATE UNIQUE INDEX name ON metadata (name)"]
+         + meta_rows + [tiles_sql + ", PRIMARY KEY (zoom_level, tile_column, tile_row))",
+                        "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+                        "INSERT INTO tiles VALUES (0, 0, 0, X'01'), (1, 0, 1, X'0203')"],
+         None, schema_ok, [("metadata", ok)],
+         "mbutil's metadata name index and tile_index, plus MOBAC's PRIMARY KEY (an autoindex row, sql NULL): every "
+         "index b-tree is walked, real keys are a few bytes"),
+        ("withoutRowidTilesBase", ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, tile_data_id "
+            "integer, primary key(zoom_level, tile_column, tile_row)) without rowid",
+            "CREATE TABLE tiles_data (tile_data_id integer primary key, tile_data blob)",
+            "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1), (1, 0, 1, 1)", "INSERT INTO tiles_data VALUES (1, X'01')"],
+         None, schema_ok, [("metadata", ok)],
+         "planetiler's compact layout: a WITHOUT ROWID table is an index b-tree (no schema row of its own for the "
+         "key), so its rows are walked as keys"),
+        ("indexPagesPastMaxPages", ["PRAGMA page_size=512", "CREATE TABLE metadata (name text, value text)"]
+         + meta_rows + [tiles_sql + ")", "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)",
+                        "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 129999) INSERT INTO "
+                        "tiles SELECT 17, i % 1000, i / 1000, X'01' FROM n"],
+         None, schema_ok, [("metadata", ok)],
+         "130,000 tiles on 512 byte pages: tile_index spans more than maxPages (4,096) pages. The index walk has "
+         "no page or row cap of its own, each page is read once"),
+        ("tilesIndexKeyUnderCap", note_pack(8000000), None, schema_ok, [("metadata", ok)],
+         "an index on an extra tiles column with an 8,000,000 byte key: under maxIndexKeyBytes"),
+        ("tilesIndexKeyOverCap", note_pack(8600000), None, bad("keyBytes"), [],
+         "the same key at 8,600,000 bytes. Tiles aren't walked, but a seek on this index would load the key whole"),
+        ("metadataExpressionIndexOverCap", ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            "CREATE INDEX metadata_lower ON metadata (lower(name), replace(hex(zeroblob(4300000)), '0', 'x'))",
+            tiles_sql + ")", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"],
+         None, bad("keyBytes"), [],
+         "two tiny metadata rows, but an index on lower(name) with an 8,600,000 byte expression in every key: the "
+         "bake extension reader's WHERE lower(name) = ? seeks it"),
+        ("withoutRowidRowOverCap", ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            "CREATE TABLE tiles_shallow (zoom_level integer, tile_column integer, tile_row integer, tile_data_id "
+            "integer, note text, primary key(zoom_level, tile_column, tile_row)) without rowid",
+            "INSERT INTO tiles_shallow VALUES (0, 0, 0, 1, replace(hex(zeroblob(4300000)), '0', 'w'))"],
+         None, bad("keyBytes"), [], "a WITHOUT ROWID row is its key: 8,600,000 bytes"),
+        ("dedupOrphanImageKeyOverCap", ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            "CREATE TABLE map (zoom_level integer, tile_column integer, tile_row integer, tile_id text)",
+            "CREATE UNIQUE INDEX map_index ON map (zoom_level, tile_column, tile_row)",
+            "CREATE TABLE images (tile_data blob, tile_id text)", "CREATE UNIQUE INDEX images_id ON images (tile_id)",
+            "INSERT INTO map VALUES (0, 0, 0, 'a')",
+            "INSERT INTO images VALUES (X'01', 'a'), (X'02', replace(hex(zeroblob(4300000)), '0', 'k'))"],
+         None, bad("keyBytes"), [],
+         "a deduplicated pack with an image no map row uses, its tile_id 8,600,000 bytes: the join's seek on images_id "
+         "can compare it"),
+        # hand made index pages
+        ("indexKeyAtCap", None, pages(schema(tbl(2), ix(3)), leaf([10]), index_leaf([10, key_cap])), schema_ok, [],
+         "a leaf key of exactly maxIndexKeyBytes. The table row's b-tree (page 2) isn't walked here"),
+        ("indexKeyOverCap", None, pages(schema(tbl(2), ix(3)), leaf([10]), index_leaf([10, key_cap + 1])),
+         bad("keyBytes"), [], "one byte over"),
+        ("indexInteriorKeyOverCap", None, pages(schema(ix(2)), index_interior([(3, key_cap + 1)], right=4),
+                                               index_leaf([10]), index_leaf([10])),
+         bad("keyBytes"), [], "an index keeps keys in its interior cells too (after the 4 byte child), and a seek "
+                              "compares them"),
+        ("indexKeyNineByteVarint", None, pages(schema(ix(2)), _craft_page(S, 0x0A, [b"\xff" * 9])),
+         bad("keyBytes"), [], "the 9 byte form, 2^64 - 1 unsigned"),
+        ("indexPageKeysBeforeChildren", None, pages(schema(ix(2)), index_interior([(9, key_cap + 1)], right=3),
+                                                   index_leaf([10])),
+         bad("keyBytes"), [], "an interior page's keys are checked when it's visited, before its children: the "
+                              "key over the cap wins over the child past the end"),
+        ("indexCellPointerPastUsable", None, pages(schema(ix(2)), _craft_page(S, 0x0A, [b"\x0a"], pointers=[S])),
+         bad("structure"), [], "a leaf cell pointer at the end of the page"),
+        ("indexInteriorCellAtUsableEnd", None, pages(schema(ix(2)), _craft_page(S, 0x02, [(3).to_bytes(4, "big")],
+                                                                                right=3), index_leaf([10])),
+         bad("structure"), [], "an interior cell whose 4 byte child ends at the usable size: its key size varint "
+                               "has to start and end before it"),
+        ("indexVarintRunsOffPage", None, pages(schema(ix(2)), _craft_page(S, 0x0A, [b"\xff\xff"])),
+         bad("structure"), [], "a key size varint that never ends inside the usable area"),
+        ("indexChildIsTablePage", None, pages(schema(ix(2)), index_interior([], right=3), leaf([10])),
+         bad("pageType"), [], "a table page under an index root (SQLite calls that corrupt)"),
+        ("indexChildCycle", None, pages(schema(ix(2)), index_interior([(3, 10)], right=2), index_leaf([10])),
+         bad("structure"), [], "an interior index page that lists itself as its right child"),
+        ("indexTooDeep", None, pages(schema(ix(2)), *index_chain), bad("structure"), [],
+         "a chain of interior index pages: the leaf is at depth %d" % MBT_PROBE_MAX_DEPTH),
+        ("indexRootSharedByTwoRows", None, pages(schema(ix(2), ix(2, "ix2")), index_leaf([10])),
+         bad("structure"), [], "two schema rows on one index b-tree: all index roots are walked as one, page 2 twice"),
+        ("indexRootsInSchemaOrder", None, pages(schema(ix(2), ix(3, "ix2")),
+                                               _craft_page(S, 0x0A, [b"\x0a"], pointers=[S]),
+                                               index_leaf([key_cap + 1])),
+         bad("structure"), [], "index roots are walked in the schema's walk order: the first one's bad pointer wins"),
+        ("autoindexRow", None, pages(schema(tbl(2), _schema_record("index", "sqlite_autoindex_t_1", "t", 3, None)),
+                                    leaf([10]), index_leaf([10, key_cap + 1])),
+         bad("keyBytes"), [], "an autoindex row (sql NULL) is an index like any other"),
+        ("indexTypeColumnLies", None, pages(schema(tbl(2, "ix", "CREATE INDEX ix ON t(a)")), index_leaf([key_cap + 1])),
+         bad("keyBytes"), [], "the row says table, its sql and its page say index: the page decides (SQLite builds "
+                              "the object from the sql and never checks the type column)"),
+        ("indexRowOnTablePage", None, pages(schema(ix(2)), leaf([big + 1, big + 1])), schema_ok, [],
+         "an index row whose root is a table page isn't an index b-tree (SQLite reports it corrupt if it ever reads "
+         "it), so nothing is walked"),
+        ("tableRootsNotWalked", None, pages(schema(tbl(2)), leaf([big + 1, big + 1])), schema_ok, [],
+         "tables, rows over every cap: the schema probe leaves table b-trees alone (the metadata probe walks "
+         "metadata's, tiles are never walked)"),
+        # every schema row has to be one SQLite writes, so every root is known
+        ("schemaRecordFourColumns", None, pages(schema(_schema_record("index", "ix", "t", 2)), index_leaf([10])),
+         bad("schemaRecord"), [], "a row with no sql column"),
+        ("schemaRecordTextRootpage", None, pages(schema(_schema_record("index", "ix", "t", "2",
+                                                                       "CREATE INDEX ix ON t(a)")),
+                                                 index_leaf([key_cap + 1])),
+         bad("schemaRecord"), [], "rootpage stored as text: SQLite reads it as page 2 anyway, so the index behind it "
+                                  "would go unchecked"),
+        ("schemaRecordBlobSql", None, pages(schema(_schema_record("index", "ix", "t", 2, b"CREATE INDEX ix ON t(a)")),
+                                            index_leaf([10])),
+         bad("schemaRecord"), [], "sql stored as a blob (SQLite reads it as text)"),
+        ("schemaRecordReservedSerialType", None, pages(schema(b"\x06\x17\x0a\x0f\x01\x00tablet\x02"),
+                                                       index_leaf([10])),
+         bad("schemaRecord"), [], "serial type 10 is reserved"),
+        ("schemaRecordTrailingBytes", None, pages(schema(view + b"\x00")), bad("schemaRecord"), [],
+         "one byte after the last column"),
+        ("schemaRecordHeaderPastRecord", None, pages(schema(b"\x7f\x01")), bad("schemaRecord"), [],
+         "a header size bigger than the record"),
+        ("schemaRootpagePastTheEnd", None, pages(schema(ix(9)), index_leaf([10])), bad("structure"), [],
+         "an index rootpage past the end of the file"),
+        ("schemaRootpageNegative", None, pages(schema(ix(-1))), bad("structure"), [], "a negative rootpage"),
+        # 3.0.4 P2 (RT-STATMARK-OVERMATCH): the mark only counts as a whole name, sqlite_stat and digits
+        ("tilesColumnLikeStatistics", ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            tiles_sql + ", sqlite_stat_note text)",
+            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 1499) INSERT INTO tiles SELECT "
+            "11, i, 0, X'01', NULL FROM n"],
+         None, schema_ok, [("metadata", ok)],
+         "1,500 tiles in a table with a column sqlite_stat_note: not a statistics table, not walked (3.0.3 walked "
+         "it under the schema caps and refused it, rows)"),
+        ("indexNamedLikeStatistics", ["CREATE TABLE metadata (name text, value text)"] + meta_rows + [
+            tiles_sql + ")", "CREATE UNIQUE INDEX tiles_sqlite_stat_idx ON tiles (zoom_level, tile_column, tile_row)",
+            "INSERT INTO tiles VALUES (0, 0, 0, X'01')"],
+         None, schema_ok, [("metadata", ok)], "an index named tiles_sqlite_stat_idx (3.0.3: statistics)"),
+        ("metadataColumnLikeStatistics", ["CREATE TABLE metadata (name text, value text, sqlite_stat_x text)",
+                                          "INSERT INTO metadata (name, value) VALUES ('name', 'Sample'), "
+                                          "('format', 'png'), ('description', replace(hex(zeroblob(750000)), "
+                                          "'0', 'd'))", tiles_sql + ")", "INSERT INTO tiles VALUES (0, 0, 0, X'01')"],
+         None, schema_ok, [("metadata", ok)],
+         "a 1,500,000 byte description in a metadata table with a column sqlite_stat_x: the metadata caps apply, "
+         "not the schema caps (3.0.3: recordBytes)"),
+        ("statisticsMarkInsideWords", None, pages(schema(tbl(2, "app_sqlite_stat1", "CREATE TABLE app_sqlite_stat1(a, "
+                                                                                     "sqlite_stat1x, SQLITE_STATS)")),
+                                                 leaf([big + 1])),
+         schema_ok, [], "a word byte before the mark, a word byte after its digits, no digit after it: part of "
+                        "another name each time, so the table isn't walked"),
+        ("statisticsWordAsColumnName", None, pages(schema(tbl(2, "side", "CREATE TABLE side(a, sqlite_stat1)")),
+                                                  leaf([big + 1])),
+         bad("recordBytes"), [], "a column named exactly sqlite_stat1 still counts, so its table is held to the "
+                                 "schema caps (SQLite keeps sqlite_ names for itself, no producer writes one)"),
+        ("statisticsBracketedName", None, pages(schema(tbl(2, "x", "CREATE TABLE [sqlite_stat4](tbl,idx,neq,nlt,ndlt,"
+                                                                "sample)")), leaf([big + 1])),
+         bad("recordBytes"), [], "a quoted name is still the name"),
+        ("statisticsCommentBeforeName", None, pages(schema(tbl(2, "x", "CREATE TABLE/**/sqlite_stat1(tbl,idx,stat)")),
+                                                   leaf([30])),
+         bad("statistics"), [], "a comment is a word boundary, and SQLite never stores one there"),
+        ("statisticsQualifiedName", None, pages(schema(tbl(2, "x", "CREATE TABLE main.SQLITE_STAT1(tbl,idx,stat)")),
+                                               leaf([big + 1])),
+         bad("recordBytes"), [], "after a dot, any letter case"),
     ]
     out = []
     for cid, sql, pack, schema_expect, tables, note in rows:
@@ -4432,7 +4824,7 @@ def mbtiles_record_probe():
     reasons = {w["expect"].get("reason") for r in out for w in r["metadataTables"]} | {r["schema"].get("reason")
                                                                                     for r in out}
     assert reasons == {None, "header", "structure", "pageType", "rows", "recordBytes", "totalBytes",
-                       "statistics"}, reasons
+                       "statistics", "keyBytes", "schemaRecord"}, reasons
     return {
         "maxSchemaRows": MBT_PROBE_MAX_SCHEMA_ROWS,
         "maxSchemaBytes": MBT_PROBE_MAX_SCHEMA_BYTES,
@@ -4440,6 +4832,7 @@ def mbtiles_record_probe():
         "maxMetadataRecordBytes": MBT_PROBE_MAX_METADATA_RECORD_BYTES,
         "maxDepth": MBT_PROBE_MAX_DEPTH,
         "maxPages": MBT_PROBE_MAX_PAGES,
+        "maxIndexKeyBytes": MBT_PROBE_MAX_INDEX_KEY_BYTES,
         "why": (
             "3.0.3 U2 (SEC-M1-ANDROID-OLDSQLITE-OOM). SQLite loads the whole of a TEXT value into memory before "
             "length() or substr(CAST(... AS BLOB)) sees it, and only SQLite 3.45+ checks SQLITE_LIMIT_LENGTH before "
@@ -4451,8 +4844,13 @@ def mbtiles_record_probe():
             "reading a metadata value. The schema load also reads every row of the ANALYZE tables (sqlite_stat1, "
             "sqlite_stat4) whole, which neither walk reached (PROBE-RT-1, unbounded below Android 12), so "
             "the schema probe reads the schema's own records (already capped at maxSchemaBytes) to find them and "
-            "holds them to the schema caps too (statistics). Index b-trees aren't walked, and an index seek still "
-            "loads each key it compares whole (contract s15.2 rule 7, a documented residual)"),
+            "holds them to the schema caps too (statistics). 3.0.4 (s16.1, P1): an index seek loads each key it "
+            "compares whole when the key doesn't fit on its page, whatever SQLITE_LIMIT_LENGTH says (a metadata read "
+            "by lower(name), a view's join, a tile read; 200 MB seen on SQLite 3.51), so the schema probe also walks "
+            "every index b-tree in the file and holds each key to maxIndexKeyBytes (indexWalk). Indexes are found "
+            "from the schema's own rootpages and the type of the page there, never from tbl_name or the type column, "
+            "so every schema row has to be one SQLite writes (schemaRecords). 3.0.4 (s16.2, P2): a statistics table "
+            "is recognised by the whole name sqlite_stat<digits>, not the bare substring"),
         "header": (
             "the file is at least 100 bytes and starts with 'SQLite format 3' and a NUL. Page size = big endian "
             "16 bit at offset 16, 1 meaning 65536, a power of two from 512 to 65536. Usable size U = page size - "
@@ -4480,29 +4878,63 @@ def mbtiles_record_probe():
             "else is read: no overflow page, no record header, no value. walk([roots], ...) walks several b-trees as "
             "one: each root at depth 0, in list order, sharing the pages visited (a page reached twice is "
             "structure), the row count and the running total"),
+        "indexWalk": (
+            "3.0.4 P1. indexWalk([roots], maxKey): the same pre-order stack, depth rule (d < maxDepth) and "
+            "visited-once rule as walk, but no maxPages and no row or total cap (a tiles index has a key per tile; "
+            "each page is read once, so the file's page count bounds it; keep the visited set as a bitset). Page "
+            "types: 0x02 interior index, 0x0A leaf index, anything else pageType. Interior: n = big endian 16 bit at "
+            "header + 3, the pointer array at header + 12, header + 12 + 2n > U is structure; for each cell in "
+            "pointer order, offset o needs header + 12 + 2n <= o and o + 4 <= U (else structure), the varint at "
+            "o + 4 (the key's payload size) has to end before U (else structure), payload size > maxKey is "
+            "keyBytes, and the 4 bytes at o are its left child; then the right most pointer at header + 8. All of "
+            "a page's keys are checked when it is visited, before its children. Leaf: the pointer array at header + "
+            "8, header + 8 + 2n > U is structure; each offset o needs header + 8 + 2n <= o < U (else structure), "
+            "the varint at o (the payload size) has to end before U (else structure), > maxKey is keyBytes. Unsigned "
+            "64 bit compare. Nothing else is read: no key bytes, no overflow page (the payload size counts the "
+            "overflow part, and it is what SQLite mallocs to compare a key that doesn't fit on its page)"),
         "schemaProbe": (
-            "walk(1, maxSchemaRows, maxSchemaBytes, maxSchemaBytes) on the file, then statistics, before SQLite "
-            "opens it (the schema load is SQLite's first act on the first statement, and it reads the ANALYZE "
-            "tables with it). Every MBTiles open: admission, the lazy prevalidated open, import, the library "
-            "rebuild and migration name reads"),
+            "walk(1, maxSchemaRows, maxSchemaBytes, maxSchemaBytes) on the file, then for every schema leaf cell in "
+            "walk order schemaRecords (read, split, statistics mark, shape, rootpage range), then the statistics "
+            "walk, then the index step, all before SQLite opens it (the schema load is SQLite's first act on the "
+            "first statement, and it reads the ANALYZE tables with it). Index step (3.0.4 P1): every rootpage r >= 1 "
+            "from schemaRecords, in that order, whose page's b-tree type byte (at offset 100 on page 1, else 0) is "
+            "0x02 or 0x0A starts an index b-tree (an index, an autoindex, or a WITHOUT ROWID table, which has no "
+            "row of its own for its key); indexWalk([those], maxIndexKeyBytes) when there are any. Any other page "
+            "type is a table root (not walked here) or something SQLite reports as corrupt if it ever reads it. "
+            "Every MBTiles open: admission, the lazy prevalidated open, import, the library rebuild and migration "
+            "name reads"),
+        "schemaRecords": (
+            "3.0.4 P1 (3.0.3 read only the records that mentioned sqlite_stat). Every schema leaf cell, in walk "
+            "order, is read whole: after its record size and rowid varints (the rowid's must end before U, else "
+            "structure) the local part is all of it when size <= U - 35, else M = (U - 12) * 32 / 255 - 23 (integer "
+            "division) and K = M + (size - M) % (U - 4), K when K <= U - 35 else M; the local part, plus a 4 byte "
+            "first overflow page number when it is short of size, must end at or before U (else structure); then "
+            "each overflow page, which must be 1 to page count (else structure), gives the U - 4 bytes after its own "
+            "4 byte next pointer (the last one only what is left). Split: a header size varint h with its own "
+            "length <= h <= the record size, serial type varints (each ending at or before h) filling the header "
+            "exactly, no 10 or 11, bodies (0, 8, 9: 0 bytes; 1-4: that many; 5: 6; 6, 7: 8; even n >= 12: (n - 12) "
+            "/ 2; odd n >= 13: (n - 13) / 2) filling the record exactly, else schemaRecord. Then the statistics mark "
+            "(statistics). Then the row has to be one SQLite writes, else schemaRecord: exactly five columns, "
+            "column 3 (rootpage) of type 1-6 (big endian two's complement), 8 (0) or 9 (1), column 4 (sql) NULL "
+            "(type 0) or text (odd type >= 13). Then 0 <= rootpage <= page count, else structure. SQLite writes "
+            "every row that way; a text rootpage would still be read as a page number by SQLite, so the index step "
+            "couldn't trust it"),
         "statistics": (
-            "3.0.3 PROBE-RT-1, after the schema walk passed. Every schema leaf cell, in walk order, is read whole: "
-            "after its record size and rowid varints (the rowid's must end before U, else structure) the local part "
-            "is all of it when size <= U - 35, else M = (U - 12) * 32 / 255 - 23 (integer division) and K = M + "
-            "(size - M) % (U - 4), K when K <= U - 35 else M; the local part, plus a 4 byte first overflow page "
-            "number when it is short of size, must end at or before U (else structure); then each overflow page, "
-            "which must be 1 to page count (else structure), gives the U - 4 bytes after its own 4 byte next pointer "
-            "(the last one only what is left). A record that contains 'sqlite_stat' with ASCII A-Z folded to a-z, "
-            "anywhere in it (name, tbl_name or sql: older SQLite takes the name from the sql), must be what SQLite "
-            "writes for its own statistics tables, else statistics: a header size varint h with its own length <= h "
-            "<= the record size, serial type varints (each ending at or before h) filling the header exactly, exactly "
-            "five of them, no 10 or 11, bodies (0, 8, 9: 0 bytes; 1-4: that many; 5: 6; 6, 7: 8; even n >= 12: "
-            "(n - 12) / 2; odd n >= 13: (n - 13) / 2) filling the record exactly, column 3 (rootpage) of type 1-6 "
-            "(big endian two's complement), 8 (0) or 9 (1), and column 4 (sql) text (odd type >= 13) whose bytes "
-            "start with 'CREATE TABLE ' exactly. Then walk([those rootpages], maxSchemaRows, maxSchemaBytes, "
-            "maxSchemaBytes), when there are any. SQLite writes exactly that for sqlite_stat1 and sqlite_stat4, a "
-            "view or virtual table by that name would run SQL from the file when SQLite reads it, and an analyzed "
-            "real pack holds a few rows and KB there (mbutil runs ANALYZE on everything it writes)"),
+            "3.0.3 PROBE-RT-1, narrowed by 3.0.4 P2. A schema row mentions statistics when one of its text (odd type "
+            ">= 13) or blob (even type >= 12) columns, any of the five, holds 'sqlite_stat' (ASCII A-Z folded to "
+            "a-z) directly followed by one or more ASCII digits, where the byte before 'sqlite_stat' (if any, in "
+            "that column) and the byte after the digits (if any) are not ASCII letters, digits or '_'. SQLite finds "
+            "sqlite_stat1/4 (2/3 on old builds) by the name it parses from the sql; that name is exactly those bytes "
+            "between non-word bytes or quote marks, so this matches every table SQLite would load as statistics "
+            "(and a little more: a column or a quoted name that is exactly sqlite_stat<digits>, which no producer "
+            "writes). A row that mentions statistics must also be what SQLite writes for its own statistics tables, "
+            "else statistics: the five column shape with an integer rootpage, and sql text whose bytes start with "
+            "'CREATE TABLE ' exactly (a view or virtual table by that name would run SQL from the file when SQLite "
+            "reads it). This is checked before the general row shape, so such a row gets statistics, not "
+            "schemaRecord. Then walk([their rootpages], maxSchemaRows, maxSchemaBytes, maxSchemaBytes), when there "
+            "are any. An analyzed real pack holds a few rows and KB there (mbutil runs ANALYZE on everything it "
+            "writes). 3.0.3 matched the bare substring anywhere in the record, which walked or refused tables, "
+            "columns and indexes merely named like it (tilesColumnLikeStatistics, indexNamedLikeStatistics)"),
         "metadataProbe": (
             "walk(rootpage, maxMetadataRows, maxMetadataRecordBytes) for each table the metadata relation reads "
             "(metadata itself when it is a table, else its view's base tables), rootpage from the sqlite_master row "
@@ -4511,13 +4943,15 @@ def mbtiles_record_probe():
             "reads metadata; the lazy prevalidated open runs it too, before the bake extension reader's first "
             "read. The tiles relation is not walked (millions of rows): tile_data is length-checked as a BLOB "
             "before it is read (a TEXT tile_data is no tile) and zoom, column and row are type-checked by the "
-            "aggregate"),
+            "aggregate. Its indexes, and every other index b-tree, are walked by the schema probe's index step "
+            "(3.0.4). What a tiles view's join still loads from its base tables' rows is contract s16.1's residual"),
         "casesRule": (
             "sql[] rows: build the pack with the platform SQLite (as relationCases), look each metadataTables[].table "
             "up with SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE, then run "
             "the probe on the file. packBase64 rows: hand made page images only the probe reads (no SQLite), "
-            "metadataTables[].root is the page. schema is the schema probe's result (statistics included), each "
-            "metadataTables[] entry the metadata probe's on that root. Compare ok and reason exactly"),
+            "metadataTables[].root is the page. schema is the schema probe's result (schemaRecords, statistics and "
+            "the index step included), each metadataTables[] entry the metadata probe's on that root. Compare ok "
+            "and reason exactly"),
         "cases": out,
     }
 
@@ -4750,7 +5184,7 @@ def mbtiles_admission():
         "now runs off the main thread. After admission, statements against a relation that is a VIEW (tile "
         "reads, lazy extension reads) each get viewQueryBudgetMs; an interrupted read is a missing tile / missing "
         "extension. Tables get no per-read budget. 3.0.3 U2: recordProbe's schema probe runs on the file before "
-        "SQLite opens it, and its metadata probe on each table the metadata relation reads right after the "
+        "SQLite opens it (from 3.0.4 it also holds every index key to maxIndexKeyBytes), and its metadata probe on each table the metadata relation reads right after the "
         "relation and base table checks, before the budget starts and before any metadata read. Either refusing "
         "means not admitted (a lazy open serves nothing). Every tile length read is CASE WHEN typeof(tile_data)="
         "'blob' THEN length(tile_data) END, so a TEXT tile_data is no tile and never loaded")
