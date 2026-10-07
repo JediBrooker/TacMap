@@ -13,12 +13,12 @@ both take the `en-US` text. Releases before 3.0.1 are in
 
 Text on `release/3.0.4` (`docs/store/localizations/*.json`), not released yet: put the release commit and dates here when it ships. Both stores get 3.0.4 changes only: the App Store notes list the iOS fixes, the Google Play notes the Android ones. iOS 3.0.3 was still in App Review when these were written, so if 3.0.4 replaces it there, its notes need the 3.0.3 list back.
 
-### 3.0.4: App Store, English (537 / 4,000)
+### 3.0.4: App Store, English (484 / 4,000)
 
 ```
 TacMap 3.0.4: fixes and hardening
 
-• Sturdier MBTiles reading: more packs built to use too much memory are refused before they are opened, and checking a large pack now takes far less memory.
+• Sturdier MBTiles reading: more packs built to use too much memory are refused before they are opened.
 • A few valid MBTiles packs that were refused by mistake now open.
 • If the saved map library is missing, TacMap now says so instead of mentioning a recovery copy that doesn't exist. No map files are deleted.
 • Leftovers from an interrupted map import are now cleaned up and no longer bring up the notice that saved map details couldn't be read.
@@ -34,12 +34,12 @@ TacMap 3.0.4
 • Choosing your saved MBTiles pack in Layers while it is still loading no longer shows the same notice twice when it can't be opened.
 ```
 
-### 3.0.4: App Store, German (710 / 4,000)
+### 3.0.4: App Store, German (638 / 4,000)
 
 ```
 TacMap 3.0.4: Korrekturen und mehr Sicherheit
 
-• MBTiles werden robuster gelesen: Weitere Kartensätze, die so gebaut sind, dass sie zu viel Speicher belegen, werden abgelehnt, bevor sie geöffnet werden, und die Prüfung großer Kartensätze braucht jetzt viel weniger Speicher.
+• MBTiles werden robuster gelesen: Weitere Kartensätze, die so gebaut sind, dass sie zu viel Speicher belegen, werden abgelehnt, bevor sie geöffnet werden.
 • Einige gültige MBTiles-Kartensätze, die bisher irrtümlich abgelehnt wurden, öffnen sich jetzt.
 • Fehlt die gespeicherte Kartenbibliothek, sagt TacMap das jetzt, statt eine Wiederherstellungskopie zu erwähnen, die es nicht gibt. Es werden keine Kartendateien gelöscht.
 • Reste eines abgebrochenen Kartenimports werden jetzt aufgeräumt und lösen nicht mehr den Hinweis aus, dass gespeicherte Kartendetails nicht gelesen werden konnten.

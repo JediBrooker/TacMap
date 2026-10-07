@@ -259,7 +259,7 @@ version ships. The full store notes for the release being prepared live in
 - Sturdier MBTiles reading: every index key is checked too, so more packs built to use too much memory are refused; a few valid packs that were refused over a table or index name now open.
 - A saved map library that is missing (no recovery copy) is reported as missing instead of mentioning a copy that doesn't exist.
 - Android: when the library goes missing while TacMap runs and maps from an earlier version are still there, the alert says Retry brings their names and calibrations back; choosing the saved pack in Layers while it is still loading no longer shows its notice twice.
-- iOS: leftovers from an interrupted import are cleaned up instead of bringing up the recovered-library notice; checking a large MBTiles pack takes far less memory.
+- iOS: leftovers from an interrupted import are cleaned up instead of bringing up the recovered-library notice.
 
 ### 3.0.3 (build 76), October 2026 (iOS in App Review)
 - MBTiles: TacMap tells you when a pack can't be opened and keeps the map blank instead of loading an online map in its place; more packs built to use too much memory are refused.

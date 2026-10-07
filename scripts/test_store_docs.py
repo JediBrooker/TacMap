@@ -82,6 +82,32 @@ class StoreCopyTests(unittest.TestCase):
                 self.assertRegex(lines[0], partial, name)
                 self.assertIn(built, lines[0], name)
 
+    def test_notes_dont_say_checking_a_pack_takes_less_memory(self):
+        # REST-1: 3.0.3's probe only read sqlite_master, the stat tables and metadata, a few pages on a real
+        # pack, so checking one took ~2 MB then and still does (the 3.0.4 index walk just makes it slower).
+        # the pread change only beat an unreleased FileHandle walk and crafted 64 KiB page packs, so no store
+        # note or README entry gets to promise a cheaper check
+        claim = re.compile(r'less memory|weniger Speicher', re.I)
+        for path in LOCALES:
+            data = json.loads(path.read_text())
+            for field, value in text_fields(data):
+                self.assertNotRegex(value, claim, f'{path.name} {field}')
+        history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text().split('\n## 3.0.3 ', 1)[0]
+        self.assertNotRegex(history, claim, 'RELEASE_NOTES.md 3.0.4')
+        readme = (ROOT / 'README.md').read_text().split('\n### 3.0.4 ', 1)[1].split('\n### ', 1)[0]
+        self.assertNotRegex(readme, claim, 'README.md 3.0.4')
+
+    def test_release_notes_history_counts_match_the_text(self):
+        # the (n / limit) headers are hand typed, so check the 3.0.4 ones against the json they copy
+        history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
+        languages = {'en-US.json': 'English', 'de-DE.json': 'German'}
+        for name, language in languages.items():
+            data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
+            for store, text, limit in (('App Store', data['appStore']['whatsNew'], '4,000'),
+                                       ('Google Play', data['googlePlay']['releaseNotes'], '500')):
+                header = f'### 3.0.4: {store}, {language} ({len(text):,} / {limit})'
+                self.assertIn(f'{header}\n\n```\n{text}\n```', history, name)
+
     def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):
         # F2: a missing or changed pack is unavailable, Delete only, and just a refused one (openFailed) has
         # the tap to retry. so a notes sentence that offers a retry has to say it's for one that won't open
