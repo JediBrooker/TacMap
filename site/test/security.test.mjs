@@ -126,6 +126,35 @@ test("english and german homepages stay in step", async () => {
   assert.match(de, /<html lang="de">/);
 });
 
+test("sitemap lists every canonical page and en/de pages point at each other", async () => {
+  const pages = ["index.html", "de.html", "custom-symbols.html", "de/custom-symbols.html", "threat-model.html",
+                 "privacy.html", "de/privacy.html", "de/support.html", "support.html"];
+  const [sitemap, robots, ...documents] = await Promise.all([
+    readFile(new URL("../public/sitemap.xml", import.meta.url), "utf8"),
+    readFile(new URL("../public/robots.txt", import.meta.url), "utf8"),
+    ...pages.map((path) => readFile(new URL("../public/" + path, import.meta.url), "utf8")),
+  ]);
+  assert.match(robots, /^Sitemap: https:\/\/tacmap\.app\/sitemap\.xml$/m);
+
+  const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  const canonicals = documents.map((doc) => doc.match(/<link rel="canonical" href="([^"]+)">/)[1]);
+  assert.deepEqual([...locs].sort(), [...canonicals].sort());
+
+  const alternates = (doc) => Object.fromEntries(
+    [...doc.matchAll(/<link rel="alternate" hreflang="([^"]+)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]));
+  for (const [en, de] of [["index.html", "de.html"], ["custom-symbols.html", "de/custom-symbols.html"],
+                          ["privacy.html", "de/privacy.html"], ["support.html", "de/support.html"]]) {
+    const enDoc = documents[pages.indexOf(en)];
+    const deDoc = documents[pages.indexOf(de)];
+    const expected = { en: canonicals[pages.indexOf(en)], de: canonicals[pages.indexOf(de)], "x-default": canonicals[pages.indexOf(en)] };
+    // hreflang has to be reciprocal or google ignores it
+    assert.deepEqual(alternates(enDoc), expected, en);
+    assert.deepEqual(alternates(deDoc), expected, de);
+    assert.equal((sitemap.match(new RegExp(`hreflang="de" href="${expected.de}"`, "g")) ?? []).length, 2);
+  }
+  assert.deepEqual(alternates(documents[pages.indexOf("threat-model.html")]), {});
+});
+
 test("public disclosures cover screen-off Unit Sync on both platforms", async () => {
   const [threatModel, privacyPolicy, generatedThreatModel, generatedPrivacyPolicy] = await Promise.all([
     readFile(new URL("../../docs/THREAT_MODEL.md", import.meta.url), "utf8"),
