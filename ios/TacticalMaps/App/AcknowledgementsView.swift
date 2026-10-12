@@ -125,6 +125,13 @@ struct AcknowledgementsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                Section {
+                } footer: {
+                    Text("\(Messages.aboutMadeInAustralia()) 🇦🇺")
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("about.madeInAustralia")
+                }
             }
             .navigationTitle(Messages.aboutScreenTitle())
             .navigationBarTitleDisplayMode(.inline)

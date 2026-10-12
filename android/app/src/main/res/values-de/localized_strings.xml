@@ -18,6 +18,7 @@
     <string name="about_lib_pdfbox_detail">"Liest die Georeferenzierung von GeoPDFs."</string>
     <string name="about_lib_serialization_detail">"JSON-Kodierung."</string>
     <string name="about_lib_websocket_detail">"Transport für Unit Sync, mit SLF4J (MIT)."</string>
+    <string name="about_made_in_australia">"Hergestellt in Australien"</string>
     <string name="about_maki_detail">"In GeoJSON verwendete Markersymbolnamen (campsite, drinking-water usw.)."</string>
     <string name="about_map_data">"Kartendaten"</string>
     <string name="about_notices_button">"Lizenztexte"</string>

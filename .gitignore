@@ -70,3 +70,10 @@ site/.wrangler/
 
 # marketing/preview video masters live outside git (too big, Play one is on YouTube)
 docs/store/**/*.mp4
+# raw capture sources and the soundtrack master are regenerated/kept locally, not in git
+docs/store/raw/
+docs/store/**/*.flac
+
+# R console history and Python bytecode
+.Rhistory
+__pycache__/

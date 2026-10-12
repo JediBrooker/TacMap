@@ -22,6 +22,7 @@ internal val localizedStringIds: Map<String, Int> = mapOf(
     "id.about_lib_pdfbox_detail" to R.string.about_lib_pdfbox_detail,
     "id.about_lib_serialization_detail" to R.string.about_lib_serialization_detail,
     "id.about_lib_websocket_detail" to R.string.about_lib_websocket_detail,
+    "id.about_made_in_australia" to R.string.about_made_in_australia,
     "id.about_maki_detail" to R.string.about_maki_detail,
     "id.about_map_data" to R.string.about_map_data,
     "id.about_notices_button" to R.string.about_notices_button,

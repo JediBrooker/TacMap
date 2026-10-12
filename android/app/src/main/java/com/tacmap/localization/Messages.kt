@@ -36,6 +36,8 @@ object Messages {
         L10n.message("id.about_lib_serialization_detail", "JSON encoding.")
     fun aboutLibWebsocketDetail(): String =
         L10n.message("id.about_lib_websocket_detail", "Unit Sync transport, with SLF4J (MIT).")
+    fun aboutMadeInAustralia(): String =
+        L10n.message("id.about_made_in_australia", "Made in Australia")
     fun aboutMakiDetail(): String =
         L10n.message("id.about_maki_detail", "Marker icon names referenced in GeoJSON output (campsite, drinking-water, etc.).")
     fun aboutMapData(): String =

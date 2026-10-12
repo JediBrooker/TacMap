@@ -4,9 +4,11 @@ import com.tacmap.app.startOwnShareSheet
 import com.tacmap.localization.L10n
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +19,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.tacmap.localization.Messages
 import com.tacmap.ui.AlertDialog
@@ -30,12 +33,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tacmap.BuildConfig
+import com.tacmap.R
 import com.tacmap.app.CrashReporter
 
 @Composable
@@ -88,6 +93,18 @@ fun AboutDialog(onDismiss: () -> Unit, onReplayTour: (() -> Unit)? = null) {
                         CrashReporter.clear(context)
                         crashReport = null
                     }) { Text(L10n.text("Clear crash log"), fontSize = 12.sp) }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                ) {
+                    Text(Messages.aboutMadeInAustralia(), fontSize = 11.sp, color = Color.Gray)
+                    Image(
+                        painter = painterResource(R.drawable.flag_au),
+                        contentDescription = null,
+                        modifier = Modifier.padding(start = 6.dp).size(width = 18.dp, height = 9.dp),
+                    )
                 }
             }
         },
