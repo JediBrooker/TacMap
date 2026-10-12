@@ -9,6 +9,40 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.0.5 (build 78)
+
+Text on `made-in-australia` (`docs/store/localizations/*.json`), submitted 13 October 2026. Both stores get the same single change.
+
+### 3.0.5: App Store, English (76 / 4,000)
+
+```
+TacMap 3.0.5
+
+• The About screen now notes that TacMap is made in Australia.
+```
+
+### 3.0.5: Google Play, English (75 / 500)
+
+```
+TacMap 3.0.5
+• The About screen now notes that TacMap is made in Australia.
+```
+
+### 3.0.5: App Store, German (101 / 4,000)
+
+```
+TacMap 3.0.5
+
+• Der Bildschirm „Über TacMap“ zeigt jetzt, dass TacMap in Australien hergestellt wird.
+```
+
+### 3.0.5: Google Play, German (100 / 500)
+
+```
+TacMap 3.0.5
+• Der Bildschirm „Über TacMap“ zeigt jetzt, dass TacMap in Australien hergestellt wird.
+```
+
 ## 3.0.4 (build 77)
 
 Text on `release/3.0.4` (`docs/store/localizations/*.json`), not released yet: put the release commit and dates here when it ships. Both stores get 3.0.4 changes only: the App Store notes list the iOS fixes, the Google Play notes the Android ones. iOS 3.0.3 was still in App Review when these were written, so if 3.0.4 replaces it there, its notes need the 3.0.3 list back.
