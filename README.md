@@ -255,6 +255,9 @@ version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
 
+### 3.0.5 (build 78), October 2026
+- About now notes that TacMap is made in Australia, with the flag; the website footers say so too.
+
 ### 3.0.4 (build 77), October 2026
 - Sturdier MBTiles reading: every index key is checked too, so more packs built to use too much memory are refused; a few valid packs that were refused over a table or index name now open.
 - A saved map library that is missing (no recovery copy) is reported as missing instead of mentioning a copy that doesn't exist.

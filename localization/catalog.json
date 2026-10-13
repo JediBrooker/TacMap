@@ -14740,6 +14740,18 @@
     "context": "Short navigation title; the full feature name remains in the main menu.",
     "parameters": []
   },
+  "about_made_in_australia": {
+    "en": "Made in Australia",
+    "de": "Hergestellt in Australien",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "legacy": false,
+    "accessor": "aboutMadeInAustralia",
+    "context": "Small footer line on the About screen, shown beside the Australian flag.",
+    "parameters": []
+  },
   "symbols_custom_symbols": {
     "en": "Custom Symbols",
     "de": "Eigene Symbole",
