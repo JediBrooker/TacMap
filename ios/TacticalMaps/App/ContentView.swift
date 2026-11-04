@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import PDFKit
+import StoreKit
 import UniformTypeIdentifiers
 
 private enum BoundedImportReader {
@@ -197,6 +198,9 @@ struct ContentView: View {
 
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
+    @ObservedObject private var reviewPrompt = ReviewPromptCoordinator.shared
+    @State private var reviewAskTask: Task<Void, Never>?
     @State private var canUndo = false
     /// library migration running off main, see restoreActiveBasemap
     @State private var basemapMigrationInFlight = false
@@ -929,6 +933,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 restoreChatIfSecurityAllows()
+                reviewPrompt.noteLaunch()
             } else if phase == .background || !syncForegroundReady {
                 // a transient .inactive that locked nothing keeps the chat key
                 lockChatUIAndSecrets()
@@ -936,6 +941,14 @@ struct ContentView: View {
             refreshUnitSyncLifecycle()
             refreshHeadingLifecycle()
         }
+        .onAppear {
+            reviewPrompt.noteLaunch()
+            // eligible since last session but never got a quiet moment: no onChange
+            // will fire for it, so look once now
+            scheduleReviewAskIfQuiet()
+        }
+        .onChange(of: reviewPrompt.isEligible) { _ in scheduleReviewAskIfQuiet() }
+        .onChange(of: reviewMomentIsQuiet) { _ in scheduleReviewAskIfQuiet() }
         .onChange(of: opsec.mapOrientationMode) { mode in
             if mode == .headingUp, !locationService.isHeadingAvailable {
                 _ = opsec.setMapOrientationMode(.northUp)
@@ -1076,6 +1089,33 @@ struct ContentView: View {
          showImporter, showGeoJSONImporter, showMBTilesImporter, showKMLImporter]
     }
 
+    /// Plain map, nothing on top, nothing in flight: the only time the review
+    /// card is allowed to show. Mid import / mid bake / mid calibration is never
+    /// a quiet moment even if no sheet is up
+    private var reviewMomentIsQuiet: Bool {
+        scenePhase == .active
+            && !rootPresentationsOnTop.contains(true)
+            && !calibration.isCalibrating
+            && tourStep == nil
+            && importController.progress == nil
+            && !PDFBakeController.shared.isRunning
+            && !PDFBakeController.shared.finishedMessage
+    }
+
+    /// The rule says ask, the map is quiet: wait a beat for whatever just closed
+    /// to finish animating, then re-check and hand it to StoreKit. Only ever once
+    /// per install (takeRequest flips the flag), iOS decides if the card shows.
+    private func scheduleReviewAskIfQuiet() {
+        reviewAskTask?.cancel()
+        reviewAskTask = nil
+        guard reviewPrompt.isEligible, reviewMomentIsQuiet else { return }
+        reviewAskTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, reviewMomentIsQuiet, reviewPrompt.takeRequest() else { return }
+            requestReview()
+        }
+    }
+
     var body: some View {
         importerContent
         // OD3-R3-1: stands down while anything is presented over the root. Layers
@@ -1160,7 +1200,8 @@ struct ContentView: View {
             set: { if !$0 { missionObjectExportURL = nil } }
         )) {
             if let url = missionObjectExportURL {
-                ShareSheetView(activityItems: [url], title: missionObjectExportTitle)
+                ShareSheetView(activityItems: [url], title: missionObjectExportTitle,
+                               onCompleted: { reviewPrompt.record(.missionExported) })
                     .padSheetSizing()
             }
         }

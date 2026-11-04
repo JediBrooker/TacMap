@@ -55,13 +55,15 @@ test("CSP pins every inline block and permits no unsafe or third-party source", 
     readFile(new URL("../public/index.html", import.meta.url), "utf8"),
     readFile(new URL("../public/threat-model.html", import.meta.url), "utf8"),
     readFile(new URL("../public/privacy.html", import.meta.url), "utf8"),
-    ...["de/privacy.html", "de/support.html", "de.html", "support.html", "custom-symbols.html", "de/custom-symbols.html"].map(path => readFile(new URL("../public/" + path, import.meta.url), "utf8")),
+    ...["de/privacy.html", "de/support.html", "de.html", "support.html", "custom-symbols.html", "de/custom-symbols.html",
+       "compare/tacticmap.html", "guides/geopdf-on-iphone.html", "guides/mgrs-on-android.html", "guides/offline-maps-for-hunting.html",
+       "for-publishers.html"].map(path => readFile(new URL("../public/" + path, import.meta.url), "utf8")),
   ]);
   const styleBlocks = documents.flatMap((document) => inlineBlocks(document, "style"));
   const scriptBlocks = documents.flatMap((document) => inlineBlocks(document, "script"));
   // index.html and de.html each carry 2 style blocks (main + noscript) and the
-  // nav script, the 7 generated doc pages carry one style block each
-  assert.equal(styleBlocks.length, 11);
+  // nav script, the 12 generated doc pages carry one style block each
+  assert.equal(styleBlocks.length, 16);
   assert.equal(scriptBlocks.length, 2);
   for (const block of [...styleBlocks, ...scriptBlocks]) {
     assert.match(CONTENT_SECURITY_POLICY, new RegExp(sha256Source(block).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -128,7 +130,9 @@ test("english and german homepages stay in step", async () => {
 
 test("sitemap lists every canonical page and en/de pages point at each other", async () => {
   const pages = ["index.html", "de.html", "custom-symbols.html", "de/custom-symbols.html", "threat-model.html",
-                 "privacy.html", "de/privacy.html", "de/support.html", "support.html"];
+                 "privacy.html", "de/privacy.html", "de/support.html", "support.html",
+                 "compare/tacticmap.html", "guides/geopdf-on-iphone.html", "guides/mgrs-on-android.html",
+                 "guides/offline-maps-for-hunting.html", "for-publishers.html"];
   const [sitemap, robots, ...documents] = await Promise.all([
     readFile(new URL("../public/sitemap.xml", import.meta.url), "utf8"),
     readFile(new URL("../public/robots.txt", import.meta.url), "utf8"),
@@ -152,7 +156,11 @@ test("sitemap lists every canonical page and en/de pages point at each other", a
     assert.deepEqual(alternates(deDoc), expected, de);
     assert.equal((sitemap.match(new RegExp(`hreflang="de" href="${expected.de}"`, "g")) ?? []).length, 2);
   }
-  assert.deepEqual(alternates(documents[pages.indexOf("threat-model.html")]), {});
+  // english-only pages carry no hreflang at all
+  for (const page of ["threat-model.html", "compare/tacticmap.html", "guides/geopdf-on-iphone.html",
+                      "guides/mgrs-on-android.html", "guides/offline-maps-for-hunting.html", "for-publishers.html"]) {
+    assert.deepEqual(alternates(documents[pages.indexOf(page)]), {}, page);
+  }
 });
 
 test("public disclosures cover screen-off Unit Sync on both platforms", async () => {

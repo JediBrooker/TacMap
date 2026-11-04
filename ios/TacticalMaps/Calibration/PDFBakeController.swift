@@ -655,6 +655,8 @@ final class PDFBakeController: ObservableObject {
         state = .idle
         setSubject(nil)
         finishedMessage = true
+        // a bake that made it all the way to a library record is a real win
+        ReviewPromptCoordinator.shared.record(.offlineBakeCompleted)
     }
 
     /// rename durability: the directory entry has to hit the disk before the

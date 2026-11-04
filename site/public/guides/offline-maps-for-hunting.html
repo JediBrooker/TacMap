@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offline maps for hunting season — TacMap</title>
+<meta name="description" content="Load a topo map and generate offline tiles before you lose signal, import the property boundary, mark stands, share with your party over encrypted sync, and use red night mode.">
+<link rel="canonical" href="https://tacmap.app/guides/offline-maps-for-hunting">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
+<meta property="og:title" content="Offline maps for hunting season">
+<meta property="og:description" content="Tiles before you lose signal, boundary KML, waypoints, encrypted party sharing, battery, red night mode.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://tacmap.app/guides/offline-maps-for-hunting">
+<style>
+  :root{
+    --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
+    --line:#243440; --line-2:#1B272E;
+    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
+    --signal:#FF5A24; --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);
+    font-family:var(--font-sans);line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  main a{overflow-wrap:anywhere}
+
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-sans);
+    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
+  .nav-in .back{font-family:var(--font-mono);font-size:13px;color:var(--ink-dim)}
+  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+
+  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
+  h1,h2,h3,h4{font-family:var(--font-sans);line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);scroll-margin-top:80px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
+  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
+    padding-top:24px;border-top:1px solid var(--line-2)}
+  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
+  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{margin:14px 0;color:var(--ink-dim)}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
+  li{margin:7px 0}
+  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
+  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
+    color:var(--ink-dim)}
+
+  code{font-family:var(--font-mono);font-size:.9em;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px}
+  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
+    padding:16px 18px;overflow-x:auto;margin:18px 0}
+  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+
+  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  thead th{font-family:var(--font-sans);font-weight:700;background:var(--void-2);
+    color:var(--ink);white-space:nowrap}
+  td{color:var(--ink-dim)}
+  tbody tr:last-child td{border-bottom:none}
+
+  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:var(--font-mono);font-size:12px;color:var(--ink-faint);
+    letter-spacing:.06em}
+  .foot-in a{color:var(--ink-dim)}
+  .flag-au{width:18px;height:9px;margin-left:7px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/">
+      <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
+      TACMAP
+    </a>
+    <a class="back" href="/">← Back to site</a>
+  </div>
+</header>
+<main>
+<h1 id="offline-maps-for-hunting-season">Offline maps for hunting season</h1>
+<p><a href="/support">Help</a> · <a href="/privacy">Privacy</a> · <a href="/">TacMap</a></p>
+<p>Most hunting ground has no signal. TacMap is built to be loaded at home and used in the field with the phone in flight mode: your own maps, the property boundary, your stand and camp waypoints, and encrypted sharing with the rest of the party when you do have a bar or two. No subscription, no account.</p>
+<p>Everything here applies to Android and iPhone.</p>
+<h2 id="before-you-leave-load-the-map">Before you leave: load the map</h2>
+<p>TacMap does not download map regions. You bring the map you want:</p>
+<ul>
+<li><strong>A GeoPDF</strong> of the area. Government topo sheets are the usual source: USGS US Topo quads in the United States, state and national mapping agencies elsewhere. Import it with <strong>Import / Export</strong>, then <strong>PDF Map</strong>. The sheet is placed in its own projection and datum, so the MGRS grid lines up with the printed one.</li>
+<li><strong>A plain PDF or a scan of a paper map</strong>, saved as PDF. Calibrate it from three or more grid references with <strong>Calibrate / refine…</strong> and TacMap tells you how good the fit is. A phone photo has to be saved as a PDF first; there is no image import.</li>
+<li><strong>An MBTiles pack</strong> you built from aerial imagery or your own GIS data. Import it with <strong>Import / Export</strong>, then <strong>Offline Tiles</strong>.</li>
+</ul>
+<p>The step-by-step is in <a href="/guides/geopdf-on-iphone">How to load a GeoPDF on iPhone</a>; the Android steps are the same.</p>
+<p>Online basemaps are off on a fresh install. If you turn them on to scout the ground at home, they only draw what you look at while connected and are not downloaded for later. Use an imported map for the field.</p>
+<h2 id="generate-offline-tiles">Generate offline tiles</h2>
+<p>Once the map is imported and calibrated, open <strong>Layers and Labels</strong>, find it under <strong>Imported maps</strong> and tap <strong>Generate Offline Tiles…</strong>. Pick a maximum zoom; each option shows the tile count, the size and roughly how long it takes. The PDF is kept.</p>
+<p>Do this on a charger with the phone awake. In the field the map then opens and zooms instantly instead of rendering from the PDF each time.</p>
+<h2 id="import-the-property-boundary">Import the property boundary</h2>
+<p>If the landowner, a lease, or a state land agency gave you the boundary as <strong>KML</strong>, <strong>KMZ</strong> or <strong>GeoJSON</strong>, import it with <strong>Import / Export</strong>: choose <strong>KML / KMZ</strong> or <strong>GeoJSON</strong> and pick the file. It arrives as drawings on your map, with layers preserved. Google Earth exports KML; QGIS exports GeoJSON.</p>
+<p>If the boundary is a GPX file, convert it to KML or GeoJSON first in Google Earth or QGIS. TacMap exports GPX for recorded tracks but does not import GPX.</p>
+<p>Turn boundary layers on and off in <strong>Layers and Labels</strong>. Hidden layers stay saved.</p>
+<h2 id="mark-stands-camp-and-water">Mark stands, camp and water</h2>
+<p>Hold a finger still on the map for a second and choose <strong>Place Symbol Here</strong>, or move the crosshair and use <strong>Add Waypoint</strong>. Give each one a name. There are points-of-interest and search-and-rescue symbol sets alongside the military ones, and you can organise waypoints into layers, for example one per block or one per hunter.</p>
+<p>Hold on a spot and choose <strong>Copy Coordinates</strong> to get its grid reference, or <strong>Range Rings Here</strong> to draw distance rings around a stand. Rings are dashed drawings on the active layer and can be set in metres or kilometres.</p>
+<p>Your position reads out live in MGRS, UTM or latitude and longitude, set under <strong>Settings, Privacy &amp; OPSEC</strong>, <strong>Coordinate display</strong>. Measure distance and bearing from any point with <strong>Measure From Here</strong>.</p>
+<h2 id="record-your-route">Record your route</h2>
+<p>Start track recording from the map menu and allow precise location. TacMap shows the recording status, and on Android an ongoing notification. Stop recording before you export. Tracks export as <strong>GPX Track</strong> from <strong>Import / Export</strong> and open in Garmin, Gaia GPS, QGIS and Google Earth. Waypoints and drawings export separately as GeoJSON, KML or KMZ with symbols.</p>
+<h2 id="share-with-your-party">Share with your party</h2>
+<p>When the party has signal, in camp or in town, <strong>Unit Sync</strong> shares waypoints and drawings between phones, Android and iPhone alike, over an end-to-end encrypted channel. One person opens <strong>Unit Sync</strong>, chooses <strong>Join / create room</strong> and taps <strong>Generate strong code</strong>. Everyone else enters that join code, which starts with <code>3:</code>. Share the code in person or over a channel you trust. Anyone with the code is in the room.</p>
+<p>Once joined, each member can choose <strong>Share my location</strong> so the others see their callsign, position and heading on the map. <strong>TacMap Chat</strong> sends encrypted text or reports to the whole room or a selected unit.</p>
+<p>The relay cannot read mission content, but it does see who connected, when, from which IP address, and how much data moved. Read the <a href="/threat-model">threat model</a> before you rely on it. There is no offline mailbox: a message sent while a member is out of coverage is not queued for them.</p>
+<p>Out of coverage, nothing is lost. Edits stay saved on the phone and are reconciled when the room reconnects.</p>
+<h2 id="battery">Battery</h2>
+<ul>
+<li><strong>Keep screen on</strong> in <strong>Settings, Privacy &amp; OPSEC</strong> stops the phone locking while TacMap is open. It is off by default and it uses more battery. Turn it on for a dash mount, not for a day in a stand.</li>
+<li>With Unit Sync, <strong>Background Unit Sync location</strong> is a separate switch that lets the phone keep sending its position with the screen off, on an interval you choose. Updates are best-effort and depend on the operating system and the connection. Leave it off if you do not need the party to track you.</li>
+<li>Flight mode stops the phone hunting for a tower, which is the biggest drain in a dead zone. Everything on this page except Unit Sync and Chat works in flight mode.</li>
+</ul>
+<h2 id="red-night-mode">Red night mode</h2>
+<p>Before first light, tap the moon button on the map. <strong>Night mode</strong> turns the entire screen red and dims it, menus included, so you keep your night vision walking in. <strong>Night mode brightness</strong> sets how dim. Tap the moon again at shooting light.</p>
+<p><strong>Sun and Moon Here</strong> on the long-press menu gives sunrise, sunset and moon times for that spot, computed offline. Check your local regulations for legal hours; TacMap shows the astronomy, not the law.</p>
+<h2 id="get-tacmap">Get TacMap</h2>
+<p>Download on the <a href="https://apps.apple.com/au/app/tacmap/id6773175573">App Store</a> or get it on <a href="https://play.google.com/store/apps/details?id=com.tacmap">Google Play</a>. Three days free, then one unlock.</p>
+
+</main>
+<footer>
+  <div class="foot-in">
+    <span>TACMAP · HUNTING · MADE IN AUSTRALIA<svg class="flag-au" role="img" aria-label="Australian flag" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 630"><path fill="#012169" d="M0 0 1260 0 1260 630 0 630Z"/><path fill="#FFF" d="M0 0 70.4 0 630 279.8 630 315 559.6 315 0 35.2ZM630 0 630 35.2 70.4 315 0 315 0 279.8 559.6 0Z"/><path fill="#C8102E" d="M0 0 315 157.5 268 157.5 0 23.5ZM630 315 315 157.5 362 157.5 630 291.5ZM630 0 315 157.5 315 134 583 0ZM0 315 315 157.5 315 181 47 315Z"/><path fill="#FFF" d="M262.5 0 367.5 0 367.5 105 630 105 630 210 367.5 210 367.5 315 262.5 315 262.5 210 0 210 0 105 262.5 105Z"/><path fill="#C8102E" d="M283.5 0 346.5 0 346.5 126 630 126 630 189 346.5 189 346.5 315 283.5 315 283.5 189 0 189 0 126 283.5 126Z"/><path fill="#FFF" d="M315 378 333.2 434.7 388.9 413.6 355.9 463.2 407.1 493.5 347.8 498.7 356 557.6 315 514.5 274 557.6 282.2 498.7 222.9 493.5 274.1 463.2 241.1 413.6 296.8 434.7ZM945 480 953.7 507 980.2 496.9 964.5 520.5 988.9 535 960.6 537.5 964.5 565.5 945 545 925.5 565.5 929.4 537.5 901.1 535 925.5 520.5 909.8 496.9 936.3 507ZM787.5 230.6 796.2 257.6 822.7 247.5 807 271.1 831.4 285.6 803.1 288.1 807 316.1 787.5 295.6 768 316.1 771.9 288.1 743.6 285.6 768 271.1 752.3 247.5 778.8 257.6ZM945 60 953.7 87 980.2 76.9 964.5 100.5 988.9 115 960.6 117.5 964.5 145.5 945 125 925.5 145.5 929.4 117.5 901.1 115 925.5 100.5 909.8 76.9 936.3 87ZM1091.3 195.6 1100 222.6 1126.5 212.5 1110.8 236.1 1135.2 250.6 1106.9 253.1 1110.8 281.1 1091.3 260.6 1071.8 281.1 1075.7 253.1 1047.4 250.6 1071.8 236.1 1056.1 212.5 1082.6 222.6ZM1008 315 1014.2 332.8 1033 333.2 1018 344.6 1023.5 362.6 1008 351.8 992.5 362.6 998 344.6 983 333.2 1001.8 332.8Z"/></svg></span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/HOWTO_OFFLINE_MAPS_HUNTING.md">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

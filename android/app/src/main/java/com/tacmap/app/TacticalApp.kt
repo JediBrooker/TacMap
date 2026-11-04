@@ -41,6 +41,10 @@ class TacticalApp : Application() {
     lateinit var pdfBakeManager: com.tacmap.calibration.PdfBakeManager
         private set
 
+    /** The one-shot "rate us" bookkeeping. Local prefs only, no analytics behind it */
+    lateinit var reviewPrompt: ReviewPromptCoordinator
+        private set
+
     /** forwarded to whoever holds PDF memory (the map's runtime registers itself) */
     val memoryPressure = java.util.concurrent.CopyOnWriteArrayList<(Int) -> Unit>()
 
@@ -51,6 +55,7 @@ class TacticalApp : Application() {
         DataKey.install(this)
         com.tacmap.waypoints.CustomSymbolStore.initialize(this)
         appLock = AppLock(this)
+        reviewPrompt = ReviewPromptCoordinator(SharedPreferencesReviewPromptStore.open(this))
         cleanupExportArtifacts(this)
         // S5: PDFBox spills plaintext stream bytes into cacheDir/pdfbox (PdfInspector's scratch).
         // nothing can be parsing yet, so whatever's there is from a parse that died mid way

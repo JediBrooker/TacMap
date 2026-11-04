@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MGRS and UTM on Android without a subscription — TacMap</title>
+<meta name="description" content="Live MGRS readout, grid overlay, coordinate entry, datum handling, range rings, mils and red night mode on Android. No account, one-time unlock.">
+<link rel="canonical" href="https://tacmap.app/guides/mgrs-on-android">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
+<meta property="og:title" content="MGRS and UTM on Android, no subscription">
+<meta property="og:description" content="Grid overlay, coordinate entry and readout, datum, range rings, night mode. No account.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://tacmap.app/guides/mgrs-on-android">
+<style>
+  :root{
+    --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
+    --line:#243440; --line-2:#1B272E;
+    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
+    --signal:#FF5A24; --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);
+    font-family:var(--font-sans);line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  main a{overflow-wrap:anywhere}
+
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-sans);
+    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
+  .nav-in .back{font-family:var(--font-mono);font-size:13px;color:var(--ink-dim)}
+  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+
+  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
+  h1,h2,h3,h4{font-family:var(--font-sans);line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);scroll-margin-top:80px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
+  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
+    padding-top:24px;border-top:1px solid var(--line-2)}
+  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
+  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{margin:14px 0;color:var(--ink-dim)}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
+  li{margin:7px 0}
+  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
+  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
+    color:var(--ink-dim)}
+
+  code{font-family:var(--font-mono);font-size:.9em;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px}
+  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
+    padding:16px 18px;overflow-x:auto;margin:18px 0}
+  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+
+  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  thead th{font-family:var(--font-sans);font-weight:700;background:var(--void-2);
+    color:var(--ink);white-space:nowrap}
+  td{color:var(--ink-dim)}
+  tbody tr:last-child td{border-bottom:none}
+
+  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:var(--font-mono);font-size:12px;color:var(--ink-faint);
+    letter-spacing:.06em}
+  .foot-in a{color:var(--ink-dim)}
+  .flag-au{width:18px;height:9px;margin-left:7px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/">
+      <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
+      TACMAP
+    </a>
+    <a class="back" href="/">← Back to site</a>
+  </div>
+</header>
+<main>
+<h1 id="mgrs-and-utm-on-android-without-a-subscription">MGRS and UTM on Android without a subscription</h1>
+<p><a href="/support">Help</a> · <a href="/privacy">Privacy</a> · <a href="/">TacMap</a></p>
+<p>TacMap puts a live MGRS readout, a grid overlay, UTM and latitude/longitude on an Android phone with no subscription and no account. You try it free for three days and then unlock it once through Google Play. This page walks through the grid tools and where each one lives in the app. The iPhone app has the same tools under the same names.</p>
+<h2 id="no-account-no-renewal">No account, no renewal</h2>
+<p>TacMap never asks you to sign up. There is no TacMap login, no ads and no behavioural analytics. Your waypoints, drawings and tracks are encrypted in app-private storage on the phone and are not uploaded anywhere unless you export them or join a Unit Sync room yourself.</p>
+<p>Online basemaps, elevation and weather are off on a fresh install. Every grid tool below works with the phone in flight mode, on an imported map or on nothing at all.</p>
+<h2 id="read-your-position">Read your position</h2>
+<p>The large readout at the top of the map is your current position in MGRS by default. Tap it to copy the coordinate. To change the format, open the map menu, choose <strong>Settings, Privacy &amp; OPSEC</strong> and set <strong>Coordinate display</strong> to <strong>MGRS</strong>, <strong>UTM</strong> or <strong>WGS84</strong> (latitude and longitude). The choice survives relaunch.</p>
+<p>Hold a finger still anywhere on the map for a second to get a menu for that spot, including <strong>Copy Coordinates</strong> for the grid reference under the crosshair.</p>
+<h2 id="turn-on-the-grid-overlay">Turn on the grid overlay</h2>
+<p>Open <strong>Layers and Labels</strong> and switch on <strong>MGRS Grid</strong>. TacMap draws the 100 km square letters and the numbered grid lines over whatever map is active, online basemap or imported GeoPDF. The grid density follows the zoom. The lines are computed on the phone from the same test vectors on Android and iPhone, so both platforms draw the same grid.</p>
+<p>On an imported GeoPDF the drawn grid should sit on the sheet&#39;s printed grid. If it is offset, see the datum section below.</p>
+<h2 id="enter-a-coordinate">Enter a coordinate</h2>
+<p>The search field accepts a place name, a full MGRS reference, or a 4, 6, 8 or 10-figure local grid such as <code>LH 349 522</code>, as well as latitude and longitude. For a local grid TacMap uses the 100 km square you are currently in and centres the map on that square. Coordinate search works offline. Place-name search needs online lookups turned on and a connection.</p>
+<p>When you edit a symbol or waypoint, its location field takes the same inputs, and <strong>Set MGRS Location</strong> moves it to a typed reference.</p>
+<p>TacMap reads the latitude band and square letters strictly, so a typo in the zone or square is flagged rather than silently placed in the wrong square.</p>
+<h2 id="datum">Datum</h2>
+<p>Coordinates on screen and in exports are WGS84.</p>
+<p>Imported GeoPDFs are placed in the sheet&#39;s own projection and datum, including NAD27, NAD83, GDA94, GDA2020, ETRS89, ED50 and OSGB36, so a sheet drawn on an older datum lands where it should rather than a few hundred metres off.</p>
+<p>When you calibrate a plain PDF, <strong>Datum printed on the map</strong> lets you choose <strong>WGS84</strong>, <strong>GDA94 / MGA94</strong> or <strong>GDA2020 / MGA2020</strong>. Read the datum off the sheet&#39;s margin. The wrong datum can shift the map by 200 m or more. If the sheet does not say, choose <strong>Not sure (use WGS84)</strong>.</p>
+<h2 id="range-rings">Range rings</h2>
+<p>Hold a finger on the map and choose <strong>Range Rings Here</strong>, or open <strong>Range Rings</strong> from a placed symbol. Set the ring spacing, choose metres or kilometres, and the number of rings, up to ten with the outer ring at most 1000 km out.</p>
+<p>The rings are added as dashed line drawings on the active layer. They sync to your unit, export with your other drawings, undo like any other drawing, and stay centred on the symbol if you move it.</p>
+<h2 id="measure-in-degrees-or-mils">Measure in degrees or mils</h2>
+<p><strong>Measure From Here</strong> on the long-press menu starts a distance, area and bearing measurement from that point. Bearings can be shown in degrees or NATO mils. <strong>North Up</strong> keeps north at the top with two-finger rotation available, or rotate the map with your heading using the phone compass.</p>
+<h2 id="night-mode">Night mode</h2>
+<p>Tap the moon button on the map to turn on <strong>Night mode</strong>. The whole screen, menus and dialogs included, turns red and dims to protect your night vision. The status bar is hidden while it is on. <strong>Night mode brightness</strong> sets how dim. Tap the moon again to turn it off.</p>
+<h2 id="keep-the-screen-on">Keep the screen on</h2>
+<p>In <strong>Settings, Privacy &amp; OPSEC</strong>, <strong>Keep screen on</strong> stops the phone locking while TacMap is open, for a mounted phone or one left on a table. It is off by default and it uses more battery. Lock the phone yourself before leaving it unattended.</p>
+<h2 id="lock-the-app">Lock the app</h2>
+<p>TacMap on Android has an optional <strong>PIN</strong> or <strong>fingerprint or face unlock</strong> app lock. Turn it on in <strong>Settings, Privacy &amp; OPSEC</strong> if other people handle your phone.</p>
+<h2 id="what-the-trial-includes">What the trial includes</h2>
+<p>The three-day trial is the full app. When it ends you make a one-time purchase through Google Play, which shows your local price, and the unlock is permanent. <strong>Restore Purchases</strong> brings it back on a new phone with the same Google account. A Play purchase does not unlock the iPhone app.</p>
+<h2 id="get-tacmap">Get TacMap</h2>
+<p>Get it on <a href="https://play.google.com/store/apps/details?id=com.tacmap">Google Play</a> or download on the <a href="https://apps.apple.com/au/app/tacmap/id6773175573">App Store</a>. Three days free, then one unlock.</p>
+
+</main>
+<footer>
+  <div class="foot-in">
+    <span>TACMAP · MGRS ON ANDROID · MADE IN AUSTRALIA<svg class="flag-au" role="img" aria-label="Australian flag" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 630"><path fill="#012169" d="M0 0 1260 0 1260 630 0 630Z"/><path fill="#FFF" d="M0 0 70.4 0 630 279.8 630 315 559.6 315 0 35.2ZM630 0 630 35.2 70.4 315 0 315 0 279.8 559.6 0Z"/><path fill="#C8102E" d="M0 0 315 157.5 268 157.5 0 23.5ZM630 315 315 157.5 362 157.5 630 291.5ZM630 0 315 157.5 315 134 583 0ZM0 315 315 157.5 315 181 47 315Z"/><path fill="#FFF" d="M262.5 0 367.5 0 367.5 105 630 105 630 210 367.5 210 367.5 315 262.5 315 262.5 210 0 210 0 105 262.5 105Z"/><path fill="#C8102E" d="M283.5 0 346.5 0 346.5 126 630 126 630 189 346.5 189 346.5 315 283.5 315 283.5 189 0 189 0 126 283.5 126Z"/><path fill="#FFF" d="M315 378 333.2 434.7 388.9 413.6 355.9 463.2 407.1 493.5 347.8 498.7 356 557.6 315 514.5 274 557.6 282.2 498.7 222.9 493.5 274.1 463.2 241.1 413.6 296.8 434.7ZM945 480 953.7 507 980.2 496.9 964.5 520.5 988.9 535 960.6 537.5 964.5 565.5 945 545 925.5 565.5 929.4 537.5 901.1 535 925.5 520.5 909.8 496.9 936.3 507ZM787.5 230.6 796.2 257.6 822.7 247.5 807 271.1 831.4 285.6 803.1 288.1 807 316.1 787.5 295.6 768 316.1 771.9 288.1 743.6 285.6 768 271.1 752.3 247.5 778.8 257.6ZM945 60 953.7 87 980.2 76.9 964.5 100.5 988.9 115 960.6 117.5 964.5 145.5 945 125 925.5 145.5 929.4 117.5 901.1 115 925.5 100.5 909.8 76.9 936.3 87ZM1091.3 195.6 1100 222.6 1126.5 212.5 1110.8 236.1 1135.2 250.6 1106.9 253.1 1110.8 281.1 1091.3 260.6 1071.8 281.1 1075.7 253.1 1047.4 250.6 1071.8 236.1 1056.1 212.5 1082.6 222.6ZM1008 315 1014.2 332.8 1033 333.2 1018 344.6 1023.5 362.6 1008 351.8 992.5 362.6 998 344.6 983 333.2 1001.8 332.8Z"/></svg></span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/HOWTO_MGRS_ANDROID.md">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

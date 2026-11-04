@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TacMap vs TacticMap — TacMap</title>
+<meta name="description" content="Pay once vs subscription, offline anywhere vs region-locked maps, open GeoJSON/KML/GPX vs a proprietary format, and no account. An honest side-by-side.">
+<link rel="canonical" href="https://tacmap.app/compare/tacticmap">
+<meta name="theme-color" content="#0E1519">
+<link rel="icon" type="image/png" href="/assets/brand/app-icon-512.png">
+<meta property="og:title" content="TacMap vs TacticMap">
+<meta property="og:description" content="Pay once, offline anywhere, open formats, no account. Where each app fits.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://tacmap.app/compare/tacticmap">
+<style>
+  :root{
+    --font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --void:#0E1519; --void-2:#0B1013; --panel:#141E24;
+    --line:#243440; --line-2:#1B272E;
+    --ink:#E7EDEC; --ink-dim:#8DA2AA; --ink-faint:#5E727B;
+    --signal:#FF5A24; --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--void);color:var(--ink);
+    font-family:var(--font-sans);line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--signal);text-decoration:none}
+  a:hover{text-decoration:underline}
+  main a{overflow-wrap:anywhere}
+
+  header.nav{position:sticky;top:0;z-index:20;
+    background:rgba(11,16,19,.72);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line-2)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-sans);
+    font-weight:800;font-size:19px;letter-spacing:.02em;color:var(--ink)}
+  .brand:hover{text-decoration:none}
+  .brand .glyph{width:26px;height:26px;flex:none;display:block;border-radius:6px}
+  .nav-in .back{font-family:var(--font-mono);font-size:13px;color:var(--ink-dim)}
+  .nav-in .back:hover{color:var(--ink);text-decoration:none}
+
+  main{max-width:var(--maxw);margin:0 auto;padding:56px 28px 96px}
+  h1,h2,h3,h4{font-family:var(--font-sans);line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);scroll-margin-top:80px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;margin-bottom:8px}
+  h2{font-size:clamp(22px,3vw,30px);font-weight:700;margin:52px 0 16px;
+    padding-top:24px;border-top:1px solid var(--line-2)}
+  h3{font-size:19px;font-weight:600;margin:32px 0 12px;color:var(--ink)}
+  h4{font-size:16px;font-weight:600;margin:24px 0 8px}
+  p{margin:14px 0;color:var(--ink-dim)}
+  strong{color:var(--ink);font-weight:600}
+  ul,ol{margin:14px 0 14px 22px;color:var(--ink-dim)}
+  li{margin:7px 0}
+  hr{border:none;border-top:1px solid var(--line-2);margin:40px 0}
+  blockquote{border-left:2px solid var(--signal);padding-left:18px;margin:18px 0;
+    color:var(--ink-dim)}
+
+  code{font-family:var(--font-mono);font-size:.9em;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px}
+  pre{background:var(--void-2);border:1px solid var(--line);border-radius:5px;
+    padding:16px 18px;overflow-x:auto;margin:18px 0}
+  pre code{background:none;border:none;padding:0;font-size:13px;line-height:1.6}
+
+  .tablewrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:5px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-2);
+    vertical-align:top}
+  thead th{font-family:var(--font-sans);font-weight:700;background:var(--void-2);
+    color:var(--ink);white-space:nowrap}
+  td{color:var(--ink-dim)}
+  tbody tr:last-child td{border-bottom:none}
+
+  footer{border-top:1px solid var(--line-2);background:var(--void-2);padding:32px 0}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;
+    display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+    font-family:var(--font-mono);font-size:12px;color:var(--ink-faint);
+    letter-spacing:.06em}
+  .foot-in a{color:var(--ink-dim)}
+  .flag-au{width:18px;height:9px;margin-left:7px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/">
+      <img class="glyph" src="/assets/brand/app-icon-512.png" width="26" height="26" alt="">
+      TACMAP
+    </a>
+    <a class="back" href="/">← Back to site</a>
+  </div>
+</header>
+<main>
+<h1 id="tacmap-vs-tacticmap">TacMap vs TacticMap</h1>
+<p><a href="/threat-model">Threat model</a> · <a href="/privacy">Privacy</a> · <a href="/support">Help</a> · <a href="/">TacMap</a></p>
+<p>TacMap and TacticMap both put MGRS, offline maps and field markup on a phone. They make different trade-offs on pricing, offline coverage, file formats and accounts. This page sets them side by side so you can pick the one that fits how you work.</p>
+<p>The TacticMap column describes their public store listing as of November 2026. We do not use their app day to day, and listings change, so check their current page before you decide. Nothing here is a claim about their internals.</p>
+<h2 id="at-a-glance">At a glance</h2>
+<div class="tablewrap"><table><thead><tr><th></th><th>TacMap</th><th>TacticMap (as of November 2026, from their public listing)</th></tr></thead><tbody><tr><td>Price</td><td>Three-day trial, then one one-time unlock. No subscription.</td><td>Subscription.</td></tr>
+<tr><td>Offline maps</td><td>Import PDF, GeoPDF and MBTiles for anywhere on Earth. No country restrictions.</td><td>Offline map coverage is tied to regions.</td></tr>
+<tr><td>Your data</td><td>GeoJSON, KML and KMZ in and out. GPX track export. Opens in QGIS, Google Earth and ATAK.</td><td>Proprietary format.</td></tr>
+<tr><td>Account, ads, analytics</td><td>None. No TacMap account, no ads, no behavioural analytics.</td><td>Account based.</td></tr></tbody></table></div>
+<h2 id="pay-once">Pay once</h2>
+<p>TacMap has a three-day free trial and then a single permanent unlock through the App Store or Google Play. There is no yearly renewal and no tier that locks features behind a higher plan. If you stop paying for a subscription app, you lose the app. A one-time unlock does not expire.</p>
+<p>A purchase in one store does not carry across to the other store, so an iPhone unlock does not unlock an Android phone. See <a href="/support#purchases-and-recovery">Help</a> for restoring a purchase.</p>
+<h2 id="offline-anywhere">Offline anywhere</h2>
+<p>TacMap does not ship map regions. You bring your own: a GeoPDF from a national mapping agency, a scanned paper sheet saved as PDF, or an MBTiles pack you built yourself. The app renders them without a connection, with no limit on which country the sheet covers.</p>
+<p>GeoPDFs are placed in the sheet&#39;s own projection and datum, so the MGRS grid lines up with the printed grid. A plain PDF with no georeference can be calibrated from three or more grid references. Once a map is in, you can generate offline tiles from it so it opens and zooms instantly. There is a step-by-step guide at <a href="/guides/geopdf-on-iphone">How to load a GeoPDF on iPhone</a>.</p>
+<p>Online basemaps, elevation and weather exist too, but they are off on a fresh install and stay off until you turn them on.</p>
+<h2 id="open-formats">Open formats</h2>
+<p>Everything you draw in TacMap can leave it as GeoJSON, KML or KMZ. Recorded tracks export as GPX. The same formats import, so a boundary from QGIS, a KML from Google Earth or a mission package from ATAK lands on your map without a converter. If you stop using TacMap, your data is still readable by every GIS tool you own.</p>
+<h2 id="no-account">No account</h2>
+<p>TacMap never asks you to sign up. There are no ads and no behavioural analytics. Mission data is encrypted in app-private storage on the device. Unit Sync rooms are opened with a join code you share yourself, not a login. The <a href="/threat-model">threat model</a> spells out exactly what the relay sees when you use Unit Sync, and the <a href="/privacy">privacy policy</a> lists every optional network request.</p>
+<h2 id="where-tacticmap-may-suit-you-better">Where TacticMap may suit you better</h2>
+<p>Be honest with yourself about what you need.</p>
+<ul>
+<li>If you want a hosted team account that someone else administers, an account-based app is set up for that. TacMap&#39;s team features run on a join code and a relay that stores encrypted blobs; there is no admin console and no user directory.</li>
+<li>If you prefer to download ready-made map regions rather than source your own GeoPDF or MBTiles, a region catalogue is less work up front.</li>
+<li>If your unit has already standardised on their format and workflow, switching has a cost regardless of which app is better on paper.</li>
+</ul>
+<h2 id="where-tacmap-suits-you-better">Where TacMap suits you better</h2>
+<ul>
+<li>You want to pay once and own the tool.</li>
+<li>You work somewhere no region catalogue covers, or you already have the exact sheet you need as a PDF.</li>
+<li>You need your drawings and symbols in open formats for QGIS, Google Earth or ATAK.</li>
+<li>You do not want an account, ads or analytics in a navigation app, and you want to read the <a href="/threat-model">threat model</a> before you trust it.</li>
+</ul>
+<h2 id="get-tacmap">Get TacMap</h2>
+<p>Download on the <a href="https://apps.apple.com/au/app/tacmap/id6773175573">App Store</a> or get it on <a href="https://play.google.com/store/apps/details?id=com.tacmap">Google Play</a>. Three days free, then one unlock.</p>
+
+</main>
+<footer>
+  <div class="foot-in">
+    <span>TACMAP · VS TACTICMAP · MADE IN AUSTRALIA<svg class="flag-au" role="img" aria-label="Australian flag" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 630"><path fill="#012169" d="M0 0 1260 0 1260 630 0 630Z"/><path fill="#FFF" d="M0 0 70.4 0 630 279.8 630 315 559.6 315 0 35.2ZM630 0 630 35.2 70.4 315 0 315 0 279.8 559.6 0Z"/><path fill="#C8102E" d="M0 0 315 157.5 268 157.5 0 23.5ZM630 315 315 157.5 362 157.5 630 291.5ZM630 0 315 157.5 315 134 583 0ZM0 315 315 157.5 315 181 47 315Z"/><path fill="#FFF" d="M262.5 0 367.5 0 367.5 105 630 105 630 210 367.5 210 367.5 315 262.5 315 262.5 210 0 210 0 105 262.5 105Z"/><path fill="#C8102E" d="M283.5 0 346.5 0 346.5 126 630 126 630 189 346.5 189 346.5 315 283.5 315 283.5 189 0 189 0 126 283.5 126Z"/><path fill="#FFF" d="M315 378 333.2 434.7 388.9 413.6 355.9 463.2 407.1 493.5 347.8 498.7 356 557.6 315 514.5 274 557.6 282.2 498.7 222.9 493.5 274.1 463.2 241.1 413.6 296.8 434.7ZM945 480 953.7 507 980.2 496.9 964.5 520.5 988.9 535 960.6 537.5 964.5 565.5 945 545 925.5 565.5 929.4 537.5 901.1 535 925.5 520.5 909.8 496.9 936.3 507ZM787.5 230.6 796.2 257.6 822.7 247.5 807 271.1 831.4 285.6 803.1 288.1 807 316.1 787.5 295.6 768 316.1 771.9 288.1 743.6 285.6 768 271.1 752.3 247.5 778.8 257.6ZM945 60 953.7 87 980.2 76.9 964.5 100.5 988.9 115 960.6 117.5 964.5 145.5 945 125 925.5 145.5 929.4 117.5 901.1 115 925.5 100.5 909.8 76.9 936.3 87ZM1091.3 195.6 1100 222.6 1126.5 212.5 1110.8 236.1 1135.2 250.6 1106.9 253.1 1110.8 281.1 1091.3 260.6 1071.8 281.1 1075.7 253.1 1047.4 250.6 1071.8 236.1 1056.1 212.5 1082.6 222.6ZM1008 315 1014.2 332.8 1033 333.2 1018 344.6 1023.5 362.6 1008 351.8 992.5 362.6 998 344.6 983 333.2 1001.8 332.8Z"/></svg></span>
+    <span><a href="https://github.com/JediBrooker/TacMap/blob/main/docs/COMPARE_TACTICMAP.md">Source on GitHub</a></span>
+  </div>
+</footer>
+</body>
+</html>

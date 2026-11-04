@@ -2630,6 +2630,13 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/App/ReviewPrompt.swift",
+    "platform": "ios",
+    "area": "navigation-settings",
+    "reviewStatus": "reviewed-no-display-text",
+    "evidence": "Pure eligibility rules plus a UserDefaults store for the once-only App Store review ask; StoreKit draws the card, so there is no display text here."
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/CalibrationDraftStore.swift",
     "platform": "ios",
     "area": "maps-calibration",
@@ -2744,6 +2751,13 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/map/ReviewPromptLauncher.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "reviewed-no-display-text",
+    "evidence": "Calls the Play In-App Review API; the card is Google's own UI and the file carries no strings of its own."
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/map/render/pdf/PdfDeviceAudit.kt",
     "platform": "android",
     "area": "navigation-settings",
@@ -2754,6 +2768,13 @@
     "platform": "android",
     "area": "navigation-settings",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/app/ReviewPromptPolicy.kt",
+    "platform": "android",
+    "area": "navigation-settings",
+    "reviewStatus": "reviewed-no-display-text",
+    "evidence": "Pure eligibility rules plus a SharedPreferences store for the once-only Play review ask; the review card itself is drawn by Google Play, so there is no display text here."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/models/RemoteChangeFold.kt",

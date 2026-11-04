@@ -8,6 +8,9 @@ struct ShareSheetView: UIViewControllerRepresentable {
     let activityItems: [Any]
     var applicationActivities: [UIActivity]? = nil
     var title: String? = nil
+    /// Fires when the user actually handed the file to something (saved, mailed,
+    /// airdropped). Cancelling the sheet doesn't count.
+    var onCompleted: (() -> Void)? = nil
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let presentedItems = activityItems.map { item -> Any in
@@ -17,8 +20,10 @@ struct ShareSheetView: UIViewControllerRepresentable {
         let controller = UIActivityViewController(activityItems: presentedItems,
                                                   applicationActivities: applicationActivities)
         let urls = activityItems.compactMap { $0 as? URL }.filter(\.isFileURL)
-        controller.completionWithItemsHandler = { _, _, _, _ in
+        let onCompleted = onCompleted
+        controller.completionWithItemsHandler = { _, completed, _, _ in
             urls.forEach { ExportFileSecurity.remove($0) }
+            if completed { onCompleted?() }
         }
         return controller
     }

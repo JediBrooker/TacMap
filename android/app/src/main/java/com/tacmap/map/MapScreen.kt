@@ -466,6 +466,28 @@ internal fun MapScreen(
     var pendingChangePage by remember { mutableStateOf<Pair<PreparedPdfImport, Int>?>(null) }
     /// OD-F5: an import that failed says why in an alert with OK, not a toast that truncates
     var importAlert by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Play review card. The rule (2 kinds of win + 3 days, once per install) lives
+    // in ReviewPromptPolicy, this only decides when the map is quiet enough to ask
+    val reviewPrompt = remember(context) { com.tacmap.app.ReviewPromptCoordinator.from(context) }
+    val reviewEligible by reviewPrompt.eligible.collectAsState()
+    val reviewMomentIsQuiet = !showWaypointSheet && !showDrawingSheet && !showSearchDialog &&
+        !showAboutDialog && !showLayersSheet && !showImportExportSheet && exportPreview == null &&
+        !showOpsecSettings && !showDiscardTrackConfirmation && !hamburgerOpen && !quickAddMenuOpen &&
+        quickAddTarget == null && mapPressPoint == null && profilePath == null && !showTips &&
+        pointSunMoon == null && pointRingsCentre == null && weatherTarget == null && !showAppLockSetup &&
+        !showSyncDialog && chatTarget == null && !calibrating && importProgress == null &&
+        pagePicker == null && rejectedPrompt == null && pendingChangePage == null && importAlert == null &&
+        launchAlert == null && pdfRecovery == null &&
+        bakeState is com.tacmap.calibration.PdfBakeManager.State.Idle
+    LaunchedEffect(reviewEligible, reviewMomentIsQuiet) {
+        if (!reviewEligible || !reviewMomentIsQuiet) return@LaunchedEffect
+        // let whatever just closed finish animating out. the effect restarts (and
+        // this delay dies) if anything opens in the meantime
+        delay(1_500)
+        if (!reviewPrompt.takeRequest()) return@LaunchedEffect
+        launchPlayReviewFlow(context)
+    }
     var activeDrawingName by remember { mutableStateOf("") }
     var activeStrokeColor by remember { mutableIntStateOf(DrawingDefaults.DEFAULT_COLOR) }
     var activeStrokeStyle by remember { mutableStateOf(DrawingStrokeStyle.SOLID) }
@@ -895,7 +917,11 @@ internal fun MapScreen(
     // built per commit on purpose: beginCalibration closes over this composition's state
     fun importCommitTarget(): ImportCommitTarget =
         object : ImportCommitTarget {
-            override fun addEntry(entry: ImportedMapEntry, activate: Boolean) = vm.addImportedEntry(entry, activate)
+            override fun addEntry(entry: ImportedMapEntry, activate: Boolean) =
+                // a win for the review prompt only once the library really has it
+                vm.addImportedEntry(entry, activate).also { ok ->
+                    if (ok) reviewPrompt.record(com.tacmap.app.ReviewPromptPolicy.Event.MAP_IMPORTED)
+                }
             override fun activate(id: String) = vm.activateImportedMap(id)
             override fun relink(id: String, file: java.io.File) = vm.relinkImportedMap(id, file)
             override fun showRejectedPrompt(id: String, reason: com.tacmap.calibration.GeorefRejectReason) = vm.showRejectedPrompt(id, reason)
@@ -946,6 +972,7 @@ internal fun MapScreen(
                     } else {
                         MapImportPipeline.mbtilesEntry(prepared, context.filesDir, System.currentTimeMillis())
                             ?.let { vm.addImportedEntry(it, activate = true, admitted = prepared.metadata) }
+                            ?.let { ok -> if (ok) reviewPrompt.record(com.tacmap.app.ReviewPromptPolicy.Event.MAP_IMPORTED) }
                     }
                     InFlightImportFiles.release(prepared.file)
                 }

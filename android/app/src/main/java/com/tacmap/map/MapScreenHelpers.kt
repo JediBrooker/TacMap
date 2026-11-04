@@ -404,6 +404,10 @@ private class AndroidFileExportDriver(
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startOwnShareSheet(Intent.createChooser(intent, chooserTitle))
+        // the chooser gives us no "picked a target" callback, so handing the file
+        // to the sheet is as close to "exported" as Android lets us see
+        com.tacmap.app.ReviewPromptCoordinator.from(context)
+            .record(com.tacmap.app.ReviewPromptPolicy.Event.MISSION_EXPORTED)
     }
 
     override fun cleanupFailedArtifact(artifact: ExportArtifact?) {
