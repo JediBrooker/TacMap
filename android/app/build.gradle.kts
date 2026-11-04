@@ -385,6 +385,12 @@ dependencies {
     // details only while a paywall is visible; no mission data is included.
     implementation("com.android.billingclient:billing:9.1.0")
 
+    // Play In-App Review: the native "rate TacMap" card, asked once per install
+    // after a couple of real wins (see ReviewPromptPolicy). Play draws the UI
+    // and decides whether to show it at all; nothing about the user leaves the
+    // device through us, the only state is a local SharedPreferences flag.
+    implementation("com.google.android.play:review-ktx:2.0.2")
+
     // (Trial clock is local-only now - no Block Store, no Play Services. See
     // TrialManager: the trade is that the Android trial resets on reinstall.)
 

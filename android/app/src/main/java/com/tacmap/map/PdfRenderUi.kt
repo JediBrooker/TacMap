@@ -93,6 +93,9 @@ internal fun PdfRenderDialogs(
     LaunchedEffect(vm) {
         vm.bakeManager.finished.collect {
             Toast.makeText(context, Messages.pdfBakeDone(), Toast.LENGTH_SHORT).show()
+            // a bake that made it to a library record is a real win for the review prompt
+            com.tacmap.app.ReviewPromptCoordinator.from(context)
+                .record(com.tacmap.app.ReviewPromptPolicy.Event.OFFLINE_BAKE_COMPLETED)
         }
     }
 

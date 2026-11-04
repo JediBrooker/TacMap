@@ -79,6 +79,43 @@ const DOCUMENTS = [
   },
   {"src": "docs/de/PRIVACY_POLICY.md", "out": "site/public/de/privacy.html", "language": "de", "title": "Datenschutzerklärung — TacMap", "description": "Datenschutzerklärung", "canonical": "https://tacmap.app/de/privacy", "ogTitle": "TacMap — Datenschutzerklärung", "ogDescription": "Datenschutzerklärung", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/de/PRIVACY_POLICY.md", "relayHeading": false},
   {"src": "docs/de/HELP.md", "out": "site/public/de/support.html", "language": "de", "title": "Hilfe und Kontakt — TacMap", "description": "Hilfe und Kontakt", "canonical": "https://tacmap.app/de/support", "ogTitle": "TacMap — Hilfe und Kontakt", "ogDescription": "Hilfe und Kontakt", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/de/HELP.md", "relayHeading": false},
+  // english-only how-to / comparison pages. not in TRANSLATIONS, same as threat-model.
+  {
+    src: "docs/COMPARE_TACTICMAP.md", out: "site/public/compare/tacticmap.html",
+    language: "en", title: "TacMap vs TacticMap — TacMap",
+    description: "Pay once vs subscription, offline anywhere vs region-locked maps, open GeoJSON/KML/GPX vs a proprietary format, and no account. An honest side-by-side.",
+    canonical: "https://tacmap.app/compare/tacticmap", ogTitle: "TacMap vs TacticMap",
+    ogDescription: "Pay once, offline anywhere, open formats, no account. Where each app fits.",
+    footerLabel: "TACMAP · VS TACTICMAP",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/COMPARE_TACTICMAP.md", relayHeading: false,
+  },
+  {
+    src: "docs/HOWTO_GEOPDF_IPHONE.md", out: "site/public/guides/geopdf-on-iphone.html",
+    language: "en", title: "How to load a GeoPDF on iPhone (offline) — TacMap",
+    description: "Get a USGS or agency GeoPDF onto your iPhone, import it into TacMap, check the MGRS grid lines up, generate offline tiles, and calibrate a plain PDF.",
+    canonical: "https://tacmap.app/guides/geopdf-on-iphone", ogTitle: "Load a GeoPDF on iPhone, offline",
+    ogDescription: "Import, check the grid, generate offline tiles, calibrate a plain PDF. Step by step.",
+    footerLabel: "TACMAP · GEOPDF ON IPHONE",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/HOWTO_GEOPDF_IPHONE.md", relayHeading: false,
+  },
+  {
+    src: "docs/HOWTO_MGRS_ANDROID.md", out: "site/public/guides/mgrs-on-android.html",
+    language: "en", title: "MGRS and UTM on Android without a subscription — TacMap",
+    description: "Live MGRS readout, grid overlay, coordinate entry, datum handling, range rings, mils and red night mode on Android. No account, one-time unlock.",
+    canonical: "https://tacmap.app/guides/mgrs-on-android", ogTitle: "MGRS and UTM on Android, no subscription",
+    ogDescription: "Grid overlay, coordinate entry and readout, datum, range rings, night mode. No account.",
+    footerLabel: "TACMAP · MGRS ON ANDROID",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/HOWTO_MGRS_ANDROID.md", relayHeading: false,
+  },
+  {
+    src: "docs/HOWTO_OFFLINE_MAPS_HUNTING.md", out: "site/public/guides/offline-maps-for-hunting.html",
+    language: "en", title: "Offline maps for hunting season — TacMap",
+    description: "Load a topo map and generate offline tiles before you lose signal, import the property boundary, mark stands, share with your party over encrypted sync, and use red night mode.",
+    canonical: "https://tacmap.app/guides/offline-maps-for-hunting", ogTitle: "Offline maps for hunting season",
+    ogDescription: "Tiles before you lose signal, boundary KML, waypoints, encrypted party sharing, battery, red night mode.",
+    footerLabel: "TACMAP · HUNTING",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/HOWTO_OFFLINE_MAPS_HUNTING.md", relayHeading: false,
+  },
   {"src": "docs/SUPPORT.md", "out": "site/public/support.html", "language": "en", "title": "Help and contact — TacMap", "description": "Help and contact", "canonical": "https://tacmap.app/support", "ogTitle": "TacMap — Help and contact", "ogDescription": "Help and contact", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/SUPPORT.md", "relayHeading": false},
 ];
 

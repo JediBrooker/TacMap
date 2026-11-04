@@ -47,6 +47,18 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://tacmap.app/support"/>
   </url>
   <url>
+    <loc>https://tacmap.app/compare/tacticmap</loc>
+  </url>
+  <url>
+    <loc>https://tacmap.app/guides/geopdf-on-iphone</loc>
+  </url>
+  <url>
+    <loc>https://tacmap.app/guides/mgrs-on-android</loc>
+  </url>
+  <url>
+    <loc>https://tacmap.app/guides/offline-maps-for-hunting</loc>
+  </url>
+  <url>
     <loc>https://tacmap.app/support</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://tacmap.app/support"/>
     <xhtml:link rel="alternate" hreflang="de" href="https://tacmap.app/de/support"/>

@@ -378,8 +378,9 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         val request = DebugLaunchHooks.parse { name -> launch?.getStringExtra(name) } ?: return
         DebugLaunchHooks.apply(request)
         debugHooksActive = true
-        // nothing on top of the map in a hook run: no tour, no initial location prompt
+        // nothing on top of the map in a hook run: no tour, no initial location prompt, no review card
         com.tacmap.map.FirstRunTips.markSeen(this)
+        (application as TacticalApp).reviewPrompt.suppress()
         if (request.grid) {
             getSharedPreferences(com.tacmap.map.LAYER_PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean(com.tacmap.map.MGRS_GRID_VISIBLE_KEY, true).commit()
@@ -446,6 +447,8 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
     override fun onResume() {
         super.onResume()
         shareSheetLock.onResume()
+        // one more day the app got opened, for the review prompt's "3 distinct days" rule
+        (application as TacticalApp).reviewPrompt.noteLaunch()
         // Stop background egress now; Unit Sync reconnects only after the
         // mission key is available and MapScreen attaches fresh stores.
         (application as TacticalApp).unitSyncRuntime.onActivityForegrounded()

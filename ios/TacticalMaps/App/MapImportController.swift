@@ -319,7 +319,10 @@ final class MapImportController: ObservableObject {
         guard await probed(prepared, pageIndex: pageIndex, token: token) else { return false }
         try stopIfCancelled(ctx, prepared.copy.url)
         progress = .saving
-        return mapVM?.addImportedEntry(entry, activate: activate, ownsCopy: prepared.copy.url) ?? false
+        let ok = mapVM?.addImportedEntry(entry, activate: activate, ownsCopy: prepared.copy.url) ?? false
+        // counts as a win for the review prompt only once the library has it
+        if ok { ReviewPromptCoordinator.shared.record(.mapImported) }
+        return ok
     }
 
     @MainActor
@@ -371,7 +374,9 @@ final class MapImportController: ObservableObject {
         }
         progress = .saving
         // shown from the worker's admission, nothing re-opened on main (M2)
-        mapVM.addImportedEntry(entry, activate: true, ownsCopy: prepared.copy.url, packMetadata: prepared.metadata)
+        if mapVM.addImportedEntry(entry, activate: true, ownsCopy: prepared.copy.url, packMetadata: prepared.metadata) {
+            ReviewPromptCoordinator.shared.record(.mapImported)
+        }
     }
 
     // MARK: - page picker
