@@ -62,6 +62,9 @@
     <loc>https://tacmap.app/for-publishers</loc>
   </url>
   <url>
+    <loc>https://tacmap.app/for-responders</loc>
+  </url>
+  <url>
     <loc>https://tacmap.app/support</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://tacmap.app/support"/>
     <xhtml:link rel="alternate" hreflang="de" href="https://tacmap.app/de/support"/>

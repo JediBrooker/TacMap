@@ -125,6 +125,15 @@ const DOCUMENTS = [
     footerLabel: "TACMAP · FOR PUBLISHERS",
     sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/FOR_PUBLISHERS.md", relayHeading: false,
   },
+  {
+    src: "docs/FOR_RESPONDERS.md", out: "site/public/for-responders.html",
+    language: "en", title: "For volunteer search and rescue — TacMap",
+    description: "TacMap is free for active volunteer search and rescue members. Send a membership screenshot and get a permanent unlock code within three business days.",
+    canonical: "https://tacmap.app/for-responders", ogTitle: "Free for SAR volunteers",
+    ogDescription: "A permanent TacMap unlock for active volunteer search and rescue members, on iPhone and Android.",
+    footerLabel: "TACMAP · FOR RESPONDERS",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/FOR_RESPONDERS.md", relayHeading: false,
+  },
   {"src": "docs/SUPPORT.md", "out": "site/public/support.html", "language": "en", "title": "Help and contact — TacMap", "description": "Help and contact", "canonical": "https://tacmap.app/support", "ogTitle": "TacMap — Help and contact", "ogDescription": "Help and contact", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/SUPPORT.md", "relayHeading": false},
 ];
 
