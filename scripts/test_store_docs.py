@@ -12,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import export_store_localizations  # noqa: E402
 
+# the release being prepared, read from the english json so these tests dont need
+# a hand edit every version (3.0.5 shipped with them still pinned to 3.0.4)
+CURRENT = re.match(r'TacMap (\d+\.\d+\.\d+)', json.loads(
+    (ROOT / 'docs/store/localizations/en-US.json').read_text())['appStore']['whatsNew']).group(1)
+
 LOCALES = sorted((ROOT / 'docs/store/localizations').glob('*.json'))
 # both apps only take PDF, GeoPDF and MBTiles, so any photo/scan wording has to say saved as PDF
 IMAGE_WORDS = re.compile(r'photo|foto|scan|eingescannt', re.I)
@@ -48,20 +53,21 @@ class StoreCopyTests(unittest.TestCase):
                 if isinstance(value, str):
                     self.assertNotIn('android', value.lower(), f'{path.name} appStore.{field}')
 
-    def test_release_notes_are_for_3_0_4(self):
+    def test_release_notes_are_for_the_current_version(self):
         for path in LOCALES:
             data = json.loads(path.read_text())
-            self.assertTrue(data['appStore']['whatsNew'].startswith('TacMap 3.0.4: '), path.name)
-            self.assertTrue(data['googlePlay']['releaseNotes'].startswith('TacMap 3.0.4\n'), path.name)
+            self.assertRegex(data['appStore']['whatsNew'], rf'^TacMap {re.escape(CURRENT)}(: |\n)', path.name)
+            self.assertTrue(data['googlePlay']['releaseNotes'].startswith(f'TacMap {CURRENT}\n'), path.name)
             # the notes for older releases go to RELEASE_NOTES.md, not in here
             for field, value in text_fields(data):
-                for old in ('3.0.2', '3.0.3'):
-                    self.assertNotIn(old, value, f'{path.name} {field}')
+                for old in ('3.0.2', '3.0.3', '3.0.4', '3.0.5'):
+                    if old != CURRENT:
+                        self.assertNotIn(old, value, f'{path.name} {field}')
 
-    def test_release_notes_history_has_3_0_4(self):
+    def test_release_notes_history_has_the_current_version(self):
         # RELEASE_NOTES.md carries the text that ships, so it can't drift from the json
         history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
-        self.assertIn('## 3.0.4 (build 77)', history)
+        self.assertIn(f'## {CURRENT} (build ', history)
         for path in LOCALES:
             data = json.loads(path.read_text())
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
@@ -77,10 +83,10 @@ class StoreCopyTests(unittest.TestCase):
         for name, (memory, partial, built) in words.items():
             data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
-                lines = [line for line in text.split('\n') if memory in line]
-                self.assertEqual(len(lines), 1, name)
-                self.assertRegex(lines[0], partial, name)
-                self.assertIn(built, lines[0], name)
+                # a release that doesnt touch MBTiles memory says nothing about it, thats fine
+                for line in (line for line in text.split('\n') if memory in line):
+                    self.assertRegex(line, partial, name)
+                    self.assertIn(built, line, name)
 
     def test_notes_dont_say_checking_a_pack_takes_less_memory(self):
         # REST-1: 3.0.3's probe only read sqlite_master, the stat tables and metadata, a few pages on a real
@@ -98,14 +104,14 @@ class StoreCopyTests(unittest.TestCase):
         self.assertNotRegex(readme, claim, 'README.md 3.0.4')
 
     def test_release_notes_history_counts_match_the_text(self):
-        # the (n / limit) headers are hand typed, so check the 3.0.4 ones against the json they copy
+        # the (n / limit) headers are hand typed, so check the current ones against the json they copy
         history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
         languages = {'en-US.json': 'English', 'de-DE.json': 'German'}
         for name, language in languages.items():
             data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
             for store, text, limit in (('App Store', data['appStore']['whatsNew'], '4,000'),
                                        ('Google Play', data['googlePlay']['releaseNotes'], '500')):
-                header = f'### 3.0.4: {store}, {language} ({len(text):,} / {limit})'
+                header = f'### {CURRENT}: {store}, {language} ({len(text):,} / {limit})'
                 self.assertIn(f'{header}\n\n```\n{text}\n```', history, name)
 
     def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):

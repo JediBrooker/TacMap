@@ -9,6 +9,40 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.0.6 (build 79)
+
+Text on `feature/growth-review-prompt-and-pages` (`docs/store/localizations/*.json`), submitted 4 November 2026. Both stores get the same single in-app change, the once-only review prompt. The website guides are not mentioned in the App Store notes because the Android one would name another platform (guideline 2.3.10).
+
+### 3.0.6: App Store, English (256 / 4,000)
+
+```
+TacMap 3.0.6
+
+• TacMap may ask once for an App Store rating after you have imported a map, finished offline tiles or exported a mission, and used the app on a few different days. It never asks twice, and the request runs through Apple, not a TacMap server.
+```
+
+### 3.0.6: Google Play, English (262 / 500)
+
+```
+TacMap 3.0.6
+• TacMap may ask once for a Google Play rating after you have imported a map, finished offline tiles or exported a mission, and used the app on a few different days. It never asks twice, and the request runs through Google Play, not a TacMap server.
+```
+
+### 3.0.6: App Store, German (302 / 4,000)
+
+```
+TacMap 3.0.6
+
+• TacMap fragt einmal nach einer App-Store-Bewertung, nachdem du eine Karte importiert, Offline-Kacheln erstellt oder einen Einsatz exportiert und die App an ein paar verschiedenen Tagen genutzt hast. Es fragt nie zweimal, und die Anfrage läuft über Apple, nicht über einen TacMap-Server.
+```
+
+### 3.0.6: Google Play, German (309 / 500)
+
+```
+TacMap 3.0.6
+• TacMap fragt einmal nach einer Google-Play-Bewertung, nachdem du eine Karte importiert, Offline-Kacheln erstellt oder einen Einsatz exportiert und die App an ein paar verschiedenen Tagen genutzt hast. Es fragt nie zweimal, und die Anfrage läuft über Google Play, nicht über einen TacMap-Server.
+```
+
 ## 3.0.5 (build 78)
 
 Text on `made-in-australia` (`docs/store/localizations/*.json`), submitted 13 October 2026. Both stores get the same single change.

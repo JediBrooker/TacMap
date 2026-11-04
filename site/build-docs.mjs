@@ -116,6 +116,15 @@ const DOCUMENTS = [
     footerLabel: "TACMAP · HUNTING",
     sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/HOWTO_OFFLINE_MAPS_HUNTING.md", relayHeading: false,
   },
+  {
+    src: "docs/FOR_PUBLISHERS.md", out: "site/public/for-publishers.html",
+    language: "en", title: "For map publishers — TacMap",
+    description: "Your GeoPDFs work unchanged in TacMap. Host the file yourself, paste one line on your product page, and your users import it offline on iOS and Android. No store, no revenue share, no account.",
+    canonical: "https://tacmap.app/for-publishers", ogTitle: "For map publishers",
+    ogDescription: "Your GeoPDFs work unchanged in TacMap. No store, no revenue share, no account. A ready-to-paste snippet for your product page.",
+    footerLabel: "TACMAP · FOR PUBLISHERS",
+    sourceUrl: "https://github.com/JediBrooker/TacMap/blob/main/docs/FOR_PUBLISHERS.md", relayHeading: false,
+  },
   {"src": "docs/SUPPORT.md", "out": "site/public/support.html", "language": "en", "title": "Help and contact — TacMap", "description": "Help and contact", "canonical": "https://tacmap.app/support", "ogTitle": "TacMap — Help and contact", "ogDescription": "Help and contact", "footerLabel": "TACMAP", "sourceUrl": "https://github.com/JediBrooker/TacMap/blob/main/docs/SUPPORT.md", "relayHeading": false},
 ];
 
