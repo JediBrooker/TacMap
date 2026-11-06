@@ -65,8 +65,8 @@
     },
     "ui_copernicus_dem_30m_free_for_non_commercial_comme_c9d83dbe": {
       "de": {
-        "source": "098fe024d1f8035ef0423dfc094e63a1cffab71c4b6e273fdd97a7b13f270ed7",
-        "translation": "862f7d4c8c5533220cf98eb933ce3a3ee4b1afef392a78f382594799b6fe271d",
+        "source": "9b5bf5d347016982c7086a544c7a09cf885f099c3d103702b808c157c5831a09",
+        "translation": "edb2b485af9488927618617e24e17f717e7ac42203cb5f1ecd749ac5f9515c75",
         "status": "reviewed"
       }
     },
@@ -12518,8 +12518,8 @@
     },
     "profile_source": {
       "de": {
-        "source": "f37b0b552045f03b4aaa53082da0c9a21643f4c53e8350d598fb838e1c35ece2",
-        "translation": "445b8cbe8e7c4a732f8d02ad25017ea21dfb07030e1d1206192c97f5f4316a12",
+        "source": "3cd4ac997e2520cb347d8d4b966af99372271a41302979b3864f6f114daab700",
+        "translation": "3e408106cb6b80706d586d762f64a21db0ac4afa690e9be1b5620ce9252e085d",
         "status": "reviewed"
       }
     },
@@ -12637,8 +12637,8 @@
     },
     "about_open_meteo_detail": {
       "de": {
-        "source": "10129c2fe77f3f8470bfa6d99a6d1a4bddc5cebaacecb27ce03c04a21ba8f594",
-        "translation": "862f7d4c8c5533220cf98eb933ce3a3ee4b1afef392a78f382594799b6fe271d",
+        "source": "4eb6373204eb1e5dee4238faf5ff4014ed72c90b5343bd28126dcd6bda0e8bdd",
+        "translation": "edb2b485af9488927618617e24e17f717e7ac42203cb5f1ecd749ac5f9515c75",
         "status": "reviewed"
       }
     },

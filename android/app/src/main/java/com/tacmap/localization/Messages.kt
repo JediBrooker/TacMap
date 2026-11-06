@@ -47,7 +47,7 @@ object Messages {
     fun aboutNoticesTitle(): String =
         L10n.message("id.about_notices_title", "Third-party notices")
     fun aboutOpenMeteoDetail(): String =
-        L10n.message("id.about_open_meteo_detail", "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.")
+        L10n.message("id.about_open_meteo_detail", "Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0.")
     fun aboutOpenMeteoTitle(): String =
         L10n.message("id.about_open_meteo_title", "Open-Meteo Elevation API")
     fun aboutOpenSource(): String =
@@ -699,7 +699,7 @@ object Messages {
     fun profileRetry(): String =
         L10n.message("id.profile_retry", "Try Again")
     fun profileSource(): String =
-        L10n.message("id.profile_source", "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.")
+        L10n.message("id.profile_source", "Heights come from the Copernicus elevation model via Open-Meteo, about 90 m apart, so narrow peaks and cliffs are smoothed out and trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.")
     fun profileStart(): String =
         L10n.message("id.profile_start", "Start")
     fun profileTargetHeight(): String =

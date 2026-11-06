@@ -23,7 +23,7 @@
     <string name="about_map_data">"Kartendaten"</string>
     <string name="about_notices_button">"Lizenztexte"</string>
     <string name="about_notices_title">"Hinweise zu Drittanbietern"</string>
-    <string name="about_open_meteo_detail">"Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar."</string>
+    <string name="about_open_meteo_detail">"Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar."</string>
     <string name="about_open_meteo_title">"Open-Meteo-Höhen-API"</string>
     <string name="about_open_source">"Open-Source-Bibliotheken"</string>
     <string name="about_opentopomap_detail">"© OpenTopoMap (CC-BY-SA) · Kartendaten © OpenStreetMap-Mitwirkende (ODbL)."</string>
@@ -325,7 +325,7 @@
     <string name="profile_readout">"%1$s vom Anfang · %2$s"</string>
     <string name="profile_readout_hidden">"Für den Beobachter nicht einsehbar"</string>
     <string name="profile_retry">"Erneut versuchen"</string>
-    <string name="profile_source">"Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 30 m, daher sind Bäume und Gebäude nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion."</string>
+    <string name="profile_source">"Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 90 m, daher werden schmale Gipfel und Felswände geglättet, und Bäume und Gebäude sind nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion."</string>
     <string name="profile_start">"Anfang"</string>
     <string name="profile_target_height">"Zielhöhe"</string>
     <string name="profile_title">"Höhenprofil"</string>

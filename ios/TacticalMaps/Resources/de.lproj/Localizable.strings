@@ -270,7 +270,7 @@
 "id.profile_readout" = "%1$@ vom Anfang · %2$@";
 "id.profile_readout_hidden" = "Für den Beobachter nicht einsehbar";
 "id.profile_retry" = "Erneut versuchen";
-"id.profile_source" = "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 30 m, daher sind Bäume und Gebäude nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.";
+"id.profile_source" = "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 90 m, daher werden schmale Gipfel und Felswände geglättet, und Bäume und Gebäude sind nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.";
 "id.profile_start" = "Anfang";
 "id.profile_target_height" = "Zielhöhe";
 "id.profile_title" = "Höhenprofil";
@@ -706,8 +706,8 @@
 "Containment" = "Abriegelung";
 "id.ui_coordinate_display_f6b2c86e" = "Koordinatenanzeige";
 "Coordinate display" = "Koordinatenanzeige";
-"id.ui_copernicus_dem_30m_free_for_non_commercial_comme_c9d83dbe" = "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.";
-"Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0." = "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.";
+"id.ui_copernicus_dem_30m_free_for_non_commercial_comme_c9d83dbe" = "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.";
+"Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0." = "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.";
 "id.ui_copied_8d525e5f" = "Kopiert";
 "Copied" = "Kopiert";
 "id.ui_copies_the_unit_room_code_to_the_clipboard_0208f745" = "Kopiert den Raumcode der Einheit in die Zwischenablage";

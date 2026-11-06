@@ -140,7 +140,11 @@ class CatalogueTests(unittest.TestCase):
             self.assertTrue(revision['reason'])
             self.assertEqual(entry[tag], revision['after'])
             entry[tag] = revision['before']
-            data['reviews']['catalog'][revision['id']][tag] = review_record(source_value(entry), entry[tag], 'reviewed')
+            reviews = data['reviews']['catalog'][revision['id']]
+            # english is the source text, it has no review record of its own. putting the old
+            # english back changes the source fingerprint under every translation, so redo those
+            for other in ([tag] if tag != 'en' else list(reviews)):
+                reviews[other] = review_record(source_value(entry), entry[other], 'reviewed')
         generated = outputs(data=data)
         golden = json.loads((ROOT / 'testdata/localization/legacy-display-hashes.json').read_text())
         for tag in ('en', 'de'):
