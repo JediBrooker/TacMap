@@ -255,6 +255,9 @@ version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
 
+### 3.0.7 (build 80), November 2026
+- Elevation text corrected: the terrain model behind elevation, profiles and line of sight is Copernicus GLO-90 at about 90 m, not 30 m, and narrow peaks can read low. No behaviour change.
+
 ### 3.0.6 (build 79), November 2026
 - Asks once for a store rating after a couple of real wins (map import, offline bake, mission export) on three separate days; never asks again. Local state only, no analytics.
 - Website: guides for GeoPDF on iPhone, MGRS on Android and offline maps for hunting, a TacticMap comparison and a page for map publishers.
