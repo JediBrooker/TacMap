@@ -51,7 +51,7 @@ struct AcknowledgementsView: View {
                     )
                     LinkRow(
                         title: L10n.text("Open-Meteo Elevation API"),
-                        subtitle: L10n.text("Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0."),
+                        subtitle: L10n.text("Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0."),
                         url: URL(string: "https://open-meteo.com/en/license")
                     )
                 }

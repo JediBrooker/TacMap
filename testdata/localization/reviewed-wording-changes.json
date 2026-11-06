@@ -327,5 +327,47 @@
     "before": "Das Import-Wiederholungsprotokoll ist gesperrt. Entsperre Missionsdaten und versuche es erneut.",
     "after": "Das Import-Wiederholungsprotokoll ist gesperrt. Entsperre Einsatzdaten und versuche es erneut.",
     "reason": "Consistent glossary: mission = Einsatz, callsign = Rufzeichen, fiduciary = Passpunkt; clarify map privacy cover."
+  },
+  {
+    "id": "profile_source",
+    "locale": "en",
+    "before": "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.",
+    "after": "Heights come from the Copernicus elevation model via Open-Meteo, about 90 m apart, so narrow peaks and cliffs are smoothed out and trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.",
+    "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
+  },
+  {
+    "id": "profile_source",
+    "locale": "de",
+    "before": "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 30 m, daher sind Bäume und Gebäude nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.",
+    "after": "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 90 m, daher werden schmale Gipfel und Felswände geglättet, und Bäume und Gebäude sind nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.",
+    "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
+  },
+  {
+    "id": "about_open_meteo_detail",
+    "locale": "en",
+    "before": "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "after": "Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
+  },
+  {
+    "id": "about_open_meteo_detail",
+    "locale": "de",
+    "before": "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "after": "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
+  },
+  {
+    "id": "ui_copernicus_dem_30m_free_for_non_commercial_comme_c9d83dbe",
+    "locale": "en",
+    "before": "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "after": "Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
+  },
+  {
+    "id": "ui_copernicus_dem_30m_free_for_non_commercial_comme_c9d83dbe",
+    "locale": "de",
+    "before": "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "after": "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
   }
 ]

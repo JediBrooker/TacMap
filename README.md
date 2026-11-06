@@ -59,7 +59,7 @@ quadrangle (public domain) rendered live over the satellite. Run
   `56HLH 13225 37516`. Header flips between **Your Location** (GPS fix) and
   **Map Centre** (when you pan away) automatically.
 - **WGS84 lat/lon** at the crosshair, plus **elevation** (metres above sea
-  level) from Open-Meteo's Copernicus DEM (≈30 m global resolution). Online
+  level) from Open-Meteo's Copernicus DEM (GLO-90, ≈90 m global resolution, so narrow peaks read low). Online
   lookups are off on a fresh install, can be enabled independently, and the
   request is debounced while panning.
 - **North-reference compass** in degrees or NATO mils (6400 per circle), clearly
@@ -254,6 +254,9 @@ What's new in each store release, newest first. Add an entry here every time a
 version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
+
+### 3.0.7 (build 80), November 2026
+- Elevation text corrected: the terrain model behind elevation, profiles and line of sight is Copernicus GLO-90 at about 90 m, not 30 m, and narrow peaks can read low. No behaviour change.
 
 ### 3.0.6 (build 79), November 2026
 - Asks once for a store rating after a couple of real wins (map import, offline bake, mission export) on three separate days; never asks again. Local state only, no analytics.

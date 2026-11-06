@@ -886,7 +886,7 @@ enum Messages {
         L10n.message("id.profile_retry", fallback: "Try Again")
     }
     static func profileSource() -> String {
-        L10n.message("id.profile_source", fallback: "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.")
+        L10n.message("id.profile_source", fallback: "Heights come from the Copernicus elevation model via Open-Meteo, about 90 m apart, so narrow peaks and cliffs are smoothed out and trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.")
     }
     static func profileStart() -> String {
         L10n.message("id.profile_start", fallback: "Start")

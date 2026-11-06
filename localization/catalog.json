@@ -63,8 +63,8 @@
     ]
   },
   "ui_copernicus_dem_30m_free_for_non_commercial_comme_c9d83dbe": {
-    "en": "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
-    "de": "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "en": "Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "de": "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
     "platforms": [
       "ios"
     ]
@@ -16256,8 +16256,8 @@
     "parameters": []
   },
   "profile_source": {
-    "en": "Heights come from the Copernicus elevation model via Open-Meteo, about 30 m apart, so trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.",
-    "de": "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 30 m, daher sind Bäume und Gebäude nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.",
+    "en": "Heights come from the Copernicus elevation model via Open-Meteo, about 90 m apart, so narrow peaks and cliffs are smoothed out and trees and buildings are not included. The points along this line are sent to Open-Meteo. Line of sight allows for the Earth's curve and normal refraction.",
+    "de": "Die Höhen stammen aus dem Copernicus-Höhenmodell über Open-Meteo, etwa alle 90 m, daher werden schmale Gipfel und Felswände geglättet, und Bäume und Gebäude sind nicht berücksichtigt. Die Punkte entlang dieser Linie werden an Open-Meteo gesendet. Die Sichtlinie berücksichtigt die Erdkrümmung und die normale Refraktion.",
     "platforms": [
       "ios",
       "android"
@@ -16464,8 +16464,8 @@
     "parameters": []
   },
   "about_open_meteo_detail": {
-    "en": "Copernicus DEM (≈30m). Free for non-commercial & commercial use under CC BY 4.0.",
-    "de": "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
+    "en": "Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0.",
+    "de": "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
     "platforms": [
       "android"
     ],

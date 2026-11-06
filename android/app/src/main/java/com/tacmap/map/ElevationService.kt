@@ -10,7 +10,7 @@ import kotlin.math.cos
  * Terrain-elevation reading for the crosshair / map centre.
  *
  * Port of the iOS ElevationReading / ElevationService (Open-Meteo
- * Copernicus ~30m DEM, no API key). [isStale] marks an approximate value
+ * Copernicus GLO-90 ~90m DEM, no API key). [isStale] marks an approximate value
  * from the nearby cache when network was unavailable - the UI
  * prefixes those with "~".
  */
@@ -74,7 +74,7 @@ internal class ElevationCache(private val capacity: Int = 256) {
 
 /**
  * Returns terrain elevation (metres MSL) for a WGS84 coordinate,
- * backed by Open-Meteo's free elevation endpoint (Copernicus DEM ~30m, no key).
+ * backed by Open-Meteo's free elevation endpoint (Copernicus DEM GLO-90 ~90m, no key).
  *
  * Offline-resilient: readings are cached, and when network is down we return
  * the nearest cached reading within [staleFallbackMetres] marked stale, so

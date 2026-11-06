@@ -72,8 +72,9 @@ struct ElevationCache {
 }
 
 /// Returns terrain elevation (metres ASL) for a WGS84 coordinate.
-/// Uses Open-Meteo's free elevation endpoint (Copernicus DEM, ~30m
-/// resolution, no API key needed).
+/// Uses Open-Meteo's free elevation endpoint (Copernicus DEM GLO-90, ~90m
+/// resolution, no API key needed). It smooths out narrow peaks, dont expect it to
+/// match a printed spot height on a pinnacle.
 ///
 /// Caches readings so when network drops we fall back to nearest
 /// cached value within staleFallbackMetres, marked isStale. Field

@@ -9,6 +9,40 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.0.7 (build 80)
+
+Text on `fix/elevation-model-resolution` (`docs/store/localizations/*.json`), submitted 6 November 2026. Both stores get the same single change: the elevation text now says the terrain model is about 90 m, not 30 m.
+
+### 3.0.7: App Store, English (199 / 4,000)
+
+```
+TacMap 3.0.7
+
+• The elevation profile and About & Credits now state the terrain model's real spacing: about 90 m, not 30 m. Narrow peaks and cliffs can read lower than the height printed on your map.
+```
+
+### 3.0.7: Google Play, English (198 / 500)
+
+```
+TacMap 3.0.7
+• The elevation profile and About & Credits now state the terrain model's real spacing: about 90 m, not 30 m. Narrow peaks and cliffs can read lower than the height printed on your map.
+```
+
+### 3.0.7: App Store, German (248 / 4,000)
+
+```
+TacMap 3.0.7
+
+• Das Höhenprofil und „Über TacMap und Mitwirkende“ nennen jetzt den tatsächlichen Abstand des Höhenmodells: etwa 90 m statt 30 m. Schmale Gipfel und Felswände können niedriger angezeigt werden als die auf deiner Karte gedruckte Höhe.
+```
+
+### 3.0.7: Google Play, German (247 / 500)
+
+```
+TacMap 3.0.7
+• Das Höhenprofil und „Über TacMap und Mitwirkende“ nennen jetzt den tatsächlichen Abstand des Höhenmodells: etwa 90 m statt 30 m. Schmale Gipfel und Felswände können niedriger angezeigt werden als die auf deiner Karte gedruckte Höhe.
+```
+
 ## 3.0.6 (build 79)
 
 Text on `feature/growth-review-prompt-and-pages` (`docs/store/localizations/*.json`), submitted 4 November 2026. Both stores get the same single in-app change, the once-only review prompt. The website guides are not mentioned in the App Store notes because the Android one would name another platform (guideline 2.3.10).
