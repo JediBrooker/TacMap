@@ -16,7 +16,7 @@
       "The App Store shows your local price.": "Google Play shows your local price.",
       "• Share drawings and symbols with your team over end-to-end encrypted Unit Sync.": "• Share drawings and symbols between iOS and Android with end-to-end encrypted Unit Sync."
     },
-    "releaseNotes": "TacMap 3.1.0\n• Opening GeoPDF, PDF and MBTiles maps and seeing your position on them is now free, with no time limit and no account. The app no longer locks when the trial ends.\n• The three-day trial still has every tool. After it, a one-time unlock keeps symbols, drawings, measuring, elevation, weather, tracks, GPX/KML/GeoJSON, Chat, Unit Sync and the Esri basemaps. OpenTopoMap stays free.\n• Locked tools show a lock in the menu. Nothing from the trial is removed."
+    "releaseNotes": "TacMap 3.1.1\n• Fixes a crash at launch in 3.1.0 on Android. Nothing else changes.\n• From 3.1.0: opening GeoPDF, PDF and MBTiles maps and seeing your position is free, with no time limit. The three-day trial still has every tool; after it, a one-time unlock keeps symbols, drawings, measuring, elevation, weather, tracks, GPX/KML/GeoJSON, Chat, Unit Sync and the Esri basemaps."
   },
   "purchase": {
     "iosProductId": "com.tacticalmaps.app.unlock",

@@ -89,6 +89,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -208,13 +209,20 @@ internal fun MapScreen(
     onUnlock: (String?) -> Unit = {},
 ) {
     val context = LocalContext.current
+    // read the flag through a State holder instead of the raw param. 3.1.0 (81) shipped
+    // with R8 keeping the boolean in a register it also used for a float, and ART's
+    // verifier threw the whole MapScreen method out at launch (VerifyError, "type Float
+    // unexpected as arg to if-eqz"). going via a getter call keeps the compare next to
+    // the load so the allocator cant share the register
+    val fullVersionState = rememberUpdatedState(isFullVersion)
     /**
-     * run [action] in the full version, otherwise send the feature's title to the paywall.
+     * run [action] in the full version
+, otherwise send the feature's title to the paywall.
      * every paid entry point in this screen goes through here so the viewer list lives
      * in one place (FeatureGate has the matching enum for tests)
      */
     fun whenUnlocked(feature: String, action: () -> Unit) {
-        if (isFullVersion) action() else onUnlock(feature)
+        if (fullVersionState.value) action() else onUnlock(feature)
     }
     // Read activity insets before entering the popup, whose own insets can be zero.
     val menuBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -647,8 +655,8 @@ internal fun MapScreen(
     val selectedDrawing = drawingDocument.features.firstOrNull { it.id == selectedDrawingId }
     // viewer: symbols and drawings still draw, but nothing gets a controls card. a
     // selection that sneaks in (search result, trial lapsing mid selection) is dropped
-    LaunchedEffect(isFullVersion, selectedWaypointId, selectedDrawingId) {
-        if (!isFullVersion) {
+    LaunchedEffect(fullVersionState.value, selectedWaypointId, selectedDrawingId) {
+        if (!fullVersionState.value) {
             if (selectedWaypointId != null) vm.selectWaypoint(null)
             if (selectedDrawingId != null) {
                 drawingStore.revertPreview()
@@ -1567,7 +1575,7 @@ internal fun MapScreen(
                     modifier = Modifier.padding(bottom = menuBottomPadding),
                 ) {
                     if (!isPurchased) {
-                        if (isFullVersion) {
+                        if (fullVersionState.value) {
                             // trial still running, same banner as before
                             DropdownMenuItem(
                                 enabled = false,
@@ -1614,7 +1622,7 @@ internal fun MapScreen(
                     GatedMenuItem(
                         title = L10n.text("Symbology"),
                         icon = Icons.Default.Place,
-                        locked = !isFullVersion,
+                        locked = !fullVersionState.value,
                         onClick = {
                             hamburgerOpen = false
                             whenUnlocked(L10n.text("Symbology")) { showWaypointSheet = true }
@@ -1623,7 +1631,7 @@ internal fun MapScreen(
                     GatedMenuItem(
                         title = L10n.text("Drawings"),
                         icon = Icons.Default.Gesture,
-                        locked = !isFullVersion,
+                        locked = !fullVersionState.value,
                         onClick = {
                             hamburgerOpen = false
                             whenUnlocked(L10n.text("Drawings")) { showDrawingSheet = true }
@@ -1640,7 +1648,7 @@ internal fun MapScreen(
                     GatedMenuItem(
                         title = L10n.text("Measure"),
                         icon = Icons.Default.Straighten,
-                        locked = !isFullVersion,
+                        locked = !fullVersionState.value,
                         onClick = {
                             hamburgerOpen = false
                             whenUnlocked(L10n.text("Measure")) {
@@ -1652,7 +1660,7 @@ internal fun MapScreen(
                     GatedMenuItem(
                         title = L10n.text("Weather & UAV Safety"),
                         icon = Icons.Default.Air,
-                        locked = !isFullVersion,
+                        locked = !fullVersionState.value,
                         onClick = {
                             hamburgerOpen = false
                             whenUnlocked(L10n.text("Weather & UAV Safety")) { weatherTarget = vm.headerCoordinate }
@@ -1698,7 +1706,7 @@ internal fun MapScreen(
                                 contentDescription = null
                             )
                         },
-                        trailingIcon = if (!isFullVersion && !isRecordingTrack) {
+                        trailingIcon = if (!fullVersionState.value && !isRecordingTrack) {
                             { LockedRowIcon(L10n.text("Start Track Recording")) }
                         } else null,
                     )
@@ -1706,7 +1714,7 @@ internal fun MapScreen(
                     GatedMenuItem(
                         title = L10n.text("Unit Sync"),
                         icon = Icons.Default.Sync,
-                        locked = !isFullVersion,
+                        locked = !fullVersionState.value,
                         onClick = {
                             hamburgerOpen = false
                             whenUnlocked(L10n.text("Unit Sync")) { showSyncDialog = true }
@@ -1720,7 +1728,7 @@ internal fun MapScreen(
                             whenUnlocked("TacMap Chat") { chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom }
                         },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) },
-                        trailingIcon = if (!isFullVersion) {
+                        trailingIcon = if (!fullVersionState.value) {
                             { LockedRowIcon("TacMap Chat") }
                         } else null,
                     )
@@ -1752,12 +1760,12 @@ internal fun MapScreen(
                     )
                 }
             }
-            if (tacMapChatHudVisible(syncRoom) && !calibrating && isFullVersion) {
+            if (tacMapChatHudVisible(syncRoom) && !calibrating && fullVersionState.value) {
                 TacMapChatHudButton(unreadCount = unreadChatMessageCount) {
                     chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom
                 }
             }
-            if (quickAddAllowed && isFullVersion) {
+            if (quickAddAllowed && fullVersionState.value) {
                 Box(Modifier.tourTarget(tourTargets, TourTarget.ADD)) {
                     QuickAddSymbolButton {
                         // Freeze the placement target now. The user can spend
@@ -2572,7 +2580,7 @@ internal fun MapScreen(
             },
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
-            isFullVersion = isFullVersion,
+            isFullVersion = fullVersionState.value,
             onLockedBaseMap = { style ->
                 showLayersSheet = false
                 onUnlock(style.displayName)
@@ -2653,7 +2661,7 @@ internal fun MapScreen(
         ImportExportSheet(
             // D5-09: one map import at a time, the rows are off while one runs
             importsEnabled = importProgress == null && importJob == null,
-            isFullVersion = isFullVersion,
+            isFullVersion = fullVersionState.value,
             onImportSymbolPack = {
                 showImportExportSheet = false
                 onRequestDocumentImport(DocumentImportKind.SYMBOL_PACK)

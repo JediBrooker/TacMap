@@ -9,6 +9,26 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.1.1 (build 82, Android only)
+
+Text on `fix/android-3-1-1-launch-crash` (`docs/store/localizations/*.json`), published 10 November 2026. Hotfix for 3.1.0 (81), which crashed at launch on every Android device: R8's optimised `MapScreen` was rejected by ART's bytecode verifier (`VerifyError: type Float unexpected as arg to if-eqz`). iOS 3.1.0 (81) is unaffected and stays in review; its App Store text is unchanged.
+
+### 3.1.1: Google Play, English (376 / 500)
+
+```
+TacMap 3.1.1
+• Fixes a crash at launch in 3.1.0 on Android. Nothing else changes.
+• From 3.1.0: opening GeoPDF, PDF and MBTiles maps and seeing your position is free, with no time limit. The three-day trial still has every tool; after it, a one-time unlock keeps symbols, drawings, measuring, elevation, weather, tracks, GPX/KML/GeoJSON, Chat, Unit Sync and the Esri basemaps.
+```
+
+### 3.1.1: Google Play, German (397 / 500)
+
+```
+TacMap 3.1.1
+• Behebt einen Absturz beim Start von 3.1.0 auf Android. Sonst ändert sich nichts.
+• Seit 3.1.0: GeoPDF-, PDF- und MBTiles-Karten öffnen und deine Position sehen ist kostenlos, ohne Zeitlimit. Der Testzeitraum enthält weiterhin alle Werkzeuge; danach behält ein einmaliger Kauf Symbole, Zeichnungen, Messen, Höhen, Wetter, Tracks, GPX/KML/GeoJSON, Chat, Unit Sync und die Esri-Karten.
+```
+
 ## 3.1.0 (build 81)
 
 Text on `feature/free-viewer-tier` (`docs/store/localizations/*.json`), submitted 9 November 2026. The free viewer: opening maps and seeing your position no longer needs the unlock; the tools do.

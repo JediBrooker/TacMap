@@ -14,8 +14,11 @@ import export_store_localizations  # noqa: E402
 
 # the release being prepared, read from the english json so these tests dont need
 # a hand edit every version (3.0.5 shipped with them still pinned to 3.0.4)
-CURRENT = re.match(r'TacMap (\d+\.\d+\.\d+)', json.loads(
-    (ROOT / 'docs/store/localizations/en-US.json').read_text())['appStore']['whatsNew']).group(1)
+_EN = json.loads((ROOT / 'docs/store/localizations/en-US.json').read_text())
+CURRENT = re.match(r'TacMap (\d+\.\d+\.\d+)', _EN['appStore']['whatsNew']).group(1)
+# the stores can be a version apart: an android only hotfix (3.1.1) ships while the
+# ios build of the previous version is still in review, so Play reads its own number
+CURRENT_PLAY = re.match(r'TacMap (\d+\.\d+\.\d+)', _EN['googlePlay']['releaseNotes']).group(1)
 
 LOCALES = sorted((ROOT / 'docs/store/localizations').glob('*.json'))
 # both apps only take PDF, GeoPDF and MBTiles, so any photo/scan wording has to say saved as PDF
@@ -57,7 +60,7 @@ class StoreCopyTests(unittest.TestCase):
         for path in LOCALES:
             data = json.loads(path.read_text())
             self.assertRegex(data['appStore']['whatsNew'], rf'^TacMap {re.escape(CURRENT)}(: |\n)', path.name)
-            self.assertTrue(data['googlePlay']['releaseNotes'].startswith(f'TacMap {CURRENT}\n'), path.name)
+            self.assertTrue(data['googlePlay']['releaseNotes'].startswith(f'TacMap {CURRENT_PLAY}\n'), path.name)
             # the notes for older releases go to RELEASE_NOTES.md, not in here
             for field, value in text_fields(data):
                 for old in ('3.0.2', '3.0.3', '3.0.4', '3.0.5'):
@@ -68,6 +71,7 @@ class StoreCopyTests(unittest.TestCase):
         # RELEASE_NOTES.md carries the text that ships, so it can't drift from the json
         history = (ROOT / 'docs/store/RELEASE_NOTES.md').read_text()
         self.assertIn(f'## {CURRENT} (build ', history)
+        self.assertIn(f'## {CURRENT_PLAY} (build ', history)
         for path in LOCALES:
             data = json.loads(path.read_text())
             for text in (data['appStore']['whatsNew'], data['googlePlay']['releaseNotes']):
@@ -109,9 +113,9 @@ class StoreCopyTests(unittest.TestCase):
         languages = {'en-US.json': 'English', 'de-DE.json': 'German'}
         for name, language in languages.items():
             data = json.loads((ROOT / 'docs/store/localizations' / name).read_text())
-            for store, text, limit in (('App Store', data['appStore']['whatsNew'], '4,000'),
-                                       ('Google Play', data['googlePlay']['releaseNotes'], '500')):
-                header = f'### {CURRENT}: {store}, {language} ({len(text):,} / {limit})'
+            for store, text, limit, version in (('App Store', data['appStore']['whatsNew'], '4,000', CURRENT),
+                                                ('Google Play', data['googlePlay']['releaseNotes'], '500', CURRENT_PLAY)):
+                header = f'### {version}: {store}, {language} ({len(text):,} / {limit})'
                 self.assertIn(f'{header}\n\n```\n{text}\n```', history, name)
 
     def test_layers_retry_is_only_offered_for_a_pack_that_wont_open(self):
