@@ -44,6 +44,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.Icon
+import com.tacmap.billing.FeatureGate
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.localization.DisplayFormat
@@ -95,6 +99,9 @@ internal fun LayersSheet(
     onSetLayerVisible: (String, Boolean) -> DrawingMutationUiResult,
     activeBaseMap: BasemapStyle?,
     onSelectBaseMap: (BasemapStyle) -> Unit,
+    /** 3.1 free viewer: Esri rows show a lock and go to [onLockedBaseMap] instead of selecting */
+    isFullVersion: Boolean = true,
+    onLockedBaseMap: (BasemapStyle) -> Unit = {},
     importedMaps: ImportedMapsUi,
     onImportedMapTap: (ImportedMapRowUi) -> Unit,
     onImportedMapAction: (ImportedMapRowUi, com.tacmap.calibration.EntryMenuAction) -> Unit,
@@ -168,16 +175,27 @@ internal fun LayersSheet(
             SectionHeader(L10n.text("Basemap"))
             // Keyed styles (all but OSM Topo) need the ArcGIS key baked in at
             // build time. No key -> hide them, rather than offer a basemap that
-            // would just render blank.
+            // would just render blank. In the free viewer they stay listed but
+            // locked, so people can see what the unlock buys.
             BasemapStyle.entries
                 .filter { !it.requiresEsriKey || com.tacmap.calibration.EsriKey.isAvailable }
                 .forEach { style ->
+                    val locked = FeatureGate.basemapLocked(style, isFullVersion)
                     BasemapRow(
                         label = style.displayName,
                         selected = activeBaseMap == style && !importedMapActive,
-                        onClick = { onSelectBaseMap(style) }
+                        locked = locked,
+                        onClick = { if (locked) onLockedBaseMap(style) else onSelectBaseMap(style) }
                     )
                 }
+            if (!isFullVersion) {
+                Text(
+                    Messages.viewerBasemapNote(),
+                    fontSize = 11.sp,
+                    color = Color(0xFF8A938A),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
             if (pdfMap != null) {
                 SectionHeader(L10n.text("Imported Map"))
                 Text(pdfMap.displayName, fontSize = 15.sp)
@@ -246,17 +264,31 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun BasemapRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun BasemapRow(label: String, selected: Boolean, onClick: () -> Unit, locked: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .then(
+                if (locked) Modifier.semantics { contentDescription = Messages.viewerLockedRowHint(label) }
+                else Modifier
+            )
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, fontSize = 15.sp)
-        RadioButton(selected = selected, onClick = onClick)
+        if (locked) {
+            // the whole row is the tap target, the radio would only lie about being selectable
+            Icon(
+                Icons.Default.Lock,
+                contentDescription = null,
+                tint = Color(0xFF8A938A),
+                modifier = Modifier.padding(end = 12.dp).size(18.dp)
+            )
+        } else {
+            RadioButton(selected = selected, onClick = onClick)
+        }
     }
 }
 

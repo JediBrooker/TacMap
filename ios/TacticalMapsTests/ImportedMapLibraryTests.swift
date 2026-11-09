@@ -208,7 +208,11 @@ final class ImportedMapLibraryTests: XCTestCase {
         XCTAssertEqual((vm.mapSource as? OnlineRasterBasemapSource)?.style, .osmTopo, "nothing published")
         failing = false
         XCTAssertTrue(vm.retryMapSelectionPersistence())
-        XCTAssertEqual((vm.mapSource as? OnlineRasterBasemapSource)?.style, .osmStreet)
+        // the pick lands durably; what's drawn for it is the keyless fallback on a
+        // build without the Esri key (3.1 substitutes at publish, never a blank map)
+        XCTAssertEqual(vm.library?.active, MapSelection.online(.osmStreet))
+        XCTAssertEqual((vm.mapSource as? OnlineRasterBasemapSource)?.style,
+                       FeatureGate.displayStyle(for: .osmStreet, fullVersion: true, esriKeyAvailable: EsriKey.isAvailable))
         XCTAssertNil(vm.mapSelectionPersistenceIssue)
     }
 

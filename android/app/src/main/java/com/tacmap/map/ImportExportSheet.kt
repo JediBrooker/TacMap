@@ -67,6 +67,8 @@ import com.tacmap.models.TrackRecordingPhase
 fun ImportExportSheet(
     /** false while a map import runs (D5-09): PDF + Offline Tiles go grey, nothing gets silently cancelled */
     importsEnabled: Boolean = true,
+    /** 3.1 free viewer: GeoJSON / KML import and every export row show a lock (the callbacks route to the paywall) */
+    isFullVersion: Boolean = true,
     onImportSymbolPack: () -> Unit,
     onImportPdf: () -> Unit,
     onImportTiles: () -> Unit,
@@ -92,16 +94,17 @@ fun ImportExportSheet(
             SectionLabel(L10n.text("IMPORT"))
             SheetRow(Icons.Default.PictureAsPdf, L10n.text("PDF Map"), onImportPdf, enabled = importsEnabled)
             SheetRow(Icons.Default.Map, L10n.text("Offline Tiles"), onImportTiles, enabled = importsEnabled)
-            SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson)
-            SheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml)
+            val locked = !isFullVersion
+            SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson, locked = locked)
+            SheetRow(Icons.Default.FileDownload, "KML / KMZ", onImportKml, locked = locked)
             SheetRow(Icons.Default.FileDownload, Messages.symbolsImportSymbolPack(), onImportSymbolPack)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionLabel(L10n.text("EXPORT"))
-            SheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson)
-            SheetRow(Icons.Default.Timeline, L10n.text("GPX Track"), onExportGpx)
-            SheetRow(Icons.Default.SelectAll, MissionObjectExport.ACTION_TITLE, onExportAllData)
-            SheetRow(Icons.Default.Public, "KML", onExportKml)
-            SheetRow(Icons.Default.FolderZip, Messages.exportKmzRow(), onExportKmz)
+            SheetRow(Icons.Default.FileUpload, "GeoJSON", onExportGeoJson, locked = locked)
+            SheetRow(Icons.Default.Timeline, L10n.text("GPX Track"), onExportGpx, locked = locked)
+            SheetRow(Icons.Default.SelectAll, MissionObjectExport.ACTION_TITLE, onExportAllData, locked = locked)
+            SheetRow(Icons.Default.Public, "KML", onExportKml, locked = locked)
+            SheetRow(Icons.Default.FolderZip, Messages.exportKmzRow(), onExportKmz, locked = locked)
             if (hasSavedTrack) {
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 SectionLabel(L10n.text("SAVED TRACK"))
@@ -126,7 +129,14 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
+private fun SheetRow(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    /** viewer row: still tappable (opens the paywall), gets the trailing lock */
+    locked: Boolean = false,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -137,7 +147,8 @@ private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit, enab
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Icon(icon, contentDescription = null)
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        if (locked) LockedRowIcon(label)
     }
 }
 

@@ -191,10 +191,16 @@ struct ContentView: View {
     @StateObject private var recordingCoordinator: RecordingCoordinator
 
     /// Injected from app gate so menu can show trial status + offer the
-    /// unlock on demand (paywall otherwise only shows once trial expires).
+    /// unlock on demand. 3.1: the paywall is only ever this sheet, RootGate
+    /// never swaps us out anymore.
     @ObservedObject var store: StoreManager
     private let trial = TrialManager()
     @State private var showPaywallSheet    = false
+    /// full version vs free viewer, RootGate keeps it current
+    @ObservedObject private var access = FeatureAccess.shared
+    /// the locked tool whose tap opened the paywall sheet (its menu title),
+    /// nil when it came from the Unlock row
+    @State private var lockedFeature: String?
 
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var scenePhase
@@ -524,6 +530,7 @@ struct ContentView: View {
                     locationService: locationService,
                     calibration: calibration,
                     graphicsLocked: graphicsLocked,
+                    readOnly: !access.isFullVersion,
                     drawingControlsPreview: drawingControlsPreview,
                     presence: syncManager.presence,
                     onPeerTap: presentDirectChat,
@@ -807,7 +814,9 @@ struct ContentView: View {
             },
             onCopied: { format in
                 showTransientToast(L10n.text("%1$@ copied", format.label))
-            }
+            },
+            isFullVersion: access.isFullVersion,
+            onLocked: presentLocked
         ))
         .nightSheet(item: $quickSymbolDraft) { draft in
             WaypointCreationSheet(
@@ -833,7 +842,12 @@ struct ContentView: View {
                         onChoosePage: { entry in
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { importController.choosePage(for: entry) }
                         },
-                        isCalibrating: calibration.isCalibrating)
+                        isCalibrating: calibration.isCalibrating,
+                        onLockedBasemap: { title in
+                            // layers sheet goes down first, sheet over sheet doesnt present
+                            showLayersSheet = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { presentLocked(title) }
+                        })
                 .padSheetSizing()
         }
         .nightSheet(isPresented: Binding(
@@ -1008,14 +1022,54 @@ struct ContentView: View {
             AcknowledgementsView(onReplayTour: { replayTourRequested = true })
                 .padSheetSizing()
         }
-        .nightSheet(isPresented: $showPaywallSheet) {
+        .nightSheet(isPresented: $showPaywallSheet, onDismiss: { lockedFeature = nil }) {
             PaywallView(
                 store: store,
                 trialDaysRemaining: trial.daysRemaining(),
                 onRestore: { Task { await store.restore() } },
-                onClose: { showPaywallSheet = false }
+                onClose: { showPaywallSheet = false },
+                lockedFeature: lockedFeature
             )
         }
+        .onChange(of: access.isFullVersion) { full in
+            // entitlement moved under us: the map redraws for the new tier and
+            // anything the viewer cant have goes away. the paywall stays up if
+            // it was (a purchase that just landed dismisses it via isPurchased)
+            mapVM.refreshOnlineBasemapForEntitlement()
+            if !full {
+                drawingsPanelOpen = false
+                mapVM.selectedWaypointID = nil
+                mapVM.selectedDrawingID = nil
+            }
+        }
+        .onChange(of: mapVM.selectedWaypointID) { id in
+            // viewer: symbols still draw, but tapping one is a paywall not a card
+            guard id != nil, !FeatureGate.allows(.symbology, fullVersion: access.isFullVersion) else { return }
+            mapVM.selectedWaypointID = nil
+            presentLocked(L10n.text("Symbology"))
+        }
+        .onChange(of: mapVM.selectedDrawingID) { id in
+            guard id != nil, !FeatureGate.allows(.drawings, fullVersion: access.isFullVersion) else { return }
+            mapVM.selectedDrawingID = nil
+            presentLocked(L10n.text("Drawings"))
+        }
+    }
+
+    // MARK: - free viewer gating (3.1)
+
+    /// Wraps a menu action: runs it in the full version, otherwise opens the
+    /// paywall for that row. `title` is the row's visible title so the sheet
+    /// can say what the tap was for.
+    private func gate(_ title: String, _ action: @escaping () -> Void) -> () -> Void {
+        { if access.isFullVersion { action() } else { presentLocked(title) } }
+    }
+
+    /// Paywall for a locked tool. Trailing ellipsis dropped so the copy reads
+    /// "Unit Sync is included..." not "Unit Sync… is included..."
+    private func presentLocked(_ title: String) {
+        drawingsPanelOpen = false
+        lockedFeature = title.trimmingCharacters(in: CharacterSet(charactersIn: "…. "))
+        showPaywallSheet = true
     }
 
     private var importerContent: some View {
@@ -1305,19 +1359,22 @@ struct ContentView: View {
                     .accessibilityLabel(Messages.calibrationClose())
                     .accessibilityIdentifier("calibration.close")
                   } else {
+                    // locked rows go through gate(): the row title is what the
+                    // paywall sheet names when we're the free viewer
                     HamburgerMenu(
                         isPurchased: store.isPurchased,
+                        isFullVersion: access.isFullVersion,
                         trialDaysRemaining: trial.daysRemaining(),
                         onUnlock: { showPaywallSheet = true },
                         onSearch:    {
                             drawingsPanelOpen = false
                             showSearchSheet = true
                         },
-                        onWaypoints: {
+                        onWaypoints: gate(L10n.text("Symbology")) {
                             drawingsPanelOpen = false
                             showWaypointSheet = true
                         },
-                        onDrawings:  {
+                        onDrawings:  gate(L10n.text("Drawings")) {
                             showDrawingsSheet = false
                             drawingsPanelOpen.toggle()
                         },
@@ -1325,12 +1382,12 @@ struct ContentView: View {
                             drawingsPanelOpen = false
                             showLayersSheet = true
                         },
-                        onMeasure:   {
+                        onMeasure:   gate(L10n.text("Measure")) {
                             drawingsPanelOpen = false
                             drawingSession.cancel()
                             measureSession.start()
                         },
-                        onWeather:   {
+                        onWeather:   gate(L10n.text("Weather & UAV Safety")) {
                             drawingsPanelOpen = false
                             showWeatherSheet = true
                         },
@@ -1342,15 +1399,15 @@ struct ContentView: View {
                             drawingsPanelOpen = false
                             showMBTilesImporter = true
                         },
-                        onImportGeoJSON: {
+                        onImportGeoJSON: gate(Messages.featureImportVector()) {
                             drawingsPanelOpen = false
                             showGeoJSONImporter = true
                         },
-                        onImportKML: {
+                        onImportKML: gate(Messages.featureImportVector()) {
                             drawingsPanelOpen = false
                             showKMLImporter = true
                         },
-                        onExport:    {
+                        onExport:    gate(Messages.featureExport()) {
                             drawingsPanelOpen = false
                             showExportSheet = true
                         },
@@ -1358,31 +1415,38 @@ struct ContentView: View {
                         trackPointCount: trackRecorder.points.count,
                         onToggleTrackRecording: {
                             drawingsPanelOpen = false
+                            // stopping / cancelling a recording is always allowed, only
+                            // starting one is part of the unlock
+                            if FeatureGate.trackRecordingRowLocked(state: recordingCoordinator.state,
+                                                                   fullVersion: access.isFullVersion) {
+                                presentLocked(Messages.featureTrackRecording())
+                                return
+                            }
                             recordingCoordinator.toggle(
                                 authorization: locationService.authorisationStatus
                             )
                         },
-                        onExportGPX: {
+                        onExportGPX: gate(Messages.featureExport()) {
                             drawingsPanelOpen = false
                             showGPXExporter = true
                         },
-                        onExportAll: {
+                        onExportAll: gate(Messages.featureExport()) {
                             drawingsPanelOpen = false
                             exportAllMissionObjects()
                         },
-                        onExportKML: {
+                        onExportKML: gate(Messages.featureExport()) {
                             drawingsPanelOpen = false
                             exportKML(.kml)
                         },
-                        onExportKMZ: {
+                        onExportKMZ: gate(Messages.featureExport()) {
                             drawingsPanelOpen = false
                             exportKML(.kmz)
                         },
-                        onChat:      {
+                        onChat:      gate(L10n.text("TacMap Chat…")) {
                             drawingsPanelOpen = false
                             presentChat(.room)
                         },
-                        onSync:      {
+                        onSync:      gate(L10n.text("Unit Sync…")) {
                             drawingsPanelOpen = false
                             showSyncSheet = true
                         },
@@ -1403,7 +1467,8 @@ struct ContentView: View {
                     .tourTarget(.menu)
                   }
 
-                    if syncManager.room?.hasPrefix("3:") == true, !calibration.isCalibrating {
+                    if syncManager.room?.hasPrefix("3:") == true, !calibration.isCalibrating,
+                       FeatureGate.allows(.chat, fullVersion: access.isFullVersion) {
                         TacMapChatShortcutButton(store: syncManager.chatStore) {
                             drawingsPanelOpen = false
                             presentChat(.room)
@@ -1414,7 +1479,8 @@ struct ContentView: View {
                        !measureSession.isActive,
                        !calibration.isCalibrating,
                        !graphicsLocked,
-                       !missionDataLocked {
+                       !missionDataLocked,
+                       FeatureGate.allows(.symbology, fullVersion: access.isFullVersion) {
                         QuickAddSymbolButton(action: beginQuickSymbolCreation)
                             .tourTarget(.add)
                     }
@@ -1517,7 +1583,9 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, max(bottomInset, 8) + 6)
         } else {
-            if let id = mapVM.selectedWaypointID {
+            // viewer: the onChange handlers clear these and open the paywall, the
+            // access check here just keeps a card from flashing in between
+            if let id = mapVM.selectedWaypointID, access.isFullVersion {
                 SymbolControlsCard(
                     waypointStore: waypointStore,
                     drawingStore: drawingStore,
@@ -1528,7 +1596,7 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, max(bottomInset - 32, 0))
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if let id = mapVM.selectedDrawingID {
+            } else if let id = mapVM.selectedDrawingID, access.isFullVersion {
                 DrawingControlsCard(
                     drawingStore: drawingStore,
                     drawingID: id,

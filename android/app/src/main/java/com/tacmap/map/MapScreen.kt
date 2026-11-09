@@ -80,6 +80,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -148,6 +149,7 @@ import com.tacmap.drawings.DrawingPoint
 import com.tacmap.drawings.DrawingStore
 import com.tacmap.drawings.DrawingStrokeStyle
 import com.tacmap.export.GeoJsonExporter
+import com.tacmap.export.MissionObjectExport
 import com.tacmap.mgrs.MgrsFormatter
 import com.tacmap.models.LiveMapLocationAction
 import com.tacmap.models.LiveMapLocationPermissionPolicy
@@ -188,6 +190,8 @@ internal fun MapScreen(
     appLock: AppLock,
     vm: MapViewModel = viewModel(),
     isPurchased: Boolean = true,
+    /** false = free viewer (3.1): paid tools open the paywall via [onUnlock] instead of running */
+    isFullVersion: Boolean = true,
     trialDaysRemaining: Int = 0,
     pendingDocumentImport: PendingDocumentImport?,
     onRequestDocumentImport: (DocumentImportKind) -> Unit,
@@ -200,9 +204,18 @@ internal fun MapScreen(
     onOpenLiveMapLocationSettings: () -> Unit,
     onRequestTrackRecording: () -> Unit,
     onOpenTrackRecordingSettings: ((TrackRecordingSettingsTarget) -> Unit)? = null,
-    onUnlock: () -> Unit = {},
+    /** opens the paywall; the title of the locked feature that was tapped, null from the Unlock row */
+    onUnlock: (String?) -> Unit = {},
 ) {
     val context = LocalContext.current
+    /**
+     * run [action] in the full version, otherwise send the feature's title to the paywall.
+     * every paid entry point in this screen goes through here so the viewer list lives
+     * in one place (FeatureGate has the matching enum for tests)
+     */
+    fun whenUnlocked(feature: String, action: () -> Unit) {
+        if (isFullVersion) action() else onUnlock(feature)
+    }
     // Read activity insets before entering the popup, whose own insets can be zero.
     val menuBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val rendererDensity = LocalDensity.current.density
@@ -632,6 +645,17 @@ internal fun MapScreen(
 
     val selected = waypoints.firstOrNull { it.id == selectedWaypointId }
     val selectedDrawing = drawingDocument.features.firstOrNull { it.id == selectedDrawingId }
+    // viewer: symbols and drawings still draw, but nothing gets a controls card. a
+    // selection that sneaks in (search result, trial lapsing mid selection) is dropped
+    LaunchedEffect(isFullVersion, selectedWaypointId, selectedDrawingId) {
+        if (!isFullVersion) {
+            if (selectedWaypointId != null) vm.selectWaypoint(null)
+            if (selectedDrawingId != null) {
+                drawingStore.revertPreview()
+                selectedDrawingId = null
+            }
+        }
+    }
     val pdfSource = mapSource as? PdfMapSource
     val safeActiveLayerId = drawingDocument.layers.firstOrNull { it.id == activeDrawingLayerId }?.id
         ?: drawingDocument.layers.firstOrNull()?.id
@@ -1291,8 +1315,10 @@ internal fun MapScreen(
                 onCameraIdle = vm::onCameraIdle,
                 onBearingChanged = vm::onMapBearingChanged,
                 onMarkerTap = { wp ->
-                    selectedDrawingId = null
-                    vm.selectWaypoint(wp.id)
+                    whenUnlocked(L10n.text("Symbology")) {
+                        selectedDrawingId = null
+                        vm.selectWaypoint(wp.id)
+                    }
                 },
                 onWaypointMoved = { wp, lat, lng ->
                     if (!waypointStore.update(wp.copy(latitude = lat, longitude = lng))) {
@@ -1305,8 +1331,10 @@ internal fun MapScreen(
                 },
                 onDrawingTap = ::handleDrawingTap,
                 onDrawingFeatureTap = { featureId ->
-                    vm.selectWaypoint(null)
-                    selectedDrawingId = featureId
+                    whenUnlocked(L10n.text("Drawings")) {
+                        vm.selectWaypoint(null)
+                        selectedDrawingId = featureId
+                    }
                 },
                 onPresencePeerTap = { peer ->
                     val target = syncManager.chatTargetFor(peer.clientId)
@@ -1375,24 +1403,31 @@ internal fun MapScreen(
                     canEdit = quickAddAllowed,
                     onPlaceSymbol = { mode ->
                         mapPressPoint = null
-                        quickAddCreationError = null
-                        quickAddTarget = QuickAddTarget(point.latitude, point.longitude, quickAddLayerId, fromPointMenu = true)
-                        quickAddEditorMode = mode
+                        whenUnlocked(L10n.text("Symbology")) {
+                            quickAddCreationError = null
+                            quickAddTarget = QuickAddTarget(point.latitude, point.longitude, quickAddLayerId, fromPointMenu = true)
+                            quickAddEditorMode = mode
+                        }
                     },
                     onMeasure = {
                         mapPressPoint = null
-                        stopDrawing()
-                        measureSession.start()
-                        measureSession.addPoint(point.latitude, point.longitude)
+                        whenUnlocked(L10n.text("Measure")) {
+                            stopDrawing()
+                            measureSession.start()
+                            measureSession.addPoint(point.latitude, point.longitude)
+                        }
                     },
                     onRangeRings = {
                         mapPressPoint = null
-                        pointRingsCentre = Waypoint(
-                            name = point.coordinate.text,
-                            latitude = point.latitude,
-                            longitude = point.longitude,
-                            layerId = quickAddLayerId,
-                        )
+                        // rings are drawings, and the viewer can't manage those
+                        whenUnlocked(L10n.text("Drawings")) {
+                            pointRingsCentre = Waypoint(
+                                name = point.coordinate.text,
+                                latitude = point.latitude,
+                                longitude = point.longitude,
+                                layerId = quickAddLayerId,
+                            )
+                        }
                     },
                     onSunMoon = {
                         mapPressPoint = null
@@ -1532,23 +1567,36 @@ internal fun MapScreen(
                     modifier = Modifier.padding(bottom = menuBottomPadding),
                 ) {
                     if (!isPurchased) {
-                        DropdownMenuItem(
-                            enabled = false,
-                            text = {
-                                Text(
-                                    if (trialDaysRemaining > 0)
-                                        L10n.quantity("trial_remaining", trialDaysRemaining)
-                                    else L10n.text("Free trial ended")
-                                )
-                            },
-                            onClick = {},
-                            leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) }
-                        )
+                        if (isFullVersion) {
+                            // trial still running, same banner as before
+                            DropdownMenuItem(
+                                enabled = false,
+                                text = { Text(L10n.quantity("trial_remaining", trialDaysRemaining)) },
+                                onClick = {},
+                                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) }
+                            )
+                        } else {
+                            // free viewer: title + the one line on what stays free
+                            DropdownMenuItem(
+                                enabled = false,
+                                text = {
+                                    Column {
+                                        Text(Messages.viewerMenuBannerTitle())
+                                        Text(
+                                            Messages.viewerMenuBannerDetail(),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                },
+                                onClick = {},
+                                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(L10n.text("Unlock Full Version")) },
                             onClick = {
                                 hamburgerOpen = false
-                                onUnlock()
+                                onUnlock(null)
                             },
                             leadingIcon = { Icon(Icons.Default.LockOpen, contentDescription = null) }
                         )
@@ -1563,21 +1611,23 @@ internal fun MapScreen(
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
                     )
                     HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(L10n.text("Symbology")) },
+                    GatedMenuItem(
+                        title = L10n.text("Symbology"),
+                        icon = Icons.Default.Place,
+                        locked = !isFullVersion,
                         onClick = {
                             hamburgerOpen = false
-                            showWaypointSheet = true
+                            whenUnlocked(L10n.text("Symbology")) { showWaypointSheet = true }
                         },
-                        leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) }
                     )
-                    DropdownMenuItem(
-                        text = { Text(L10n.text("Drawings")) },
+                    GatedMenuItem(
+                        title = L10n.text("Drawings"),
+                        icon = Icons.Default.Gesture,
+                        locked = !isFullVersion,
                         onClick = {
                             hamburgerOpen = false
-                            showDrawingSheet = true
+                            whenUnlocked(L10n.text("Drawings")) { showDrawingSheet = true }
                         },
-                        leadingIcon = { Icon(Icons.Default.Gesture, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text(L10n.text("Layers and Labels")) },
@@ -1587,22 +1637,26 @@ internal fun MapScreen(
                         },
                         leadingIcon = { Icon(Icons.Default.Layers, contentDescription = null) }
                     )
-                    DropdownMenuItem(
-                        text = { Text(L10n.text("Measure")) },
+                    GatedMenuItem(
+                        title = L10n.text("Measure"),
+                        icon = Icons.Default.Straighten,
+                        locked = !isFullVersion,
                         onClick = {
                             hamburgerOpen = false
-                            stopDrawing()
-                            measureSession.start()
+                            whenUnlocked(L10n.text("Measure")) {
+                                stopDrawing()
+                                measureSession.start()
+                            }
                         },
-                        leadingIcon = { Icon(Icons.Default.Straighten, contentDescription = null) }
                     )
-                    DropdownMenuItem(
-                        text = { Text(L10n.text("Weather & UAV Safety")) },
+                    GatedMenuItem(
+                        title = L10n.text("Weather & UAV Safety"),
+                        icon = Icons.Default.Air,
+                        locked = !isFullVersion,
                         onClick = {
                             hamburgerOpen = false
-                            weatherTarget = vm.headerCoordinate
+                            whenUnlocked(L10n.text("Weather & UAV Safety")) { weatherTarget = vm.headerCoordinate }
                         },
-                        leadingIcon = { Icon(Icons.Default.Air, contentDescription = null) }
                     )
                     HorizontalDivider()
                     // all import/export behind one item, keeps menu short
@@ -1632,9 +1686,10 @@ internal fun MapScreen(
                         onClick = {
                             hamburgerOpen = false
                             if (isRecordingTrack) {
+                                // stopping is always allowed, even if the trial lapsed mid recording
                                 vm.stopTrackRecording()
                             } else {
-                                onRequestTrackRecording()
+                                whenUnlocked(Messages.featureTrackRecording()) { onRequestTrackRecording() }
                             }
                         },
                         leadingIcon = {
@@ -1642,24 +1697,32 @@ internal fun MapScreen(
                                 if (isRecordingTrack) Icons.Default.Stop else Icons.Default.FiberManualRecord,
                                 contentDescription = null
                             )
-                        }
+                        },
+                        trailingIcon = if (!isFullVersion && !isRecordingTrack) {
+                            { LockedRowIcon(L10n.text("Start Track Recording")) }
+                        } else null,
                     )
                     HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(L10n.text("Unit Sync")) },
+                    GatedMenuItem(
+                        title = L10n.text("Unit Sync"),
+                        icon = Icons.Default.Sync,
+                        locked = !isFullVersion,
                         onClick = {
                             hamburgerOpen = false
-                            showSyncDialog = true
+                            whenUnlocked(L10n.text("Unit Sync")) { showSyncDialog = true }
                         },
-                        leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null) }
                     )
+                    // product name, stays a literal (see display-text-exceptions)
                     DropdownMenuItem(
                         text = { Text("TacMap Chat") },
                         onClick = {
                             hamburgerOpen = false
-                            chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom
+                            whenUnlocked("TacMap Chat") { chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom }
                         },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) }
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) },
+                        trailingIcon = if (!isFullVersion) {
+                            { LockedRowIcon("TacMap Chat") }
+                        } else null,
                     )
                     DropdownMenuItem(
                         text = { Text(L10n.text("App Lock")) },
@@ -1689,12 +1752,12 @@ internal fun MapScreen(
                     )
                 }
             }
-            if (tacMapChatHudVisible(syncRoom) && !calibrating) {
+            if (tacMapChatHudVisible(syncRoom) && !calibrating && isFullVersion) {
                 TacMapChatHudButton(unreadCount = unreadChatMessageCount) {
                     chatTarget = com.tacmap.sync.TacMapChatTarget.EntireRoom
                 }
             }
-            if (quickAddAllowed) {
+            if (quickAddAllowed && isFullVersion) {
                 Box(Modifier.tourTarget(tourTargets, TourTarget.ADD)) {
                     QuickAddSymbolButton {
                         // Freeze the placement target now. The user can spend
@@ -2509,6 +2572,11 @@ internal fun MapScreen(
             },
             activeBaseMap = (mapSource as? OnlineRasterMapSourceAndroid)?.style,
             onSelectBaseMap = { vm.selectBaseMap(it) },
+            isFullVersion = isFullVersion,
+            onLockedBaseMap = { style ->
+                showLayersSheet = false
+                onUnlock(style.displayName)
+            },
             importedMaps = importedMapsUi(),
             onImportedMapTap = { row ->
                 when (row.rowTap) {
@@ -2585,6 +2653,7 @@ internal fun MapScreen(
         ImportExportSheet(
             // D5-09: one map import at a time, the rows are off while one runs
             importsEnabled = importProgress == null && importJob == null,
+            isFullVersion = isFullVersion,
             onImportSymbolPack = {
                 showImportExportSheet = false
                 onRequestDocumentImport(DocumentImportKind.SYMBOL_PACK)
@@ -2599,34 +2668,34 @@ internal fun MapScreen(
             },
             onImportGeoJson = {
                 showImportExportSheet = false
-                onRequestDocumentImport(DocumentImportKind.GEO_JSON)
+                whenUnlocked(Messages.featureImportVector()) { onRequestDocumentImport(DocumentImportKind.GEO_JSON) }
             },
             onImportKml = {
                 showImportExportSheet = false
-                onRequestDocumentImport(DocumentImportKind.KML)
+                whenUnlocked(Messages.featureImportVector()) { onRequestDocumentImport(DocumentImportKind.KML) }
             },
             onExportGeoJson = {
                 showImportExportSheet = false
-                exportPreview = ExportPreviewKind.GEOJSON
+                whenUnlocked(Messages.featureExport()) { exportPreview = ExportPreviewKind.GEOJSON }
             },
             onExportGpx = {
                 showImportExportSheet = false
-                exportPreview = ExportPreviewKind.GPX
+                whenUnlocked(Messages.featureExport()) { exportPreview = ExportPreviewKind.GPX }
             },
             onExportAllData = {
                 showImportExportSheet = false
-                scope.launch {
+                whenUnlocked(Messages.featureExport()) { scope.launch {
                     exportAllMissionObjects(
                         context = context,
                         waypoints = waypoints,
                         drawings = drawingDocument.features,
                         layers = drawingDocument.layers,
                     )
-                }
+                } }
             },
             onExportKml = {
                 showImportExportSheet = false
-                scope.launch {
+                whenUnlocked(Messages.featureExport()) { scope.launch {
                     exportMissionKml(
                         context = context,
                         waypoints = waypoints,
@@ -2634,11 +2703,11 @@ internal fun MapScreen(
                         layers = drawingDocument.layers,
                         withSymbols = false,
                     )
-                }
+                } }
             },
             onExportKmz = {
                 showImportExportSheet = false
-                scope.launch {
+                whenUnlocked(Messages.featureExport()) { scope.launch {
                     exportMissionKml(
                         context = context,
                         waypoints = waypoints,
@@ -2646,7 +2715,7 @@ internal fun MapScreen(
                         layers = drawingDocument.layers,
                         withSymbols = true,
                     )
-                }
+                } }
             },
             hasSavedTrack = trackPoints.isNotEmpty(),
             isRecordingTrack = isRecordingTrack,

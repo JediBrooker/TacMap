@@ -255,6 +255,12 @@ version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
 
+### 3.1.0 (build 81), November 2026
+- Free viewer: opening GeoPDF, PDF and MBTiles maps and seeing your position on them no longer needs the unlock and has no time limit. The app never hard-locks after the trial any more.
+- The three-day trial still covers every tool. After it, the one-time unlock keeps symbols, drawings, measure, elevation and line of sight, weather, track recording, GPX/KML/GeoJSON import and export, TacMap Chat, Unit Sync and the Esri basemaps. OpenTopoMap and Search stay free.
+- Locked tools show a lock glyph in the menu and open the unlock screen; anything made during the trial stays visible, read-only.
+- Store listings, the website and the publisher page now say "free to view" instead of "pay once".
+
 ### 3.0.7 (build 80), November 2026
 - Elevation text corrected: the terrain model behind elevation, profiles and line of sight is Copernicus GLO-90 at about 90 m, not 30 m, and narrow peaks can read low. No behaviour change.
 

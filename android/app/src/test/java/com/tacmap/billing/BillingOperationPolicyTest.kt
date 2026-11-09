@@ -128,15 +128,28 @@ class BillingOperationPolicyTest {
         assertEquals(null, duplicateForegroundChain)
     }
 
-    @Test fun globalStoreIssueOverlaysTheHardPaywall() {
+    @Test fun lapsedTrialKeepsTheMapAsRootAndFlagsTheViewer() {
         val issue = BillingStoreIssues.entitlementPersistence()
 
         val presentation = BillingRootPresentationPolicy.resolve(
-            isUnlocked = false,
+            isFullVersion = false,
             storeIssue = issue,
         )
 
-        assertEquals(BillingRootContent.HardPaywall, presentation.content)
+        // 3.1: never a hard paywall, the store issue still overlays the map
+        assertEquals(BillingRootContent.Unlocked, presentation.content)
+        assertFalse(presentation.isFullVersion)
         assertEquals(issue, presentation.storeIssue)
+    }
+
+    @Test fun fullVersionRootIsUnlockedWithNoIssue() {
+        val presentation = BillingRootPresentationPolicy.resolve(
+            isFullVersion = true,
+            storeIssue = null,
+        )
+
+        assertEquals(BillingRootContent.Unlocked, presentation.content)
+        assertTrue(presentation.isFullVersion)
+        assertEquals(null, presentation.storeIssue)
     }
 }

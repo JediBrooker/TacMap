@@ -36,8 +36,8 @@ targets:
       path: TacticalMaps/Resources/Info.plist
       properties:
         CFBundleDisplayName: TacMap
-        CFBundleShortVersionString: "3.0.7"
-        CFBundleVersion: "80"
+        CFBundleShortVersionString: "3.1.0"
+        CFBundleVersion: "81"
         # Esri Location Platform key + expiry. The $(ESRI_API_KEY) reference is
         # substituted from Secrets.xcconfig during Xcode's plist processing at
         # build time (xcodegen writes it here verbatim). Not a secret - it ships
@@ -125,6 +125,10 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: "YES"
+        # TestBootstrap pins FeatureAccess to full version before every test:
+        # the host app's RootGate has already read the sim's (usually lapsed)
+        # trial by the time the bundle loads.
+        INFOPLIST_KEY_NSPrincipalClass: TacticalMapsTests.TestBootstrap
         PRODUCT_BUNDLE_IDENTIFIER: com.tacticalmaps.app.tests
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"

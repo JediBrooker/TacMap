@@ -60,9 +60,9 @@ In **Settings, Privacy & OPSEC**, **Keep screen on** stops the phone locking whi
 
 TacMap on Android has an optional **PIN** or **fingerprint or face unlock** app lock. Turn it on in **Settings, Privacy & OPSEC** if other people handle your phone.
 
-## What the trial includes
+## What is free and what the unlock adds
 
-The three-day trial is the full app. When it ends you make a one-time purchase through Google Play, which shows your local price, and the unlock is permanent. **Restore Purchases** brings it back on a new phone with the same Google account. A Play purchase does not unlock the iPhone app.
+Opening maps and seeing your position, including the MGRS grid and coordinate readout on this page, is free with no time limit. The three-day trial adds every tool; when it ends, the tools (symbols, drawings, measuring, elevation, weather, tracks, GPX/KML/GeoJSON, TacMap Chat, Unit Sync and the Esri basemaps) need a one-time purchase through Google Play, which shows your local price, and the unlock is permanent. **Restore Purchases** brings it back on a new phone with the same Google account. A Play purchase does not unlock the iPhone app.
 
 ## Get TacMap
 

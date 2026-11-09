@@ -86,7 +86,14 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
     // Refreshed every updateUIView.
     var graphicsLocked = false
+    /// 3.1 free viewer: graphics render and a tap still selects (ContentView
+    /// turns that into the paywall) but nothing moves. unlike graphicsLocked
+    /// the select tap is kept, otherwise the viewer would never learn why
+    var readOnly = false
     var handles: [EditHandle] = []
+
+    /// no drags, vertex edits or midpoint inserts
+    private var editsBlocked: Bool { graphicsLocked || readOnly }
 
     private weak var view: TileMapView?
     private weak var vertexPan: UIPanGestureRecognizer?
@@ -188,7 +195,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
         }
 
         // Midpoint "+" tap inserts a new vertex there.
-        if let mid = midpointHandleHitTest(at: pt), let drawingStore,
+        if !editsBlocked, let mid = midpointHandleHitTest(at: pt), let drawingStore,
            var shape = drawingStore.shapes.first(where: { $0.id == mid.shapeID }) {
             shape.insertEffectiveVertex(Coordinate2D(latitude: mid.lat, longitude: mid.lon),
                                         at: mid.vertexIndex)
@@ -261,7 +268,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
         switch g.state {
         case .began:
-            if graphicsLocked { return }
+            if editsBlocked { return }
             pressMoved = false
             // A press on a vertex handle belongs to the pan (drag) / delete
             // path, not whole-shape drag. Remember a real handle so a hold
@@ -403,7 +410,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
 
         switch pan.state {
         case .began:
-            if graphicsLocked { pan.state = .failed; return }
+            if editsBlocked { pan.state = .failed; return }
             guard let idx = handleIndex(at: pt) else { pan.state = .failed; return }
             draggingHandleIndex = idx
             view.setBrowseGesturesEnabled(false)
@@ -476,7 +483,7 @@ final class MapEditingController: NSObject, UIGestureRecognizerDelegate {
     /// working everywhere else.
     func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         guard g === vertexPan, let view else { return true }
-        if graphicsLocked { return false }
+        if editsBlocked { return false }
         return handleIndex(at: g.location(in: view)) != nil
     }
 

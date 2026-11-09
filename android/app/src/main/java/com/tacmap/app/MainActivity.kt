@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -53,6 +54,7 @@ import com.tacmap.billing.BillingManager
 import com.tacmap.billing.BillingRootContent
 import com.tacmap.billing.BillingRootPresentationPolicy
 import com.tacmap.billing.BillingStoreIssueAlert
+import com.tacmap.billing.FeatureAccess
 import com.tacmap.billing.PaywallScreen
 import com.tacmap.billing.TrialManager
 import com.tacmap.map.MapScreen
@@ -198,6 +200,9 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         // not load product/price data until a paywall is visible.
         billing = BillingManager(this)
         billing.start()
+        // seed the gate before anything composes so the view model's first basemap
+        // pick is already right, the LaunchedEffect below keeps it current after that
+        FeatureAccess.set(billing.isPurchased.value || trial.isTrialActive())
         locked.value = appLock.isEnabled
         if (locked.value) {
             DataKey.lock()
@@ -263,9 +268,12 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
                 val storeIssue by billing.storeIssue.collectAsState()
                 val now by resumeTick
 
-                val unlocked = purchased || trial.isTrialActive(now)
+                // 3.1: no hard lock. trial over + no purchase = free viewer, the paid
+                // tools open the paywall on demand instead of the whole map being replaced
+                val isFullVersion = purchased || trial.isTrialActive(now)
+                LaunchedEffect(isFullVersion) { FeatureAccess.set(isFullVersion) }
                 val billingPresentation = BillingRootPresentationPolicy.resolve(
-                    isUnlocked = unlocked,
+                    isFullVersion = isFullVersion,
                     storeIssue = storeIssue,
                 )
 
@@ -273,9 +281,12 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
                     when (billingPresentation.content) {
                         BillingRootContent.Unlocked -> {
                             var showPaywall by remember { mutableStateOf(false) }
+                            // the paid feature whose tap opened the paywall, null from the Unlock row
+                            var lockedFeature by remember { mutableStateOf<String?>(null) }
                             MapScreen(
                                 appLock = appLock,
                                 isPurchased = purchased,
+                                isFullVersion = billingPresentation.isFullVersion,
                                 trialDaysRemaining = trial.daysRemaining(now),
                                 pendingDocumentImport = pendingDocumentImport.value,
                                 onRequestDocumentImport = ::requestDocumentImport,
@@ -292,11 +303,12 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
                                 },
                                 onRequestTrackRecording = ::requestTrackRecordingStart,
                                 onOpenTrackRecordingSettings = ::openTrackRecordingSettings,
-                                onUnlock = {
+                                onUnlock = { feature ->
+                                    lockedFeature = feature
                                     showPaywall = true
                                 },
                             )
-                            // on-demand paywall from the menu Unlock row during trial
+                            // on-demand paywall: the menu Unlock row, or a locked tool in the viewer
                             if (showPaywall && !purchased) {
                                 PaywallScreen(
                                     billingState = billingState,
@@ -306,20 +318,14 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
                                     onRestore = { billing.restore() },
                                     onRetry = { billing.retry() },
                                     onRedeem = { openPlayRedeem() },
-                                    onClose = { showPaywall = false },
+                                    onClose = {
+                                        showPaywall = false
+                                        lockedFeature = null
+                                    },
+                                    lockedFeature = lockedFeature,
                                 )
                             }
                         }
-
-                        BillingRootContent.HardPaywall -> PaywallScreen(
-                            billingState = billingState,
-                            trialDaysRemaining = trial.daysRemaining(now),
-                            onLoadProduct = { billing.loadProduct() },
-                            onUnlock = { billing.launchPurchase(this@MainActivity) },
-                            onRestore = { billing.restore() },
-                            onRetry = { billing.retry() },
-                            onRedeem = { openPlayRedeem() },
-                        )
                     }
                     billingPresentation.storeIssue?.let { issue ->
                         BillingStoreIssueAlert(

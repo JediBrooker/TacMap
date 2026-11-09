@@ -1,16 +1,19 @@
 import SwiftUI
 
-/// Full-screen paywall. Shows up when trial expires and user hasn't bought
-/// the unlock yet. Blocks everything untill they buy or restore.
+/// The unlock sheet. 3.1: only ever shown on demand (menu Unlock row, or a
+/// locked tool tapped in the free viewer), nothing blocks the app anymore so
+/// it always has a close button. Copy adapts to why it came up: trial still
+/// running, trial over, or a specific locked feature.
 struct PaywallView: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var store: StoreManager
     /// >0 while the trial is still running; 0 once it has expired.
     let trialDaysRemaining: Int
     let onRestore: () -> Void
-    /// When non-nil the paywall is being shown on-demand (e.g. from the menu
-    /// during the trial) and gets a close button. nil = the hard launch gate.
-    var onClose: (() -> Void)? = nil
+    let onClose: () -> Void
+    /// The locked tool that opened this (its menu title). nil = opened from
+    /// the Unlock row, so the generic trial copy is used.
+    var lockedFeature: String? = nil
 
     private let green = Color(red: 0.55, green: 0.95, blue: 0.55)   // hud_green
     private let orange = Color(red: 0.95, green: 0.64, blue: 0.29)  // hud_orange
@@ -27,7 +30,7 @@ struct PaywallView: View {
                         .font(.largeTitle.bold())
                         .foregroundStyle(green)
 
-                    Text(expired ? L10n.text("Your free trial has ended") : L10n.text("Unlock the full version"))
+                    Text(headline)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
@@ -40,6 +43,14 @@ struct PaywallView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 14)
+
+                    // what the money buys, same list in every state
+                    Text(Messages.paywallFullVersionIncludes())
+                        .font(.footnote)
+                        .foregroundStyle(Color(white: 0.58))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
 
                     switch store.loadState {
                     case .failed, .unavailable:
@@ -132,26 +143,24 @@ struct PaywallView: View {
                 }
                 .frame(maxWidth: 560)
                 .padding(.horizontal, 28)
-                .padding(.top, onClose == nil ? 36 : 64)
+                .padding(.top, 64)
                 .padding(.bottom, 36)
                 .frame(maxWidth: .infinity)
             }
 
-            if let onClose {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button(action: onClose) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.title2)
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(Color(white: 0.6))
-                        }
-                        .accessibilityLabel(L10n.text("Close unlock screen"))
-                        .padding()
-                    }
+            VStack {
+                HStack {
                     Spacer()
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(Color(white: 0.6))
+                    }
+                    .accessibilityLabel(L10n.text("Close unlock screen"))
+                    .padding()
                 }
+                Spacer()
             }
         }
         .preferredColorScheme(.dark)
@@ -185,7 +194,13 @@ struct PaywallView: View {
         store.loadState == .loaded && !store.commerceOperationActive
     }
 
+    private var headline: String {
+        if lockedFeature != nil { return Messages.paywallLockedFeatureTitle() }
+        return expired ? L10n.text("Your free trial has ended") : L10n.text("Unlock the full version")
+    }
+
     private var bodyText: String {
+        if let lockedFeature { return Messages.paywallLockedFeatureDetail(lockedFeature) }
         if expired {
             return Messages.trialExpiredDetails(DisplayFormat.number(Double(TrialManager.trialDays), decimals: 0))
         }

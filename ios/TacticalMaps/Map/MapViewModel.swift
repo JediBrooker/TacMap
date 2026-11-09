@@ -186,7 +186,9 @@ final class MapViewModel: ObservableObject {
     @Published private(set) var pdfLaunchNotice: PDFLaunchNotice?
     private(set) var queuedLaunchNotices: [PDFLaunchNotice] = []
 
-    /// last online style actually shown this launch, H1 prefers it
+    /// last online style picked this launch, H1 prefers it. the PICK, not what
+    /// got drawn: the free viewer draws OpenTopoMap over an Esri pick, keeping
+    /// the pick here is what brings Esri straight back on unlock
     private var lastOnlineStyle: BasemapStyle?
 
     /// the guard decides once per launch, on the first restore that knows
@@ -282,8 +284,14 @@ final class MapViewModel: ObservableObject {
     init(libraryDependencies: LibraryDependencies = .live,
          initialMapSource: MapSource = OnlineRasterBasemapSource.makeDefault()) {
         self.libraryDependencies = libraryDependencies
-        self.mapSource = initialMapSource
-        if let online = initialMapSource as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
+        if let online = initialMapSource as? OnlineRasterBasemapSource {
+            // the viewer / a keyless build draws the fallback, the pick is kept
+            lastOnlineStyle = online.style
+            let shown = Self.displayStyle(online.style)
+            self.mapSource = shown == online.style ? online : OnlineRasterBasemapSource(shown)
+        } else {
+            self.mapSource = initialMapSource
+        }
         // header label + the map container follow the PDF render status
         pdfRuntimeSink = pdfRuntime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         // next to the PDF guard's: a jetsam kill in the background isnt the pack's fault
@@ -549,13 +557,12 @@ final class MapViewModel: ObservableObject {
                 return
             }
         case .online(let style)?:
-            publishMapSource(OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable
-                                                       ? OnlineRasterBasemapSource.defaultStyle : style))
+            publishOnline(style)
             return
         case nil:
             break
         }
-        publishMapSource(OnlineRasterBasemapSource(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle))
+        publishOnline(library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle)
     }
 
     /// U1 rule 4: the durable pack can't be shown. Blank, nothing written, no
@@ -592,7 +599,7 @@ final class MapViewModel: ObservableObject {
         execute(.selectOnline(style)) { _, _ in
             // C4: a calibration display has nothing to go back to now
             self.clearCalibrationReturn()
-            self.publishMapSource(OnlineRasterBasemapSource(style))
+            self.publishOnline(style)
         }
     }
 
@@ -683,7 +690,7 @@ final class MapViewModel: ObservableObject {
             if let e = next.entry(id), let src = self.source(for: e) {
                 self.publishMapSource(src, reframe: false)
             } else {
-                self.publishMapSource(OnlineRasterBasemapSource(next.preferredStyle))
+                self.publishOnline(next.preferredStyle)
             }
         }
     }
@@ -703,7 +710,7 @@ final class MapViewModel: ObservableObject {
             if let e = next.entry(id), let src = self.source(for: e) {
                 self.publishMapSource(src)
             } else {
-                self.publishMapSource(OnlineRasterBasemapSource(next.preferredStyle))
+                self.publishOnline(next.preferredStyle)
             }
         }
     }
@@ -784,7 +791,7 @@ final class MapViewModel: ObservableObject {
             let ids = Set(removed.map(\.id))
             if let showing, ids.contains(showing) {
                 self.clearCalibrationReturn()
-                self.publishMapSource(OnlineRasterBasemapSource(next.preferredStyle))
+                self.publishOnline(next.preferredStyle)
             }
             // F4: the suspect went (from the crash alert, or its Retry after a
             // failed write): the guard hears deleted, the alert comes down
@@ -949,9 +956,11 @@ final class MapViewModel: ObservableObject {
             switch calibrationUntouched ? nil : s.active {
             case .online(let style)?:
                 _ = decideLaunchGuard(restoredToken: nil)
-                if !(mapSource is OnlineRasterBasemapSource) || (mapSource as? OnlineRasterBasemapSource)?.style != style {
-                    publishMapSource(OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable
-                                                               ? OnlineRasterBasemapSource.defaultStyle : style))
+                if let shown = mapSource as? OnlineRasterBasemapSource, shown.style == Self.displayStyle(style) {
+                    // same tiles already up, no reframe. just remember the real pick
+                    lastOnlineStyle = style
+                } else {
+                    publishOnline(style)
                 }
             case .entry(let id)?:
                 if let e = s.entry(id), e.kind == .pdf,
@@ -960,7 +969,7 @@ final class MapViewModel: ObservableObject {
                         // crash loop breaker: online map in memory only, the durable
                         // selection and the PDF stay exactly as they are
                         pdfCrashSuspect = pdf
-                        publishMapSource(preferredOnlineBasemap(), reframe: false)
+                        publishOnline(preferredOnlineStyle(), reframe: false)
                     } else if activeEntryID != id {
                         // OD-F4: a missing / changed file keeps the selection and
                         // fails as cannotOpen until the exact bytes are back
@@ -973,7 +982,7 @@ final class MapViewModel: ObservableObject {
                     // the durable selection and the pack stay exactly as they are
                     if pack.ask { mbtilesCrashSuspect = e }
                     if pack.ask || !(mapSource is OnlineRasterBasemapSource) {
-                        publishMapSource(preferredOnlineBasemap(), reframe: false)
+                        publishOnline(preferredOnlineStyle(), reframe: false)
                     }
                 } else {
                     _ = decideLaunchGuard(restoredToken: nil)
@@ -993,7 +1002,7 @@ final class MapViewModel: ObservableObject {
                             publishMapSource(src)
                             verifyInBackground(e)
                         } else {
-                            publishMapSource(OnlineRasterBasemapSource(s.preferredStyle))
+                            publishOnline(s.preferredStyle)
                         }
                     }
                 }
@@ -1197,16 +1206,48 @@ final class MapViewModel: ObservableObject {
         showNextLaunchNotice(after: 0.35)
     }
 
-    /// H1: the user's own online style (the library keeps it), in memory only
+    /// H1: the user's own online style (the library keeps it), in memory only.
+    /// this is the pick, what gets drawn for it may differ (see displayStyle)
+    private func preferredOnlineStyle() -> BasemapStyle {
+        lastOnlineStyle ?? library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle
+    }
+
+    /// H1: the source that would go up for the user's own online style
     func preferredOnlineBasemap() -> OnlineRasterBasemapSource {
-        let style = lastOnlineStyle ?? library?.preferredStyle ?? OnlineRasterBasemapSource.defaultStyle
-        return OnlineRasterBasemapSource(style.requiresEsriKey && !EsriKey.isAvailable ? OnlineRasterBasemapSource.defaultStyle : style)
+        OnlineRasterBasemapSource(Self.displayStyle(preferredOnlineStyle()))
     }
 
     /// failure alert "Use Online Map": a real, durable selection of that style (H1)
     @discardableResult
     func useOnlineMapAfterFailure() -> Bool {
-        selectOnlineBasemap(preferredOnlineBasemap().style)
+        selectOnlineBasemap(preferredOnlineStyle())
+    }
+
+    // MARK: - free viewer basemap (3.1)
+
+    /// what gets drawn for an online pick. the free viewer and a keyless build
+    /// both land on OpenTopoMap, the pick itself (lastOnlineStyle, the library)
+    /// is never touched so Esri comes straight back on unlock
+    private static func displayStyle(_ style: BasemapStyle) -> BasemapStyle {
+        FeatureGate.displayStyle(for: style)
+    }
+
+    /// every online publish goes through here so lastOnlineStyle is the pick
+    /// and the tiles are whatever the pick maps to for this build + entitlement
+    private func publishOnline(_ style: BasemapStyle, reframe: Bool = true) {
+        lastOnlineStyle = style
+        publishMapSource(OnlineRasterBasemapSource(Self.displayStyle(style)), reframe: reframe)
+    }
+
+    /// entitlement flipped at runtime (trial lapsed on foreground, a purchase or
+    /// restore landed). an online map that's up is redrawn for the new tier:
+    /// viewer + Esri pick -> OpenTopoMap tiles, back to full -> the pick again.
+    /// imported maps are left alone, nothing durable moves
+    func refreshOnlineBasemapForEntitlement() {
+        guard let shown = mapSource as? OnlineRasterBasemapSource else { return }
+        let pick = lastOnlineStyle ?? shown.style
+        guard shown.style != Self.displayStyle(pick) else { return }
+        publishOnline(pick, reframe: false)
     }
 
     /// crash recovery alert: Open Anyway
@@ -1338,7 +1379,7 @@ final class MapViewModel: ObservableObject {
         pendingPackOpen = nil
         let previousSource = mapSource
         mapSource = source
-        if let online = source as? OnlineRasterBasemapSource { lastOnlineStyle = online.style }
+        // lastOnlineStyle is set by publishOnline (the pick, not the drawn fallback)
         if !(source is PDFMapSource) { pdfRuntime.reset() }
         if previousSource !== source {
             // replaced before its first draw settled: the guard clears here too

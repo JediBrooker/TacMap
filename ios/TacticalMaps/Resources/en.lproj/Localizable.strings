@@ -104,6 +104,9 @@
 "id.export_kml_title" = "Export KML";
 "id.export_kmz_row" = "KMZ with Symbols";
 "id.export_kmz_title" = "Export KMZ with Symbols";
+"id.feature_export" = "Exporting your data";
+"id.feature_import_vector" = "Importing GeoJSON and KML files";
+"id.feature_track_recording" = "Track recording";
 "id.import_complete_layers_skipped_summary" = "Imported %1$@ and %2$@ across %3$@; skipped %4$@ already-present objects.";
 "id.import_complete_layers_summary" = "Imported %1$@ and %2$@ across %3$@.";
 "id.import_complete_skipped_summary" = "Imported %1$@ and %2$@; skipped %3$@ already-present objects.";
@@ -192,6 +195,9 @@
 "id.night_mode_turn_off" = "Turn off night mode";
 "id.night_mode_turn_on" = "Turn on night mode";
 "id.online_basemaps_disabled" = "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.";
+"id.paywall_full_version_includes" = "Symbology, drawings, measure, elevation and line of sight, weather, track recording, GPX/KML/GeoJSON import and export, TacMap Chat, Unit Sync and the Esri basemaps.";
+"id.paywall_locked_feature_detail" = "%1$@ is included in the one-time unlock. Opening GeoPDF, PDF and MBTiles maps, OpenTopoMap and your live position stay free for good.";
+"id.paywall_locked_feature_title" = "Part of the full version";
 "id.pdf_bake_caption" = "Pre-renders this map so it opens and zooms instantly. The PDF is kept.";
 "id.pdf_bake_chip" = "Offline tiles %1$@%%";
 "id.pdf_bake_confirm_message" = "“%1$@” stays on this device and remains the active map. This takes about %2$@.";
@@ -382,7 +388,7 @@
 "id.tour_replay_help" = "A short guided tour of the map and its buttons.";
 "id.tour_welcome_body" = "This quick tour shows where everything is. The crosshair in the middle marks your working point: drag the map to move it and pinch to zoom.";
 "id.tour_welcome_title" = "Welcome to TacMap";
-"id.trial_expired_details" = "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.";
+"id.trial_expired_details" = "Your %1$@-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.";
 "id.trial_remaining_details" = "You're on the free trial (%1$@ left). Unlock now for permanent access.";
 "id.ui_1234_or_56hlh_1234_5678_aaf70c33" = "1234 or 56HLH 1234 5678";
 "1234 or 56HLH 1234 5678" = "1234 or 56HLH 1234 5678";
@@ -2456,5 +2462,9 @@
 "Your Identity" = "Your Identity";
 "id.ui_your_purchase_is_awaiting_approval_tacmap_will_u_47aa8f84" = "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.";
 "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval." = "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.";
+"id.viewer_basemap_note" = "Esri basemaps are part of the full version. OpenTopoMap is free.";
+"id.viewer_locked_row_hint" = "%1$@, part of the full version";
+"id.viewer_menu_banner_detail" = "Opening maps and seeing your position stay free. Unlock once for the tools.";
+"id.viewer_menu_banner_title" = "Free viewer";
 "id.waypoints_quarantined" = "Saved waypoints could not be read and were set aside (%1$@). Starting with no waypoints.";
 "id.weather_screen_title" = "Weather";

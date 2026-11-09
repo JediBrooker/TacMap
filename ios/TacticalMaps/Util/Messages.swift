@@ -324,6 +324,15 @@ enum Messages {
     static func exportKmzTitle() -> String {
         L10n.message("id.export_kmz_title", fallback: "Export KMZ with Symbols")
     }
+    static func featureExport() -> String {
+        L10n.message("id.feature_export", fallback: "Exporting your data")
+    }
+    static func featureImportVector() -> String {
+        L10n.message("id.feature_import_vector", fallback: "Importing GeoJSON and KML files")
+    }
+    static func featureTrackRecording() -> String {
+        L10n.message("id.feature_track_recording", fallback: "Track recording")
+    }
     static func importCompleteLayersSkippedSummary(_ waypoints: String, _ drawings: String, _ layers: String, _ skipped: String) -> String {
         L10n.message("id.import_complete_layers_skipped_summary", fallback: "Imported %1$@ and %2$@ across %3$@; skipped %4$@ already-present objects.", waypoints, drawings, layers, skipped)
     }
@@ -650,6 +659,15 @@ enum Messages {
     }
     static func onlineBasemapsDisabledMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.online_basemaps_disabled", fallback: "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", arguments: [])
+    }
+    static func paywallFullVersionIncludes() -> String {
+        L10n.message("id.paywall_full_version_includes", fallback: "Symbology, drawings, measure, elevation and line of sight, weather, track recording, GPX/KML/GeoJSON import and export, TacMap Chat, Unit Sync and the Esri basemaps.")
+    }
+    static func paywallLockedFeatureDetail(_ feature: String) -> String {
+        L10n.message("id.paywall_locked_feature_detail", fallback: "%1$@ is included in the one-time unlock. Opening GeoPDF, PDF and MBTiles maps, OpenTopoMap and your live position stay free for good.", feature)
+    }
+    static func paywallLockedFeatureTitle() -> String {
+        L10n.message("id.paywall_locked_feature_title", fallback: "Part of the full version")
     }
     static func pdfBakeCaption() -> String {
         L10n.message("id.pdf_bake_caption", fallback: "Pre-renders this map so it opens and zooms instantly. The PDF is kept.")
@@ -1276,10 +1294,10 @@ enum Messages {
         L10n.message("id.tour_welcome_title", fallback: "Welcome to TacMap")
     }
     static func trialExpiredDetails(_ value: String) -> String {
-        L10n.message("id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
+        L10n.message("id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.", value)
     }
     static func trialExpiredDetailsMessage(_ value: String) -> LocalizedMessage {
-        LocalizedMessage(id: "id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", arguments: [value])
+        LocalizedMessage(id: "id.trial_expired_details", fallback: "Your %1$@-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.", arguments: [value])
     }
     static func trialRemainingDetails(_ value: String) -> String {
         L10n.message("id.trial_remaining_details", fallback: "You're on the free trial (%1$@ left). Unlock now for permanent access.", value)
@@ -2903,6 +2921,18 @@ enum Messages {
     }
     static func billingYourPurchaseIsAwaitingApprovalTacmapWillUnlockWhenMessage() -> LocalizedMessage {
         LocalizedMessage(id: "id.ui_your_purchase_is_awaiting_approval_tacmap_will_u_47aa8f84", fallback: "Your purchase is awaiting approval. TacMap will unlock when Apple completes it; tap Check Again after approval.", arguments: [])
+    }
+    static func viewerBasemapNote() -> String {
+        L10n.message("id.viewer_basemap_note", fallback: "Esri basemaps are part of the full version. OpenTopoMap is free.")
+    }
+    static func viewerLockedRowHint(_ title: String) -> String {
+        L10n.message("id.viewer_locked_row_hint", fallback: "%1$@, part of the full version", title)
+    }
+    static func viewerMenuBannerDetail() -> String {
+        L10n.message("id.viewer_menu_banner_detail", fallback: "Opening maps and seeing your position stay free. Unlock once for the tools.")
+    }
+    static func viewerMenuBannerTitle() -> String {
+        L10n.message("id.viewer_menu_banner_title", fallback: "Free viewer")
     }
     static func waypointsQuarantined(_ value: String) -> String {
         L10n.message("id.waypoints_quarantined", fallback: "Saved waypoints could not be read and were set aside (%1$@). Starting with no waypoints.", value)
