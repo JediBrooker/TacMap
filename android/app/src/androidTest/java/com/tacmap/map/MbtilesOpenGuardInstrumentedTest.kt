@@ -8,6 +8,8 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.tacmap.billing.FeatureGate
+import com.tacmap.calibration.EsriKey
 import com.tacmap.app.TacticalApp
 import android.os.Looper
 import com.tacmap.calibration.ActiveRef
@@ -637,7 +639,12 @@ class MbtilesOpenGuardInstrumentedTest {
         gate.countDown()
         waitUntil(what = "superseded admission closed") { opened.singleOrNull()?.isClosedForTesting() == true }
         onMain { }
-        assertEquals(BasemapStyle.OSM_STREET, (vm.mapSource.value as OnlineRasterMapSourceAndroid).style)
+        // the pick is OSM_STREET but what gets drawn goes through FeatureGate: on a
+        // keyless build (CI) the Esri served styles fall back to OpenTopoMap
+        assertEquals(
+            FeatureGate.displayStyle(BasemapStyle.OSM_STREET, fullVersion = true, esriKeyAvailable = EsriKey.isAvailable),
+            (vm.mapSource.value as OnlineRasterMapSourceAndroid).style,
+        )
         assertNull(activeId())
         assertFalse("admitted and still refused", vm.packRefused(a))
         val row = LibraryEntryRules.present(LibraryEntryRules.facts(a), vm.fileStatus(a), null, vm.packRefused(a))
