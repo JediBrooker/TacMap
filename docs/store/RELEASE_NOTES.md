@@ -9,6 +9,48 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.1.0 (build 81)
+
+Text on `feature/free-viewer-tier` (`docs/store/localizations/*.json`), submitted 9 November 2026. The free viewer: opening maps and seeing your position no longer needs the unlock; the tools do.
+
+### 3.1.0: App Store, English (547 / 4,000)
+
+```
+TacMap 3.1.0
+
+• Opening GeoPDF, PDF and MBTiles maps and seeing your position on them is now free, with no time limit and no account. The app no longer locks when the trial ends.
+• The three-day trial still gives you every tool. After it, a one-time unlock keeps symbols, drawings, measuring, elevation, weather, track recording, GPX/KML/GeoJSON, TacMap Chat, Unit Sync and the Esri basemaps. OpenTopoMap stays free.
+• Locked tools show a small lock in the menu and open the unlock screen when tapped. Nothing you made during the trial is removed.
+```
+
+### 3.1.0: Google Play, English (468 / 500)
+
+```
+TacMap 3.1.0
+• Opening GeoPDF, PDF and MBTiles maps and seeing your position on them is now free, with no time limit and no account. The app no longer locks when the trial ends.
+• The three-day trial still has every tool. After it, a one-time unlock keeps symbols, drawings, measuring, elevation, weather, tracks, GPX/KML/GeoJSON, Chat, Unit Sync and the Esri basemaps. OpenTopoMap stays free.
+• Locked tools show a lock in the menu. Nothing from the trial is removed.
+```
+
+### 3.1.0: App Store, German (626 / 4,000)
+
+```
+TacMap 3.1.0
+
+• GeoPDF-, PDF- und MBTiles-Karten öffnen und deine Position darauf sehen ist jetzt kostenlos, ohne Zeitlimit und ohne Konto. Die App sperrt sich nach dem Testzeitraum nicht mehr.
+• Der dreitägige Testzeitraum enthält weiterhin alle Werkzeuge. Danach behält ein einmaliger Kauf Symbole, Zeichnungen, Messen, Höhenprofil, Wetter, Trackaufzeichnung, GPX/KML/GeoJSON, TacMap Chat, Unit Sync und die Esri-Basiskarten. OpenTopoMap bleibt kostenlos.
+• Gesperrte Werkzeuge zeigen im Menü ein kleines Schloss und öffnen beim Antippen den Freischaltbildschirm. Nichts, was du im Testzeitraum erstellt hast, wird entfernt.
+```
+
+### 3.1.0: Google Play, German (493 / 500)
+
+```
+TacMap 3.1.0
+• GeoPDF-, PDF- und MBTiles-Karten öffnen und deine Position darauf sehen ist jetzt kostenlos, ohne Zeitlimit und ohne Konto. Die App sperrt sich nach dem Testzeitraum nicht mehr.
+• Der Testzeitraum enthält weiterhin alle Werkzeuge. Danach behält ein einmaliger Kauf Symbole, Zeichnungen, Messen, Höhen, Wetter, Tracks, GPX/KML/GeoJSON, Chat, Unit Sync und die Esri-Karten. OpenTopoMap bleibt kostenlos.
+• Gesperrte Werkzeuge zeigen ein Schloss. Nichts aus dem Test wird entfernt.
+```
+
 ## 3.0.7 (build 80)
 
 Text on `fix/elevation-model-resolution` (`docs/store/localizations/*.json`), submitted 6 November 2026. Both stores get the same single change: the elevation text now says the terrain model is about 90 m, not 30 m.

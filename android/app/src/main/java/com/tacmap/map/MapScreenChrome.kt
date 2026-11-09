@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.MyLocation
 import com.tacmap.ui.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -57,6 +58,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -437,4 +439,35 @@ private fun UndoRedoChip(
             modifier = Modifier.size(18.dp)
         )
     }
+}
+
+/**
+ * Trailing lock on a menu / sheet row the free viewer can't use. The row still
+ * works, it just opens the paywall, so the hint says what the tap gets you.
+ */
+@Composable
+internal fun LockedRowIcon(title: String) {
+    Icon(
+        Icons.Default.Lock,
+        contentDescription = Messages.viewerLockedRowHint(title),
+        modifier = Modifier.size(18.dp),
+    )
+}
+
+/** hamburger row that grows a trailing lock while [locked]; onClick decides what happens */
+@Composable
+internal fun GatedMenuItem(
+    title: String,
+    icon: ImageVector,
+    locked: Boolean,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(title) },
+        onClick = onClick,
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        trailingIcon = if (locked) {
+            { LockedRowIcon(title) }
+        } else null,
+    )
 }

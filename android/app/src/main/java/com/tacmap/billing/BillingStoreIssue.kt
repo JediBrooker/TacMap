@@ -22,26 +22,29 @@ data class BillingStoreIssue(
     val message: String get() = pendingMessage.text
 }
 
+/**
+ * 3.1 dropped the hard paywall: the map is always the root, a lapsed trial just
+ * turns it into the free viewer. Kept as an enum so the root switch in
+ * MainActivity still reads as a decision rather than a bare composable.
+ */
 internal enum class BillingRootContent {
     Unlocked,
-    HardPaywall,
 }
 
 internal data class BillingRootPresentation(
     val content: BillingRootContent,
     val storeIssue: BillingStoreIssue?,
+    /** false = free viewer, the paid tools open the on-demand paywall instead */
+    val isFullVersion: Boolean,
 )
 
-/** Keeps actionable store issues above both the app and hard paywall roots. */
+/** Keeps actionable store issues above the app root whatever the entitlement is. */
 internal object BillingRootPresentationPolicy {
-    fun resolve(isUnlocked: Boolean, storeIssue: BillingStoreIssue?): BillingRootPresentation =
+    fun resolve(isFullVersion: Boolean, storeIssue: BillingStoreIssue?): BillingRootPresentation =
         BillingRootPresentation(
-            content = if (isUnlocked) {
-                BillingRootContent.Unlocked
-            } else {
-                BillingRootContent.HardPaywall
-            },
+            content = BillingRootContent.Unlocked,
             storeIssue = storeIssue,
+            isFullVersion = isFullVersion,
         )
 }
 

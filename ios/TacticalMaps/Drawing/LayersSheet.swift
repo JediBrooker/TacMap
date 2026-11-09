@@ -15,6 +15,10 @@ struct LayersSheet: View {
     /// J1: while calibrating the imported map is forced on, the toggle shows
     /// that and cant be changed. its stored value comes back afterwards
     var isCalibrating: Bool = false
+    /// free viewer tapped a padlocked Esri basemap: ContentView dismisses us
+    /// and puts the paywall up for that style
+    var onLockedBasemap: (String) -> Void = { _ in }
+    @ObservedObject private var access = FeatureAccess.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingNewLayerSheet = false
@@ -208,14 +212,27 @@ struct LayersSheet: View {
             // ArcGIS key baked in at build time; no key -> hide them rather than
             // offer a basemap that would render blank. Imported maps are picked
             // in the section above and stay in the library either way.
+            // Free viewer: the keyed ones stay listed but padlocked, tapping
+            // one opens the paywall and the map stays on OpenTopoMap.
             ForEach(BasemapStyle.allCases.filter {
                 !$0.requiresEsriKey || EsriKey.isAvailable
             }, id: \.self) { style in
+                let locked = !FeatureGate.allows(.esriBasemaps, fullVersion: access.isFullVersion) && style.requiresEsriKey
                 basemapRow(title: style.displayName,
                            systemImage: basemapIcon(style),
-                           isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == style) {
-                    _ = mapVM.selectOnlineBasemap(style)
+                           isActive: (mapVM.mapSource as? OnlineRasterBasemapSource)?.style == style,
+                           locked: locked) {
+                    if locked {
+                        onLockedBasemap(style.displayName)
+                    } else {
+                        _ = mapVM.selectOnlineBasemap(style)
+                    }
                 }
+            }
+            if !access.isFullVersion {
+                Text(Messages.viewerBasemapNote())
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             if importedActive {
                 Text(L10n.text("An imported map is active — pick a basemap above to view it instead; the imported map stays available to switch back to."))
@@ -237,6 +254,7 @@ struct LayersSheet: View {
     private func basemapRow(title: String,
                             systemImage: String,
                             isActive: Bool,
+                            locked: Bool = false,
                             select: @escaping () -> Void) -> some View {
         Button(action: select) {
             HStack {
@@ -245,7 +263,11 @@ struct LayersSheet: View {
                 Text(title)
                     .foregroundStyle(.primary)
                 Spacer()
-                if isActive {
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                } else if isActive {
                     Image(systemName: "checkmark")
                         .foregroundStyle(.tint)
                 }
@@ -253,6 +275,7 @@ struct LayersSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(locked ? Messages.viewerLockedRowHint(title) : title)
     }
 
     @ViewBuilder

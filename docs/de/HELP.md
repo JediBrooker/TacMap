@@ -40,7 +40,7 @@ Lange Abstände zwischen Hintergrundaktualisierungen sind keine genaue Zeitgaran
 
 ## Käufe wiederherstellen
 
-TacMap hat einen dreitägigen Testzeitraum und eine einmalige dauerhafte Freischaltung, kein Abo. Öffne die Kaufansicht und nutze **Käufe wiederherstellen**, wenn deine Berechtigung fehlt. Verwende dasselbe Store-Konto wie beim Kauf. Preis, Zahlungsdialog und verfügbare Kaufoptionen werden vom Store bereitgestellt. Eine Freischaltung in einem Store ist keine Zusage einer plattformübergreifenden Kaufberechtigung.
+GeoPDF-, PDF- und MBTiles-Karten öffnen, OpenTopoMap und deine Live-Position sind ohne Zeitlimit kostenlos. Die Werkzeuge (Symbole, Zeichnungen, Messen, Höhenprofil, Wetter, Tracks, GPX/KML/GeoJSON, TacMap Chat, Unit Sync und die Esri-Basiskarten) sind drei Tage lang frei und brauchen danach eine einmalige dauerhafte Freischaltung, kein Abo. Öffne die Kaufansicht und nutze **Käufe wiederherstellen**, wenn deine Berechtigung fehlt. Verwende dasselbe Store-Konto wie beim Kauf. Preis, Zahlungsdialog und verfügbare Kaufoptionen werden vom Store bereitgestellt. Eine Freischaltung in einem Store ist keine Zusage einer plattformübergreifenden Kaufberechtigung.
 
 ## Wenn etwas nicht funktioniert
 

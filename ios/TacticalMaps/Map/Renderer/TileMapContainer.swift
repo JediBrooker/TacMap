@@ -70,6 +70,8 @@ struct TileMapContainer: UIViewRepresentable {
     @ObservedObject var calibration: CalibrationSession
     @ObservedObject var opsec = OpsecSettings.shared
     var graphicsLocked: Bool = false
+    /// free viewer: render + select only, see MapEditingController.readOnly
+    var readOnly: Bool = false
     var drawingControlsPreview: DrawingShape?
     /// Not observed on purpose (contract 20.2): the coordinator subscribes and
     /// moves the presence markers itself, so a loc frame never reruns
@@ -137,7 +139,8 @@ struct TileMapContainer: UIViewRepresentable {
                 measureSession: measureSession, visibility: visibility),
             handles: calibrating ? [] : Coordinator.buildEditHandles(
                 selectedID: mapVM.selectedDrawingID, drawingStore: drawingStore),
-            graphicsLocked: graphicsLocked)
+            graphicsLocked: graphicsLocked,
+            readOnly: readOnly)
         context.coordinator.syncHeatmap(
             visible: visibility.terrainHeatmapVisible && !calibrating,
             onlineLookups: opsec.onlineLookups
@@ -579,7 +582,7 @@ struct TileMapContainer: UIViewRepresentable {
         /// Push new overlay geometry (drawings changed / selection changed).
         func updateOverlays(drawings: [PDFVectorShape], gridVisible: Bool,
                             decorations: DrawingDecorationsOverlayView.Model,
-                            handles: [EditHandle], graphicsLocked: Bool) {
+                            handles: [EditHandle], graphicsLocked: Bool, readOnly: Bool = false) {
             durableDrawingVectors = drawings
             renderDrawingVectors()
             durableDrawingDecorations = decorations
@@ -587,6 +590,7 @@ struct TileMapContainer: UIViewRepresentable {
             durableDrawingHandles = handles
             renderDrawingHandles()
             editing.graphicsLocked = graphicsLocked
+            editing.readOnly = readOnly
             if gridVisible != self.gridVisible {
                 self.gridVisible = gridVisible
                 if !gridVisible {

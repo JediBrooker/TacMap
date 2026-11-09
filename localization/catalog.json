@@ -14236,8 +14236,8 @@
     "parameters": []
   },
   "trial_expired_details": {
-    "en": "Your {1}-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.",
-    "de": "Dein kostenloser Testzeitraum von {1} Tagen ist abgelaufen. Mit einem einmaligen Kauf kannst du TacMap weiter nutzen – Live-MGRS, GeoPDF-Karten, NATO-APP-6-Symbole und GeoJSON-Export.",
+    "en": "Your {1}-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.",
+    "de": "Dein kostenloser Testzeitraum von {1} Tagen ist abgelaufen. Karten öffnen und deine Position sehen bleibt dauerhaft kostenlos; schalte die Werkzeuge einmalig frei.",
     "platforms": [
       "android",
       "ios"
@@ -20376,6 +20376,136 @@
     "accessor": "syncLegacyRoomMixedVersions",
     "deferred": true,
     "context": "Unit Sync (3.0.2). Plain-language line shown right under the red LEGACY ROOM line, both while a 2: join code is typed in the join form and for as long as the device is in a 2: room. Legacy v2 rooms behave differently across app versions, so a team on mixed versions can end up seeing different objects. The fix is a new join code starting with 3:. Keep 3: verbatim.",
+    "parameters": []
+  },
+  "viewer_menu_banner_title": {
+    "en": "Free viewer",
+    "de": "Kostenloser Viewer",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Menu banner title shown after the trial when the app runs as the free map viewer.",
+    "legacy": false,
+    "accessor": "viewerMenuBannerTitle",
+    "parameters": []
+  },
+  "viewer_menu_banner_detail": {
+    "en": "Opening maps and seeing your position stay free. Unlock once for the tools.",
+    "de": "Karten öffnen und deine Position sehen bleibt kostenlos. Schalte die Werkzeuge einmalig frei.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Menu banner body under the free viewer title; one sentence on what stays free and the one-time unlock.",
+    "legacy": false,
+    "accessor": "viewerMenuBannerDetail",
+    "parameters": []
+  },
+  "viewer_locked_row_hint": {
+    "en": "{1}, part of the full version",
+    "de": "{1}, Teil der Vollversion",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Accessibility label for a menu row or basemap row that opens the unlock screen in the free viewer. {1} is the row title.",
+    "legacy": false,
+    "accessor": "viewerLockedRowHint",
+    "parameters": [
+      {
+        "name": "title",
+        "type": "string"
+      }
+    ]
+  },
+  "viewer_basemap_note": {
+    "en": "Esri basemaps are part of the full version. OpenTopoMap is free.",
+    "de": "Esri-Basiskarten gehören zur Vollversion. OpenTopoMap ist kostenlos.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Footnote under the basemap list in the Layers sheet while the app runs as the free viewer.",
+    "legacy": false,
+    "accessor": "viewerBasemapNote",
+    "parameters": []
+  },
+  "paywall_locked_feature_title": {
+    "en": "Part of the full version",
+    "de": "Teil der Vollversion",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Unlock screen headline when the user tapped a locked tool in the free viewer.",
+    "legacy": false,
+    "accessor": "paywallLockedFeatureTitle",
+    "parameters": []
+  },
+  "paywall_locked_feature_detail": {
+    "en": "{1} is included in the one-time unlock. Opening GeoPDF, PDF and MBTiles maps, OpenTopoMap and your live position stay free for good.",
+    "de": "{1} ist im einmaligen Kauf enthalten. GeoPDF-, PDF- und MBTiles-Karten öffnen, OpenTopoMap und deine Live-Position bleiben dauerhaft kostenlos.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Unlock screen body when the user tapped a locked tool; {1} is the tool name as shown in the menu, e.g. Measure.",
+    "legacy": false,
+    "accessor": "paywallLockedFeatureDetail",
+    "parameters": [
+      {
+        "name": "feature",
+        "type": "string"
+      }
+    ]
+  },
+  "paywall_full_version_includes": {
+    "en": "Symbology, drawings, measure, elevation and line of sight, weather, track recording, GPX/KML/GeoJSON import and export, TacMap Chat, Unit Sync and the Esri basemaps.",
+    "de": "Symbole, Zeichnungen, Messen, Höhenprofil und Sichtlinie, Wetter, Trackaufzeichnung, GPX/KML/GeoJSON-Import und -Export, TacMap Chat, Unit Sync und die Esri-Basiskarten.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Unlock screen list of what the one-time purchase includes. Keep as one sentence; product names TacMap Chat, Unit Sync, Esri, OpenTopoMap stay untranslated.",
+    "legacy": false,
+    "accessor": "paywallFullVersionIncludes",
+    "parameters": []
+  },
+  "feature_track_recording": {
+    "en": "Track recording",
+    "de": "Die Trackaufzeichnung",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Feature name inserted into the unlock screen sentence \"{1} is included in the one-time unlock\" when a locked track-recording row is tapped.",
+    "legacy": false,
+    "accessor": "featureTrackRecording",
+    "parameters": []
+  },
+  "feature_import_vector": {
+    "en": "Importing GeoJSON and KML files",
+    "de": "Der Import von GeoJSON- und KML-Dateien",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Feature name inserted into the unlock screen sentence \"{1} is included in the one-time unlock\" when a locked GeoJSON or KML import row is tapped.",
+    "legacy": false,
+    "accessor": "featureImportVector",
+    "parameters": []
+  },
+  "feature_export": {
+    "en": "Exporting your data",
+    "de": "Der Export deiner Daten",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Feature name inserted into the unlock screen sentence \"{1} is included in the one-time unlock\" when any locked export row is tapped.",
+    "legacy": false,
+    "accessor": "featureExport",
     "parameters": []
   }
 }

@@ -7,6 +7,10 @@ struct HamburgerMenu: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     /// Billing: show trial status + an unlock entry point (hidden once bought).
     let isPurchased: Bool
+    /// false = free viewer (trial over, nothing bought). the locked rows get a
+    /// padlock and the banner swaps to the viewer one. the actions still fire,
+    /// ContentView is what turns them into the paywall sheet
+    let isFullVersion: Bool
     let trialDaysRemaining: Int
     let onUnlock:        () -> Void
     let onSearch:        () -> Void
@@ -66,17 +70,17 @@ struct HamburgerMenu: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if !isPurchased {
-                            trialBanner
+                            if isFullVersion { trialBanner } else { viewerBanner }
                             row(L10n.text("Unlock Full Version"), systemImage: "cart") { close(onUnlock) }
                             divider
                         }
                         row(L10n.text("Search…"),         systemImage: "magnifyingglass")     { close(onSearch) }
                         divider
-                        row(L10n.text("Symbology"),       systemImage: "mappin.and.ellipse")  { close(onWaypoints) }
-                        row(L10n.text("Drawings"),        systemImage: "scribble.variable")   { close(onDrawings) }
+                        row(L10n.text("Symbology"),       systemImage: "mappin.and.ellipse", locked: locked)  { close(onWaypoints) }
+                        row(L10n.text("Drawings"),        systemImage: "scribble.variable", locked: locked)   { close(onDrawings) }
                         row(L10n.text("Layers and Labels"), systemImage: "square.3.stack.3d") { close(onLayers) }
-                        row(L10n.text("Measure"),         systemImage: "ruler")               { close(onMeasure) }
-                        row(L10n.text("Weather & UAV Safety"), systemImage: "wind")            { close(onWeather) }
+                        row(L10n.text("Measure"),         systemImage: "ruler", locked: locked)               { close(onMeasure) }
+                        row(L10n.text("Weather & UAV Safety"), systemImage: "wind", locked: locked)            { close(onWeather) }
                         divider
                         // All file import/export lives behind one row so the
                         // main menu stays short. Pushes a sub-page within the
@@ -84,11 +88,12 @@ struct HamburgerMenu: View {
                         navRow(L10n.text("Import / Export…"), systemImage: "square.and.arrow.up.on.square")
                         divider
                         row(recordingMenuTitle,
-                            systemImage: recordingMenuIcon)
+                            systemImage: recordingMenuIcon,
+                            locked: FeatureGate.trackRecordingRowLocked(state: recordingState, fullVersion: isFullVersion))
                             { close(onToggleTrackRecording) }
                         divider
-                        row(L10n.text("TacMap Chat…"), systemImage: "bubble.left.and.bubble.right.fill") { close(onChat) }
-                        row(L10n.text("Unit Sync…"), systemImage: "antenna.radiowaves.left.and.right") { close(onSync) }
+                        row(L10n.text("TacMap Chat…"), systemImage: "bubble.left.and.bubble.right.fill", locked: locked) { close(onChat) }
+                        row(L10n.text("Unit Sync…"), systemImage: "antenna.radiowaves.left.and.right", locked: locked) { close(onSync) }
                         row(L10n.text("App Lock…"), systemImage: "lock.shield")               { close(onAppLock) }
                         row(L10n.text("Settings, Privacy & OPSEC"), systemImage: "eye.slash.fill") { close(onOpsec) }
                             .accessibilityIdentifier("menu.settings")
@@ -122,6 +127,9 @@ struct HamburgerMenu: View {
         action?()
     }
 
+    /// padlock on every row that is part of the unlock, viewer only
+    private var locked: Bool { !isFullVersion }
+
     private var recordingMenuTitle: String {
         switch recordingState {
         case .idle:
@@ -150,10 +158,13 @@ struct HamburgerMenu: View {
         }
     }
 
+    /// `locked` = viewer row that opens the paywall instead: trailing padlock
+    /// and the a11y label says so, the tap itself still goes through action
     @ViewBuilder
     private func row(
         _ label: String,
         systemImage: String,
+        locked: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -167,6 +178,12 @@ struct HamburgerMenu: View {
                     .font(.system(size: 16))
                     .foregroundStyle(.primary)
                 Spacer()
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, 16)
             /// 54pt tall, clears Apple's 44pt min with room to spare.
@@ -174,6 +191,7 @@ struct HamburgerMenu: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(locked ? Messages.viewerLockedRowHint(label) : label)
     }
 
     /// Like row() but pushes the Import/Export sub-page instead of
@@ -217,15 +235,16 @@ struct HamburgerMenu: View {
                 row(L10n.text("Offline Tiles…"), systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
                     .disabled(!importsEnabled)
                     .opacity(importsEnabled ? 1 : 0.4)
-                row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.down")         { close(onImportGeoJSON) }
-                row("KML / KMZ…", systemImage: "globe.desk")                  { close(onImportKML) }
+                // map imports stay free in the viewer, vector imports and every export dont
+                row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.down", locked: locked)         { close(onImportGeoJSON) }
+                row("KML / KMZ…", systemImage: "globe.desk", locked: locked)                  { close(onImportKML) }
                 divider
                 sectionHeader(L10n.text("Export"))
-                row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.up")           { close(onExport) }
-                row("\(MissionObjectExport.actionTitle)…", systemImage: "square.and.arrow.up.on.square") { close(onExportAll) }
-                row("KML…", systemImage: "globe")                                         { close(onExportKML) }
-                row("\(Messages.exportKmzRow())…", systemImage: "doc.zipper")            { close(onExportKMZ) }
-                row(L10n.text("GPX Track…"), systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                row(L10n.text("GeoJSON…"), systemImage: "square.and.arrow.up", locked: locked)           { close(onExport) }
+                row("\(MissionObjectExport.actionTitle)…", systemImage: "square.and.arrow.up.on.square", locked: locked) { close(onExportAll) }
+                row("KML…", systemImage: "globe", locked: locked)                                         { close(onExportKML) }
+                row("\(Messages.exportKmzRow())…", systemImage: "doc.zipper", locked: locked)            { close(onExportKMZ) }
+                row(L10n.text("GPX Track…"), systemImage: "point.topleft.down.curvedto.point.bottomright.up", locked: locked)
                     { close(onExportGPX) }
             }
         }
@@ -265,6 +284,32 @@ struct HamburgerMenu: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 40)
+    }
+
+    /// Viewer counterpart of trialBanner: trial is over, nothing bought. Two
+    /// lines because the detail is the one place the menu explains what stays
+    /// free, so it needs a bit more room than the trial countdown.
+    private var viewerBanner: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "eye")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Messages.viewerMenuBannerTitle())
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(Messages.viewerMenuBannerDetail())
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("menu.viewerBanner")
     }
 }
 

@@ -10,14 +10,14 @@ The TacticMap column describes their public store listing as of November 2026. W
 
 | | TacMap | TacticMap (as of November 2026, from their public listing) |
 |---|---|---|
-| Price | Three-day trial, then one one-time unlock. No subscription. | Subscription. |
+| Price | Viewing maps and your position is free. The tools: three-day trial, then one one-time unlock. No subscription. | Subscription. |
 | Offline maps | Import PDF, GeoPDF and MBTiles for anywhere on Earth. No country restrictions. | Offline map coverage is tied to regions. |
 | Your data | GeoJSON, KML and KMZ in and out. GPX track export. Opens in QGIS, Google Earth and ATAK. | Proprietary format. |
 | Account, ads, analytics | None. No TacMap account, no ads, no behavioural analytics. | Account based. |
 
 ## Pay once
 
-TacMap has a three-day free trial and then a single permanent unlock through the App Store or Google Play. There is no yearly renewal and no tier that locks features behind a higher plan. If you stop paying for a subscription app, you lose the app. A one-time unlock does not expire.
+Opening GeoPDF, PDF and MBTiles maps and seeing your position on them is free for good. The tools have a three-day free trial and then a single permanent unlock through the App Store or Google Play. There is no yearly renewal and no higher plan above the unlock. If you stop paying for a subscription app, you lose the app. A one-time unlock does not expire.
 
 A purchase in one store does not carry across to the other store, so an iPhone unlock does not unlock an Android phone. See [Help](/support#purchases-and-recovery) for restoring a purchase.
 

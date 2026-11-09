@@ -160,6 +160,9 @@
     <string name="export_preview_truncated">"… (gekürzt; vollständige Datei über „Teilen“)"</string>
     <string name="export_share_geojson">"GeoJSON-Datei teilen"</string>
     <string name="export_share_gpx">"GPX-Datei teilen"</string>
+    <string name="feature_export">"Der Export deiner Daten"</string>
+    <string name="feature_import_vector">"Der Import von GeoJSON- und KML-Dateien"</string>
+    <string name="feature_track_recording">"Die Trackaufzeichnung"</string>
     <string name="import_collision_summary">"%1$s Wegen Konflikten neu vergebene Objekt-IDs: %2$s."</string>
     <string name="import_complete_summary">"%1$s und %2$s importiert."</string>
     <string name="import_failed">"Import fehlgeschlagen: %1$s"</string>
@@ -244,6 +247,9 @@
     <string name="night_mode_turn_off">"Nachtmodus ausschalten"</string>
     <string name="night_mode_turn_on">"Nachtmodus einschalten"</string>
     <string name="online_basemaps_disabled">"Online-Grundkarten sind deaktiviert. Importiere ein Offline-Kartenpaket oder aktiviere Online-Kartenkacheln unter „Einstellungen, Datenschutz und OPSEC“."</string>
+    <string name="paywall_full_version_includes">"Symbole, Zeichnungen, Messen, Höhenprofil und Sichtlinie, Wetter, Trackaufzeichnung, GPX/KML/GeoJSON-Import und -Export, TacMap Chat, Unit Sync und die Esri-Basiskarten."</string>
+    <string name="paywall_locked_feature_detail">"%1$s ist im einmaligen Kauf enthalten. GeoPDF-, PDF- und MBTiles-Karten öffnen, OpenTopoMap und deine Live-Position bleiben dauerhaft kostenlos."</string>
+    <string name="paywall_locked_feature_title">"Teil der Vollversion"</string>
     <string name="pdf_bake_caption">"Rendert diese Karte vorab, damit sie sofort öffnet und zoomt. Die PDF bleibt erhalten."</string>
     <string name="pdf_bake_chip">"Offline-Kacheln %1$s %%"</string>
     <string name="pdf_bake_confirm_message">"„%1$s“ bleibt auf diesem Gerät und bleibt die aktive Karte. Das dauert ca. %2$s."</string>
@@ -473,7 +479,7 @@
     <string name="tour_replay_help">"Eine kurze Führung durch die Karte und ihre Tasten."</string>
     <string name="tour_welcome_body">"Diese kurze Tour zeigt dir, wo alles ist. Das Fadenkreuz in der Mitte markiert deinen Arbeitspunkt: Ziehe die Karte, um es zu verschieben, und zoome mit zwei Fingern."</string>
     <string name="tour_welcome_title">"Willkommen bei TacMap"</string>
-    <string name="trial_expired_details">"Dein kostenloser Testzeitraum von %1$s Tagen ist abgelaufen. Mit einem einmaligen Kauf kannst du TacMap weiter nutzen – Live-MGRS, GeoPDF-Karten, NATO-APP-6-Symbole und GeoJSON-Export."</string>
+    <string name="trial_expired_details">"Dein kostenloser Testzeitraum von %1$s Tagen ist abgelaufen. Karten öffnen und deine Position sehen bleibt dauerhaft kostenlos; schalte die Werkzeuge einmalig frei."</string>
     <string name="trial_remaining_details">"Du nutzt den kostenlosen Test (noch %1$s). Jetzt für dauerhaften Zugriff freischalten."</string>
     <string name="ui_1_2_3_pts_ab8f6c81">"%1$s • %2$s • %3$s Pkt."</string>
     <string name="ui_1_2_d576425a">"%1$s · %2$s"</string>
@@ -1473,6 +1479,10 @@
     <string name="ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693">"Deine Google-Play-Zahlung ist ausstehend. TacMap wird freigeschaltet, sobald Play sie bestätigt."</string>
     <string name="ui_your_identity_cf88fe86">"Deine Identität"</string>
     <string name="ui_your_imported_map_is_retained_select_its_row_to__7c229d12">"Deine importierte Karte bleibt gespeichert. Wähle ihre Zeile, um zu ihr zurückzukehren."</string>
+    <string name="viewer_basemap_note">"Esri-Basiskarten gehören zur Vollversion. OpenTopoMap ist kostenlos."</string>
+    <string name="viewer_locked_row_hint">"%1$s, Teil der Vollversion"</string>
+    <string name="viewer_menu_banner_detail">"Karten öffnen und deine Position sehen bleibt kostenlos. Schalte die Werkzeuge einmalig frei."</string>
+    <string name="viewer_menu_banner_title">"Kostenloser Viewer"</string>
     <string name="waypoints_quarantined">"Gespeicherte Wegpunkte konnten nicht gelesen werden und wurden separat gesichert (%1$s). Die Karte startet ohne Wegpunkte."</string>
     <string name="weather_fetch_failed">"Wetterdaten konnten nicht abgerufen werden. Falls Online-Abfragen unter „Einstellungen, Datenschutz und OPSEC“ deaktiviert sind, aktiviere sie. Prüfe andernfalls deine Verbindung."</string>
 </resources>

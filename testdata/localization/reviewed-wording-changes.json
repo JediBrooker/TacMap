@@ -369,5 +369,19 @@
     "before": "Copernicus DEM (≈30 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
     "after": "Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar.",
     "reason": "Open-Meteo's elevation API serves Copernicus DEM GLO-90 at 90 m, not 30 m (open-meteo.com/en/docs/elevation-api, checked 2026-11-06). Profile note also says narrow peaks are smoothed, seen on a QTopo sheet where a 445 m pinnacle read 323 m."
+  },
+  {
+    "id": "trial_expired_details",
+    "locale": "en",
+    "before": "Your {1}-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.",
+    "after": "Your {1}-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.",
+    "reason": "3.1 free viewer: the app no longer locks after the trial, so the paywall must say what stays free and that only the tools need the one-time unlock."
+  },
+  {
+    "id": "trial_expired_details",
+    "locale": "de",
+    "before": "Dein kostenloser Testzeitraum von {1} Tagen ist abgelaufen. Mit einem einmaligen Kauf kannst du TacMap weiter nutzen – Live-MGRS, GeoPDF-Karten, NATO-APP-6-Symbole und GeoJSON-Export.",
+    "after": "Dein kostenloser Testzeitraum von {1} Tagen ist abgelaufen. Karten öffnen und deine Position sehen bleibt dauerhaft kostenlos; schalte die Werkzeuge einmalig frei.",
+    "reason": "German counterpart of the 3.1 free viewer paywall wording."
   }
 ]

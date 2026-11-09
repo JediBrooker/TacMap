@@ -10,6 +10,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tacmap.calibration.ActiveMapSelectionStore
 import com.tacmap.calibration.ActiveRef
+import com.tacmap.billing.FeatureAccess
+import com.tacmap.billing.FeatureGate
 import com.tacmap.calibration.BasemapStyle
 import com.tacmap.calibration.Calibration
 import com.tacmap.calibration.CalibrationDraftStore
@@ -74,6 +76,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -290,7 +293,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
         },
     )
 
-    private val _mapSource = MutableStateFlow<MapSource>(OnlineRasterMapSourceAndroid(defaultStyle))
+    private val _mapSource = MutableStateFlow<MapSource>(baseMapSource(defaultStyle))
     val mapSource: StateFlow<MapSource> = _mapSource.asStateFlow()
 
     private val _libraryState = MutableStateFlow<LibraryState?>(null)
@@ -337,9 +340,35 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Which online basemap to return to when an imported map is unloaded. */
     private var preferredBaseMap: BasemapStyle = defaultStyle
+    /**
+     * the one place an online style turns into a source. the free viewer (3.1) and a
+     * keyless build both get OpenTopoMap in place of an Esri style here, while
+     * [preferredBaseMap] and the library keep the real choice so it comes back on unlock
+     */
     private fun baseMapSource(style: BasemapStyle): OnlineRasterMapSourceAndroid =
-        OnlineRasterMapSourceAndroid(style)
+        OnlineRasterMapSourceAndroid(
+            FeatureGate.displayStyle(
+                style = style,
+                fullVersion = FeatureAccess.isFullVersion.value,
+                esriKeyAvailable = com.tacmap.calibration.EsriKey.isAvailable,
+            )
+        )
     private fun onlineBasemap(): OnlineRasterMapSourceAndroid = baseMapSource(preferredBaseMap)
+
+    /** the online style the library says should be up right now, before any viewer substitution */
+    private fun intendedOnlineStyle(): BasemapStyle =
+        _libraryState.value?.takeIf { it.active.entryId == null }?.let { styleOf(it.active.style) } ?: preferredBaseMap
+
+    /**
+     * entitlement moved at runtime (trial lapsed on resume, purchase or restore landed).
+     * only an online basemap on screen cares: viewer + Esri up -> OpenTopoMap, full again
+     * + Esri preferred -> the Esri map. imported maps are untouched
+     */
+    private fun onEntitlementChanged() {
+        val shown = _mapSource.value as? OnlineRasterMapSourceAndroid ?: return
+        val next = baseMapSource(intendedOnlineStyle())
+        if (next.style != shown.style) publish(next, frame = false)
+    }
 
     /** open MBTiles handles by entry, closed when the entry goes */
     private val offlineSources = HashMap<String, OfflineTileMapSourceAndroid>()
@@ -475,6 +504,10 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         restoreLibrary()
+        viewModelScope.launch {
+            // skip the current value, restore already picked the right style for it
+            FeatureAccess.isFullVersion.drop(1).collect { onEntitlementChanged() }
+        }
         viewModelScope.launch {
             locationService.lastLocation.collect { loc -> loc?.let(::onUserLocation) }
         }

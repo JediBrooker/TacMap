@@ -11482,8 +11482,8 @@
     },
     "trial_expired_details": {
       "de": {
-        "source": "cf24ef4f2bfcc67cc28a6fbcfa52d73f2424a5bae19cf1803580c2a118505761",
-        "translation": "6f6a2e16062219ae43194d6a081e87381aa0ed040646e7de9db36b56ca5d7f98",
+        "source": "1b237fb116e8b21f05cda1b3db27e3a768ccb21c5bd8470af398de09f9088409",
+        "translation": "616cba1f0fc3224d0df61ac7ac7d66409af971c34c8b230b7e71e07e975cdfac",
         "status": "reviewed"
       }
     },
@@ -14697,6 +14697,76 @@
       "de": {
         "source": "ad0581ea476de4ef24d17d87d8cab5869b5026319c32b9662e40c5cc60d6a400",
         "translation": "9b98b1bb7de02b46168c925d9baaca7c309d38a68b6618952bd5847c2fd7afbb",
+        "status": "reviewed"
+      }
+    },
+    "viewer_menu_banner_title": {
+      "de": {
+        "source": "2a3a4dcff619bdc36e5889abcb827dd48eaae525466b3d3e1af9425c82feb058",
+        "translation": "06237ae625861f1f74673c5eee3532a71a472c53a7ae8d9267158f4c3038ed33",
+        "status": "reviewed"
+      }
+    },
+    "viewer_menu_banner_detail": {
+      "de": {
+        "source": "9d14b85ee7a89852efe42c4f61aece9247ea08950bf2692d55832e16abaec46d",
+        "translation": "00ff15aefaee97a46471d74c5b990ba7a5c6747b638303b38cfe492107a9cf05",
+        "status": "reviewed"
+      }
+    },
+    "viewer_locked_row_hint": {
+      "de": {
+        "source": "90a46372f50c06e88cdb4c7fb048a3bab99fecf076ea7ad6725a83b14095ab66",
+        "translation": "b992bd4b03b7331d63544799cd6d61242fb3fb83ae5389e5f4bc1f29c7affe57",
+        "status": "reviewed"
+      }
+    },
+    "viewer_basemap_note": {
+      "de": {
+        "source": "509dc10eff159a80938609fe98ada85d36d73b00615b4284bb32924953eeef20",
+        "translation": "5f843f53ee5647ef93381202a6fd3426ab0d3f0d2fe6284bdc86b1fcc1dc0dac",
+        "status": "reviewed"
+      }
+    },
+    "paywall_locked_feature_title": {
+      "de": {
+        "source": "dbd4f823c7e4fc551ab77a1c5065b736cde42915ef175590e05bc9bf32f6deb6",
+        "translation": "8b0fd25135375e6d193a6ad3d49686cf477af0110f9d3a20e98029ddd9f7c9d9",
+        "status": "reviewed"
+      }
+    },
+    "paywall_locked_feature_detail": {
+      "de": {
+        "source": "4260c6138c7cf71ee9a0fed975c491fe943314934de4dd6af32bc60f360e9f78",
+        "translation": "37bdea5ad52b527c3817b67824deffe503265f81286b1c358cb451bab043e087",
+        "status": "reviewed"
+      }
+    },
+    "paywall_full_version_includes": {
+      "de": {
+        "source": "179b5f048eb954ff2ef92dd8e962788858381436b9af5e9c1f96ee39e674328f",
+        "translation": "bc59414615bc744b8f6d9145a5f9daf74250b5b3241b4900730ad2d5398cfcde",
+        "status": "reviewed"
+      }
+    },
+    "feature_track_recording": {
+      "de": {
+        "source": "70bf12686df3e6765c4fea25efc565aae960bc7d43ada4b1b8417821d4ac4c0a",
+        "translation": "ed231623de18522d8c9e65a9151033511a966a38f399b72fb473322cca3ee1e9",
+        "status": "reviewed"
+      }
+    },
+    "feature_import_vector": {
+      "de": {
+        "source": "ac5bacd473032502eeac17dfa4ecbe4fb6b937ed00f0f8ec7a9aa381e0947b89",
+        "translation": "748e9200d96186b07a34c458976ac422e35ae1b886d6bab7d91e24c078c3d0d4",
+        "status": "reviewed"
+      }
+    },
+    "feature_export": {
+      "de": {
+        "source": "4eabc1ce640b1da9e9c4eadf688782104a375286266f60d3a9e858ce95fc6840",
+        "translation": "c2d601850d8722f8d4a5a18c0ef1255c375e42974bb837dc8b09e6cb25fc45db",
         "status": "reviewed"
       }
     }

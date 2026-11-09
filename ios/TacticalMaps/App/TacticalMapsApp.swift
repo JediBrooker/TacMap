@@ -41,9 +41,12 @@ struct TacticalMapsApp: App {
     }
 }
 
-/// Decides between full app and the paywall. App is available while
-/// unlock is purchased or the free trial is still running. Re-checks
-/// on foreground so a trial that lapsed while backgrounded gates on resume.
+/// Owns the entitlement decision. 3.1: the app never hard locks anymore,
+/// ContentView is always up. Purchased or trial still running = full version,
+/// otherwise ContentView runs as the free viewer and the locked tools open the
+/// paywall sheet on demand. Re-checks `now` on foreground so a trial that
+/// lapsed while backgrounded is noticed on resume, and pushes the result into
+/// FeatureAccess for the bits of the app that never see the store.
 private struct RootGate: View {
     @ObservedObject private var appLanguage = AppLanguage.shared
     @ObservedObject var store: StoreManager
@@ -55,21 +58,27 @@ private struct RootGate: View {
     /// re-armed when app backgrounds.
     @State private var locked = AppLock.isEnabled
 
+    init(store: StoreManager, trial: TrialManager) {
+        self.store = store
+        self.trial = trial
+        // seed before ContentView builds its view models (MapViewModel reads
+        // this for the first basemap). guarded so a body re-eval doesnt
+        // publish mid update, onChange below keeps it current afterwards
+        let full = store.isPurchased || trial.isTrialActive()
+        if FeatureAccess.shared.isFullVersion != full { FeatureAccess.shared.isFullVersion = full }
+    }
+
+    private var isFullVersion: Bool {
+        store.isPurchased || trial.isTrialActive(now: now)
+    }
+
     var body: some View {
         ZStack {
-            if store.isPurchased || trial.isTrialActive(now: now) {
-                // ContentView owns LocationService / TrackRecorder session
-                // state. Stays mounted underneath the lock so backgrounding
-                // (which arms the lock) does NOT deinit it - a track that's
-                // recording keeps recording and background location stays on.
-                ContentView(store: store)
-            } else {
-                PaywallView(
-                    store: store,
-                    trialDaysRemaining: trial.daysRemaining(now: now),
-                    onRestore: { Task { await store.restore() } }
-                )
-            }
+            // ContentView owns LocationService / TrackRecorder session
+            // state. Stays mounted underneath the lock so backgrounding
+            // (which arms the lock) does NOT deinit it - a track that's
+            // recording keeps recording and background location stays on.
+            ContentView(store: store)
 
             // The lock view and privacy cover live in their own window above
             // every sheet and alert (SecurityCoverWindows), anything drawn in
@@ -82,6 +91,7 @@ private struct RootGate: View {
         .task {
             await store.start()
         }
+        .onChange(of: isFullVersion) { publishAccess($0) }
         .onChange(of: cover) { applyCover($0) }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
@@ -101,6 +111,7 @@ private struct RootGate: View {
         }
         .onChange(of: opsec.keepScreenOn) { _ in applyKeepScreenOn() }
         .onAppear {
+            publishAccess(isFullVersion)
             applyKeepScreenOn()
             if locked && DataKey.isAuthBound { DataKey.lockKey() }
             applyCover(cover)
@@ -137,6 +148,12 @@ private struct RootGate: View {
 
     private func applyCover(_ cover: SecurityCover) {
         SecurityCoverWindows.shared.apply(cover) { locked = false }
+    }
+
+    /// one writer for the shared flag. only publishes on a real change so the
+    /// observers (ContentView, MapViewModel's basemap) dont churn
+    private func publishAccess(_ full: Bool) {
+        if FeatureAccess.shared.isFullVersion != full { FeatureAccess.shared.isFullVersion = full }
     }
 
     /// Keep Screen On only suppresses auto-lock while TacMap is frontmost;

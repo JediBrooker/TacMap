@@ -23,7 +23,7 @@ There is no TacMap store, no revenue share, no publisher account and no fee to y
 - **Offline, with no region limits.** The imported map works with no signal. Users can generate offline tiles from it once so a large sheet opens and zooms instantly.
 - **Their data leaves in open formats.** Waypoints, symbols and drawings export as GeoJSON, KML or KMZ, and recorded tracks as GPX, for QGIS, Google Earth and ATAK.
 - **Position readout in MGRS, UTM or latitude and longitude**, with a grid overlay, range rings, measurement in degrees or mils, and a red night mode.
-- **Three days free, then one unlock.** No subscription and no TacMap account. The App Store or Google Play shows the local price.
+- **Free to view, for good.** Opening your GeoPDF and seeing your position on it costs nothing, with no time limit and no TacMap account. The field tools (symbols, measuring, tracks, sharing) have a three-day trial and then one unlock, with no subscription. The App Store or Google Play shows the local price. This meets agency rules that forbid listing apps that require payment or a login to use the map.
 
 The step-by-step guide for iPhone is at [/guides/geopdf-on-iphone](/guides/geopdf-on-iphone). The steps on Android are the same apart from where the file lives; the grid and datum tools are covered in [/guides/mgrs-on-android](/guides/mgrs-on-android).
 
@@ -33,16 +33,16 @@ Copy as is, or edit to taste:
 
 ```
 Use this map offline on your phone: import the GeoPDF into TacMap (iOS and Android).
-Pay once, no account. Guide: https://tacmap.app/guides/geopdf-on-iphone
+Free to view, no account. Guide: https://tacmap.app/guides/geopdf-on-iphone
 ```
 
 One-line version:
 
 ```
-Works offline in TacMap (iOS and Android), pay once, no account: https://tacmap.app/guides/geopdf-on-iphone
+Works offline in TacMap (iOS and Android), free to view, no account: https://tacmap.app/guides/geopdf-on-iphone
 ```
 
-Link the guide rather than a store page so the user sees how to import before they buy the app.
+Link the guide rather than a store page so the user sees how to import before they install the app.
 
 ## Badge
 

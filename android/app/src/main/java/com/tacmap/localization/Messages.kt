@@ -338,6 +338,12 @@ object Messages {
         L10n.message("id.export_share_geojson", "Share GeoJSON file")
     fun exportShareGpx(): String =
         L10n.message("id.export_share_gpx", "Share GPX file")
+    fun featureExport(): String =
+        L10n.message("id.feature_export", "Exporting your data")
+    fun featureImportVector(): String =
+        L10n.message("id.feature_import_vector", "Importing GeoJSON and KML files")
+    fun featureTrackRecording(): String =
+        L10n.message("id.feature_track_recording", "Track recording")
     fun importCollisionSummary(summary: String, count: String): String =
         L10n.message("id.import_collision_summary", "%1\$s Conflicting object IDs reassigned: %2\$s.", summary, count)
     fun importCollisionSummaryMessage(summary: String, count: String): LocalizedMessage =
@@ -534,6 +540,12 @@ object Messages {
         L10n.message("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.")
     fun onlineBasemapsDisabledMessage(): LocalizedMessage =
         LocalizedMessage("id.online_basemaps_disabled", "Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy & OPSEC.", listOf())
+    fun paywallFullVersionIncludes(): String =
+        L10n.message("id.paywall_full_version_includes", "Symbology, drawings, measure, elevation and line of sight, weather, track recording, GPX/KML/GeoJSON import and export, TacMap Chat, Unit Sync and the Esri basemaps.")
+    fun paywallLockedFeatureDetail(feature: String): String =
+        L10n.message("id.paywall_locked_feature_detail", "%1\$s is included in the one-time unlock. Opening GeoPDF, PDF and MBTiles maps, OpenTopoMap and your live position stay free for good.", feature)
+    fun paywallLockedFeatureTitle(): String =
+        L10n.message("id.paywall_locked_feature_title", "Part of the full version")
     fun pdfBakeCaption(): String =
         L10n.message("id.pdf_bake_caption", "Pre-renders this map so it opens and zooms instantly. The PDF is kept.")
     fun pdfBakeChip(percent: String): String =
@@ -1061,9 +1073,9 @@ object Messages {
     fun tourWelcomeTitle(): String =
         L10n.message("id.tour_welcome_title", "Welcome to TacMap")
     fun trialExpiredDetails(value: String): String =
-        L10n.message("id.trial_expired_details", "Your %1\$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", value)
+        L10n.message("id.trial_expired_details", "Your %1\$s-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.", value)
     fun trialExpiredDetailsMessage(value: String): LocalizedMessage =
-        LocalizedMessage("id.trial_expired_details", "Your %1\$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export.", listOf(value))
+        LocalizedMessage("id.trial_expired_details", "Your %1\$s-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools.", listOf(value))
     fun trialRemainingDetails(value: String): String =
         L10n.message("id.trial_remaining_details", "You're on the free trial (%1\$s left). Unlock now for permanent access.", value)
     fun trialRemainingDetailsMessage(value: String): LocalizedMessage =
@@ -1934,6 +1946,14 @@ object Messages {
         L10n.message("id.ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693", "Your Google Play payment is pending. TacMap unlocks after Play confirms it.")
     fun billingYourGooglePlayPaymentIsPendingTacmapUnlocksAfterMessage(): LocalizedMessage =
         LocalizedMessage("id.ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693", "Your Google Play payment is pending. TacMap unlocks after Play confirms it.", listOf())
+    fun viewerBasemapNote(): String =
+        L10n.message("id.viewer_basemap_note", "Esri basemaps are part of the full version. OpenTopoMap is free.")
+    fun viewerLockedRowHint(title: String): String =
+        L10n.message("id.viewer_locked_row_hint", "%1\$s, part of the full version", title)
+    fun viewerMenuBannerDetail(): String =
+        L10n.message("id.viewer_menu_banner_detail", "Opening maps and seeing your position stay free. Unlock once for the tools.")
+    fun viewerMenuBannerTitle(): String =
+        L10n.message("id.viewer_menu_banner_title", "Free viewer")
     fun waypointsQuarantined(value: String): String =
         L10n.message("id.waypoints_quarantined", "Saved waypoints could not be read and were set aside (%1\$s). Starting with no waypoints.", value)
     fun waypointsQuarantinedMessage(value: String): LocalizedMessage =

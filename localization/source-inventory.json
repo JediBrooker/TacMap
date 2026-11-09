@@ -94,6 +94,13 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "ios/TacticalMaps/Billing/FeatureAccess.swift",
+    "platform": "ios",
+    "area": "purchases",
+    "reviewStatus": "reviewed-no-display-text",
+    "evidence": "Process-wide full-version flag plus the pure FeatureGate list and basemap substitution rule for the free viewer; every label it gates is drawn by the menu and paywall through the catalogue, nothing is rendered here."
+  },
+  {
     "path": "ios/TacticalMaps/Calibration/ActiveMapSelectionStore.swift",
     "platform": "ios",
     "area": "maps-calibration",
@@ -961,6 +968,13 @@
     "platform": "android",
     "area": "purchases",
     "reviewStatus": "manual-review-needed"
+  },
+  {
+    "path": "android/app/src/main/java/com/tacmap/billing/FeatureAccess.kt",
+    "platform": "android",
+    "area": "purchases",
+    "reviewStatus": "reviewed-no-display-text",
+    "evidence": "Process-wide full-version flag plus the pure FeatureGate list and basemap substitution rule for the free viewer; every label it gates is drawn by the menu and paywall through the catalogue, nothing is rendered here."
   },
   {
     "path": "android/app/src/main/java/com/tacmap/calibration/ActiveMapSelectionStore.kt",

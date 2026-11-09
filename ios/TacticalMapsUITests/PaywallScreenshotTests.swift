@@ -1,9 +1,10 @@
 import XCTest
 
 /// Captures a clean paywall screenshot for App Store Connect IAP review.
-/// Opens it via the menu's "Unlock Full Version" row (trial active) or
-/// directly if the trial has lapsed. Scheme's StoreKit config makes
-/// the real price render.
+/// 3.1: there is no launch gate anymore (a lapsed trial is the free viewer,
+/// the map stays up), so the sheet is always reached via the menu's
+/// "Unlock Full Version" row, trial active or not. Scheme's StoreKit config
+/// makes the real price render.
 final class PaywallScreenshotTests: XCTestCase {
     private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
@@ -17,14 +18,13 @@ final class PaywallScreenshotTests: XCTestCase {
         }
         sleep(4)
 
-        // Trial active -> reach the paywall via the menu's Unlock row.
-        // Trial lapsed -> the gate paywall is already on screen.
+        // The Unlock row sits under the trial banner (trial active) or the
+        // free viewer banner (trial lapsed). Either way the menu is up.
         let menu = app.buttons["Menu"]
-        if menu.waitForExistence(timeout: 8) {
-            menu.tap()
-            let unlock = app.buttons["Unlock Full Version"]
-            if unlock.waitForExistence(timeout: 5) { unlock.tap() }
-        }
+        XCTAssertTrue(menu.waitForExistence(timeout: 8), "the map and its menu are always up, there is no launch gate")
+        menu.tap()
+        let unlock = app.buttons["Unlock Full Version"]
+        if unlock.waitForExistence(timeout: 5) { unlock.tap() }
         sleep(4) // let the sheet present + StoreKit price load
 
         let shot = XCUIScreen.main.screenshot()

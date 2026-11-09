@@ -2,7 +2,7 @@
 
 [English](/) · [Hilfe und Kontakt](/de/support) · [Datenschutz](/de/privacy)
 
-TacMap verbindet Offline-Karten, GPS, MGRS, Wegpunkte und Zeichnungen auf iOS und Android. Importiere PDF-/GeoPDF- und MBTiles-Karten, organisiere Einsatzobjekte in Ebenen und exportiere offene Dateiformate. Einmalige Freischaltung nach einem dreitägigen Testzeitraum, kein Abo.
+TacMap verbindet Offline-Karten, GPS, MGRS, Wegpunkte und Zeichnungen auf iOS und Android. Importiere PDF-/GeoPDF- und MBTiles-Karten, organisiere Einsatzobjekte in Ebenen und exportiere offene Dateiformate. Karten öffnen und die eigene Position sehen ist kostenlos; die Werkzeuge werden nach einem dreitägigen Testzeitraum einmalig freigeschaltet, kein Abo.
 
 ## Deutsch oder Englisch
 

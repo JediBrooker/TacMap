@@ -160,6 +160,9 @@
     <string name="export_preview_truncated">"… (truncated, full file in Share)"</string>
     <string name="export_share_geojson">"Share GeoJSON file"</string>
     <string name="export_share_gpx">"Share GPX file"</string>
+    <string name="feature_export">"Exporting your data"</string>
+    <string name="feature_import_vector">"Importing GeoJSON and KML files"</string>
+    <string name="feature_track_recording">"Track recording"</string>
     <string name="import_collision_summary">"%1$s Conflicting object IDs reassigned: %2$s."</string>
     <string name="import_complete_summary">"Imported %1$s and %2$s."</string>
     <string name="import_failed">"Import failed: %1$s"</string>
@@ -244,6 +247,9 @@
     <string name="night_mode_turn_off">"Turn off night mode"</string>
     <string name="night_mode_turn_on">"Turn on night mode"</string>
     <string name="online_basemaps_disabled">"Online basemaps are off. Import an offline map pack, or enable online basemap tiles in Settings, Privacy &amp; OPSEC."</string>
+    <string name="paywall_full_version_includes">"Symbology, drawings, measure, elevation and line of sight, weather, track recording, GPX/KML/GeoJSON import and export, TacMap Chat, Unit Sync and the Esri basemaps."</string>
+    <string name="paywall_locked_feature_detail">"%1$s is included in the one-time unlock. Opening GeoPDF, PDF and MBTiles maps, OpenTopoMap and your live position stay free for good."</string>
+    <string name="paywall_locked_feature_title">"Part of the full version"</string>
     <string name="pdf_bake_caption">"Pre-renders this map so it opens and zooms instantly. The PDF is kept."</string>
     <string name="pdf_bake_chip">"Offline tiles %1$s%%"</string>
     <string name="pdf_bake_confirm_message">"“%1$s” stays on this device and remains the active map. This takes about %2$s."</string>
@@ -473,7 +479,7 @@
     <string name="tour_replay_help">"A short guided tour of the map and its buttons."</string>
     <string name="tour_welcome_body">"This quick tour shows where everything is. The crosshair in the middle marks your working point: drag the map to move it and pinch to zoom."</string>
     <string name="tour_welcome_title">"Welcome to TacMap"</string>
-    <string name="trial_expired_details">"Your %1$s-day free trial is over. Make a one-time purchase to keep using TacMap — live MGRS, GeoPDF maps, NATO APP-6 symbology and GeoJSON export."</string>
+    <string name="trial_expired_details">"Your %1$s-day free trial is over. Opening maps and seeing your position stay free for good; unlock once to keep the tools."</string>
     <string name="trial_remaining_details">"You\'re on the free trial (%1$s left). Unlock now for permanent access."</string>
     <string name="ui_1_2_3_pts_ab8f6c81">"%1$s • %2$s • %3$s pts"</string>
     <string name="ui_1_2_d576425a">"%1$s · %2$s"</string>
@@ -1473,6 +1479,10 @@
     <string name="ui_your_google_play_payment_is_pending_tacmap_unloc_f7750693">"Your Google Play payment is pending. TacMap unlocks after Play confirms it."</string>
     <string name="ui_your_identity_cf88fe86">"Your Identity"</string>
     <string name="ui_your_imported_map_is_retained_select_its_row_to__7c229d12">"Your imported map is retained. Select its row to return to it."</string>
+    <string name="viewer_basemap_note">"Esri basemaps are part of the full version. OpenTopoMap is free."</string>
+    <string name="viewer_locked_row_hint">"%1$s, part of the full version"</string>
+    <string name="viewer_menu_banner_detail">"Opening maps and seeing your position stay free. Unlock once for the tools."</string>
+    <string name="viewer_menu_banner_title">"Free viewer"</string>
     <string name="waypoints_quarantined">"Saved waypoints could not be read and were set aside (%1$s). Starting with no waypoints."</string>
     <string name="weather_fetch_failed">"Couldn\'t fetch conditions. If online lookups are off (Settings, Privacy &amp; OPSEC), enable them; otherwise check your connection."</string>
 </resources>

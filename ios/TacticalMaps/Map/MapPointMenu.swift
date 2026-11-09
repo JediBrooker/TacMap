@@ -72,6 +72,11 @@ struct MapPointMenuModifier: ViewModifier {
     let onPlaceSymbol: (CLLocationCoordinate2D) -> Void
     let onMeasure: (CLLocationCoordinate2D) -> Void
     let onCopied: (CoordinateDisplayFormat) -> Void
+    /// free viewer: place / measure / rings still show in the menu (so the
+    /// user learns they exist) but hand their title to onLocked instead of
+    /// running. sun & moon and copy stay free
+    var isFullVersion: Bool = true
+    var onLocked: (String) -> Void = { _ in }
 
     @State private var sunMoonPoint: MapPressPoint?
     @State private var ringCentre: Waypoint?
@@ -102,20 +107,26 @@ struct MapPointMenuModifier: ViewModifier {
             }
     }
 
+    /// runs `run` in the full version, otherwise the paywall with this title
+    private func gated(_ title: String, _ run: @escaping () -> Void) -> () -> Void {
+        isFullVersion ? run : { onLocked(title) }
+    }
+
     private func actions(for pressed: MapPressPoint) -> [MapPointMenuCard.Action] {
         var actions: [MapPointMenuCard.Action] = []
         if canEdit {
-            actions.append(.init(title: Messages.mapPointPlaceSymbol(), systemImage: "mappin.and.ellipse") {
-                onPlaceSymbol(pressed.coordinate)
-            })
+            let title = Messages.mapPointPlaceSymbol()
+            actions.append(.init(title: title, systemImage: "mappin.and.ellipse", locked: !isFullVersion,
+                                 run: gated(title) { onPlaceSymbol(pressed.coordinate) }))
         }
-        actions.append(.init(title: Messages.mapPointMeasure(), systemImage: "ruler") {
-            onMeasure(pressed.coordinate)
-        })
+        let measure = Messages.mapPointMeasure()
+        actions.append(.init(title: measure, systemImage: "ruler", locked: !isFullVersion,
+                             run: gated(measure) { onMeasure(pressed.coordinate) }))
         if canEdit {
-            actions.append(.init(title: Messages.mapPointRangeRings(), systemImage: "scope") {
-                ringCentre = centre(for: pressed)
-            })
+            // rings are a drawing, so they ride the drawings lock
+            let rings = Messages.mapPointRangeRings()
+            actions.append(.init(title: rings, systemImage: "scope", locked: !isFullVersion,
+                                 run: gated(rings) { ringCentre = centre(for: pressed) }))
         }
         actions.append(.init(title: Messages.mapPointSunMoon(), systemImage: "sunrise") {
             sunMoonPoint = pressed
@@ -146,6 +157,9 @@ private struct MapPointMenuCard: View {
     struct Action: Identifiable {
         let title: String
         let systemImage: String
+        /// viewer row, draws a padlock. the tap still runs `run` (which is
+        /// the paywall in that case)
+        var locked: Bool = false
         let run: () -> Void
         var id: String { title }
     }
@@ -184,11 +198,21 @@ private struct MapPointMenuCard: View {
                         dismiss()
                         action.run()
                     } label: {
-                        Label(action.title, systemImage: action.systemImage)
-                            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .contentShape(Rectangle())
+                        HStack {
+                            Label(action.title, systemImage: action.systemImage)
+                            if action.locked {
+                                Spacer()
+                                Image(systemName: "lock.fill")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .contentShape(Rectangle())
                     }
+                    .accessibilityLabel(action.locked ? Messages.viewerLockedRowHint(action.title) : action.title)
                 }
             }
             .background(Color(uiColor: .secondarySystemBackground),

@@ -34,7 +34,7 @@ In Chat, **Entire room** addresses every currently chat-ready unit; **Selected u
 
 ## Purchases and recovery
 
-TacMap has a three-day trial and a one-time permanent unlock, with no subscription. Use **Restore Purchases** in the purchase screen if entitlement is missing, with the same store account used to purchase. The store supplies local prices and payment options. A purchase in one store does not imply cross-platform entitlement.
+Opening GeoPDF, PDF and MBTiles maps, OpenTopoMap and your live position are free with no time limit. The tools (symbols, drawings, measuring, elevation, weather, tracks, GPX/KML/GeoJSON, TacMap Chat, Unit Sync and the Esri basemaps) are free for three days and then need a one-time permanent unlock, with no subscription. Use **Restore Purchases** in the purchase screen if entitlement is missing, with the same store account used to purchase. The store supplies local prices and payment options. A purchase in one store does not imply cross-platform entitlement.
 
 For storage failures, keep your data and source file, check free storage and follow the retry guidance. Partial-import errors identify what was already saved. Do not delete app data to fix a translation or entitlement problem; doing so can remove local mission data. Unlock the device or the relevant protection setting when mission data is locked.
 

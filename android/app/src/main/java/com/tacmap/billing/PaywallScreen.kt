@@ -44,14 +44,16 @@ private val HudGreen = Color(0xFF8CF28C)
 private val HudOrange = Color(0xFFF2A24A)
 
 /**
- * Full-screen paywall. Shows after trial lapses if user hasn't purchased.
- * Blocks the app until they buy or restore.
+ * Full-screen paywall, always on demand since 3.1. Opened from the menu's
+ * Unlock row, or by tapping a paid tool while in the free viewer (then
+ * [lockedFeature] names what they tapped and the copy says so).
  *
- * The same loading/error/retry contract is used for both hard and soft gates.
+ * The same loading/error/retry contract is used whatever opened it.
  * Product loading begins only while this screen is actually composed.
  *
- * @param trialDaysRemaining >0 = trial still running (soft prompt),
- *        0 = expired (hard gate).
+ * @param trialDaysRemaining >0 = trial still running, 0 = expired (free viewer).
+ * @param lockedFeature title of the paid feature that opened the paywall, null
+ *        when it came from the Unlock row.
  */
 @Composable
 fun PaywallScreen(
@@ -63,6 +65,7 @@ fun PaywallScreen(
     onRetry: () -> Unit,
     onRedeem: () -> Unit,
     onClose: (() -> Unit)? = null,
+    lockedFeature: String? = null,
 ) {
     val expired = trialDaysRemaining <= 0
     val busy = billingState.phase == BillingPhase.Restoring ||
@@ -89,7 +92,11 @@ fun PaywallScreen(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            if (expired) L10n.text("Your free trial has ended") else L10n.text("Unlock the full version"),
+            when {
+                lockedFeature != null -> Messages.paywallLockedFeatureTitle()
+                expired -> L10n.text("Your free trial has ended")
+                else -> L10n.text("Unlock the full version")
+            },
             color = Color.White,
             fontSize = 20.sp,
             fontWeight = FontWeight.SemiBold,
@@ -97,12 +104,21 @@ fun PaywallScreen(
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            if (expired)
-                Messages.trialExpiredDetails(DisplayFormat.number((TrialManager.TRIAL_DAYS).toDouble(), 0))
-            else
-                Messages.trialRemainingDetails(L10n.quantity("day", trialDaysRemaining)),
+            when {
+                lockedFeature != null -> Messages.paywallLockedFeatureDetail(lockedFeature)
+                expired -> Messages.trialExpiredDetails(DisplayFormat.number((TrialManager.TRIAL_DAYS).toDouble(), 0))
+                else -> Messages.trialRemainingDetails(L10n.quantity("day", trialDaysRemaining))
+            },
             color = Color(0xFFB8C4BC),
             fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(10.dp))
+        // what the one-time unlock actually buys, same list whichever way they got here
+        Text(
+            Messages.paywallFullVersionIncludes(),
+            color = Color(0xFF8A968E),
+            fontSize = 12.sp,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(28.dp))
