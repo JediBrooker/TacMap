@@ -18,7 +18,7 @@ final class PDFPickerSmokeTests: XCTestCase {
         menu.tap()
 
         tapButton(containing: "Import / Export", in: app)
-        tapButton(containing: "PDF Map", in: app)
+        tapButton(containing: "GeoPDF or PDF map", in: app)
 
         // The picker is drawn by a separate system process; on a busy CI
         // Simulator its sheet can stay blank for well over ten seconds.

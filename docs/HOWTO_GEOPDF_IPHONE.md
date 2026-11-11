@@ -30,8 +30,8 @@ TacMap does not register as a PDF handler, so "Open in TacMap" is not on the sha
 
 ## 3. Import it into TacMap
 
-1. Open the map menu and choose **Import / Export**.
-2. Under Import, choose **PDF Map** and pick the file in the Files picker.
+1. Open the map menu and choose **Add a map** (the first row).
+2. Pick the GeoPDF in the Files picker. The same row takes a plain PDF or an MBTiles pack.
 3. TacMap reads the page, finds the georeference and saves the map into its own private storage. The original stays where it was.
 
 If the PDF has several pages and none has a usable georeference, TacMap asks you to choose the page with the map. If it is password protected, remove the password and import again.

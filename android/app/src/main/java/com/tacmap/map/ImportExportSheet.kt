@@ -92,7 +92,7 @@ fun ImportExportSheet(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
             )
             SectionLabel(L10n.text("IMPORT"))
-            SheetRow(Icons.Default.PictureAsPdf, L10n.text("PDF Map"), onImportPdf, enabled = importsEnabled)
+            SheetRow(Icons.Default.PictureAsPdf, Messages.importGeopdfRow(), onImportPdf, enabled = importsEnabled)
             SheetRow(Icons.Default.Map, L10n.text("Offline Tiles"), onImportTiles, enabled = importsEnabled)
             val locked = !isFullVersion
             SheetRow(Icons.Default.FileDownload, "GeoJSON", onImportGeoJson, locked = locked)

@@ -72,30 +72,6 @@
     "reason": "PIN is the same established abbreviation in English and German; review before enabling another language."
   },
   {
-    "id": "72fdfcb83b5ea53b",
-    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
-    "sink": "property.label",
-    "literal": "\"MGRS\"",
-    "occurrences": 1,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
-    "id": "b985fc5e7eb15f7b",
-    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
-    "sink": "property.label",
-    "literal": "\"WGS84\"",
-    "occurrences": 1,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
-    "id": "1ec727704c9812b2",
-    "path": "ios/TacticalMaps/App/OpsecSettings.swift",
-    "sink": "property.label",
-    "literal": "\"UTM\"",
-    "occurrences": 1,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
     "id": "7b5ee85e6f9e2606",
     "path": "ios/TacticalMaps/App/TacticalMapsApp.swift",
     "sink": "alert",
@@ -325,30 +301,6 @@
     "sink": "SearchResult.title",
     "literal": "\"MGRS\"",
     "occurrences": 2,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
-    "id": "92d623d99261fd1b",
-    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
-    "sink": "enum.CoordinateDisplayType",
-    "literal": "\"MGRS\"",
-    "occurrences": 1,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
-    "id": "d1860edcb4cb03fe",
-    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
-    "sink": "enum.CoordinateDisplayType",
-    "literal": "\"WGS84\"",
-    "occurrences": 1,
-    "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
-  },
-  {
-    "id": "e3f8fac67131b95e",
-    "path": "android/app/src/main/java/com/tacmap/settings/OpsecSettings.kt",
-    "sink": "enum.CoordinateDisplayType",
-    "literal": "\"UTM\"",
-    "occurrences": 1,
     "reason": "Standard coordinate/datum/file-format identifier, not translatable prose."
   },
   {

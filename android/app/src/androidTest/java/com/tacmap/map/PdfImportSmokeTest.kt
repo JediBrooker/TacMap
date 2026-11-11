@@ -152,7 +152,7 @@ class PdfImportSmokeTest {
         try {
             waitFor(device, By.desc("Menu")).click()
             waitFor(device, By.text("Import / Export")).click()
-            waitFor(device, By.text("PDF Map")).click()
+            waitFor(device, By.text("GeoPDF or PDF map")).click()
 
             assertTrue(
                 "The Android document picker did not open",

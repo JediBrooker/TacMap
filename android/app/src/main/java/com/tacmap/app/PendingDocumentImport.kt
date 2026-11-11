@@ -11,6 +11,14 @@ internal enum class DocumentImportKind(val savedValue: String, val mimeTypes: Ar
         "application/vnd.google-earth.kml+xml",
         "application/vnd.google-earth.kmz",
         "*/*",
+    )),
+    /** the "Add a map" pick: PDF or MBTiles, MapFileSniffer sorts out which once the bytes are in hand */
+    MAP("map", arrayOf(
+        "application/pdf",
+        "application/octet-stream",
+        "application/x-sqlite3",
+        "application/vnd.sqlite3",
+        "*/*",
     ));
 
     companion object {

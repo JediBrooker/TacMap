@@ -46,6 +46,10 @@ object Messages {
         L10n.message("id.about_notices_button", "Licence texts")
     fun aboutNoticesTitle(): String =
         L10n.message("id.about_notices_title", "Third-party notices")
+    fun aboutNswDetail(): String =
+        L10n.message("id.about_nsw_detail", "© State of New South Wales (DCS Spatial Services). Sheets are imported by you and shown as published.")
+    fun aboutNswTitle(): String =
+        L10n.message("id.about_nsw_title", "NSW topographic maps (Spatial Collaboration Portal)")
     fun aboutOpenMeteoDetail(): String =
         L10n.message("id.about_open_meteo_detail", "Copernicus DEM (≈90m). Free for non-commercial & commercial use under CC BY 4.0.")
     fun aboutOpenMeteoTitle(): String =
@@ -64,6 +68,8 @@ object Messages {
         L10n.message("id.about_simplestyle_detail", "GeoJSON styling keys (stroke, fill, marker-color, marker-symbol).")
     fun aboutStandards(): String =
         L10n.message("id.about_standards", "Standards & specifications")
+    fun addMapUnsupported(): String =
+        L10n.message("id.add_map_unsupported", "That file is not a PDF or MBTiles map.")
     fun appLockBiometricTitle(): String =
         L10n.message("id.app_lock_biometric_title", "Unlock TacMap")
     fun appLockDataDamaged(): String =
@@ -294,6 +300,20 @@ object Messages {
         LocalizedMessage("id.chat_replay_table_full", "A message from a new unit session was blocked because this room's chat replay protection is full. Create a new join code to keep chatting with new sessions.", listOf())
     fun acknowledge(): String =
         L10n.message("id.common_ok", "OK")
+    fun coordChipHint(format: String): String =
+        L10n.message("id.coord_chip_hint", "Coordinate format, %1\$s. Tap to change.", format)
+    fun coordChipLatlon(): String =
+        L10n.message("id.coord_chip_latlon", "LAT/LON")
+    fun coordChipMgrs(): String =
+        L10n.message("id.coord_chip_mgrs", "MGRS")
+    fun coordChipUtm(): String =
+        L10n.message("id.coord_chip_utm", "UTM")
+    fun coordFormatLatlon(): String =
+        L10n.message("id.coord_format_latlon", "Latitude / Longitude")
+    fun coordFormatMgrs(): String =
+        L10n.message("id.coord_format_mgrs", "MGRS / USNG")
+    fun coordFormatUtm(): String =
+        L10n.message("id.coord_format_utm", "UTM")
     fun drawingsDeleteBody(name: String, points: String): String =
         L10n.message("id.drawings_delete_body", "This will permanently remove “%1\$s” — %2\$s.", name, points)
     fun drawingsDeleteTitle(): String =
@@ -360,6 +380,8 @@ object Messages {
         L10n.message("id.import_feature_summary", "Imported %1\$s waypoint(s) and %2\$s drawing(s)%3\$s", waypoints, drawings, skipped)
     fun importFeatureSummaryMessage(waypoints: String, drawings: String, skipped: String): LocalizedMessage =
         LocalizedMessage("id.import_feature_summary", "Imported %1\$s waypoint(s) and %2\$s drawing(s)%3\$s", listOf(waypoints, drawings, skipped))
+    fun importGeopdfRow(): String =
+        L10n.message("id.import_geopdf_row", "GeoPDF or PDF map")
     fun importInvalidSummary(summary: String, count: String): String =
         L10n.message("id.import_invalid_summary", "%1\$s Invalid features skipped: %2\$s.", summary, count)
     fun importInvalidSummaryMessage(summary: String, count: String): LocalizedMessage =
@@ -526,6 +548,8 @@ object Messages {
         L10n.message("id.map_state_unavailable", "File missing or changed – delete it and import again")
     fun mapUseEmbeddedConfirm(): String =
         L10n.message("id.map_use_embedded_confirm", "Remove your calibration and use the georeferencing stored in the PDF?")
+    fun menuAddMap(): String =
+        L10n.message("id.menu_add_map", "Add a map")
     fun nightModeBrightness(): String =
         L10n.message("id.night_mode_brightness", "Night mode brightness")
     fun nightModeHelp(): String =

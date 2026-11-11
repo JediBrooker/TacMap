@@ -13,6 +13,7 @@ struct HamburgerMenu: View {
     let isFullVersion: Bool
     let trialDaysRemaining: Int
     let onUnlock:        () -> Void
+    let onAddMap:        () -> Void
     let onSearch:        () -> Void
     let onWaypoints:     () -> Void
     let onDrawings:      () -> Void
@@ -74,6 +75,13 @@ struct HamburgerMenu: View {
                             row(L10n.text("Unlock Full Version"), systemImage: "cart") { close(onUnlock) }
                             divider
                         }
+                        // first row on purpose: newcomers open the menu looking
+                        // for "how do i get my map in", not for Import / Export
+                        row(Messages.menuAddMap() + "…", systemImage: "plus.rectangle.on.folder") { close(onAddMap) }
+                            .disabled(!importsEnabled)
+                            .opacity(importsEnabled ? 1 : 0.4)
+                            .accessibilityIdentifier("menu.addMap")
+                        divider
                         row(L10n.text("Search…"),         systemImage: "magnifyingglass")     { close(onSearch) }
                         divider
                         row(L10n.text("Symbology"),       systemImage: "mappin.and.ellipse", locked: locked)  { close(onWaypoints) }
@@ -229,7 +237,7 @@ struct HamburgerMenu: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 sectionHeader(L10n.text("Import"))
-                row(L10n.text("PDF Map…"), systemImage: "doc.badge.plus")               { close(onImport) }
+                row(Messages.importGeopdfRow() + "…", systemImage: "doc.badge.plus")       { close(onImport) }
                     .disabled(!importsEnabled)
                     .opacity(importsEnabled ? 1 : 0.4)
                 row(L10n.text("Offline Tiles…"), systemImage: "square.stack.3d.up.fill") { close(onImportTiles) }
@@ -542,8 +550,19 @@ struct QuickAddSymbolButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
+            // pin + small plus badge. a bare "+" read as "add a map" to first
+            // time users, the pin says what actually gets added
+            Image(systemName: "mappin")
                 .font(.system(size: 19, weight: .bold))
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.black)
+                        // 1.5pt ring in the button colour so the badge separates
+                        // from the pin instead of merging into one blob
+                        .background(Circle().fill(Color.orange.opacity(0.90)).padding(-1.5))
+                        .offset(x: 7, y: -4)
+                }
                 .frame(width: 44, height: 44)
                 .background(Color.orange.opacity(0.90), in: Circle())
                 .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))

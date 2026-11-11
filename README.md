@@ -255,6 +255,12 @@ version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
 
+### 3.1.2 (build 83), November 2026
+- Add a map is the first row of the menu and accepts GeoPDF, PDF or MBTiles in one picker; the Import / Export row for sheets now says GeoPDF or PDF map.
+- A tappable format chip in the map header switches MGRS / USNG, latitude / longitude and UTM; the setting says Latitude / Longitude instead of WGS84.
+- The quick add-symbol button is a map pin with a plus, so it no longer reads as add map.
+- About & Credits carries the NSW Spatial Services attribution for the NSW topographic series.
+
 ### 3.1.1 (build 82, Android only), November 2026
 - Fixes the launch crash in Android 3.1.0: R8's optimised MapScreen was rejected by ART's verifier on every device. MapScreen now reads the full-version flag through a State holder. iOS is unaffected.
 

@@ -23,6 +23,8 @@
     <string name="about_map_data">"Kartendaten"</string>
     <string name="about_notices_button">"Lizenztexte"</string>
     <string name="about_notices_title">"Hinweise zu Drittanbietern"</string>
+    <string name="about_nsw_detail">"© State of New South Wales (DCS Spatial Services). Kartenblätter importierst du selbst, sie werden wie veröffentlicht angezeigt."</string>
+    <string name="about_nsw_title">"Topografische Karten NSW (Spatial Collaboration Portal)"</string>
     <string name="about_open_meteo_detail">"Copernicus DEM (≈90 m). Für nicht kommerzielle und kommerzielle Nutzung unter CC BY 4.0 frei verfügbar."</string>
     <string name="about_open_meteo_title">"Open-Meteo-Höhen-API"</string>
     <string name="about_open_source">"Open-Source-Bibliotheken"</string>
@@ -32,6 +34,7 @@
     <string name="about_privacy_note">"TacMap verwendet keine Analyse- oder ferngesendeten Absturzdaten. Optionale Online-Grundkarten und Abfragen sind nach einer Neuinstallation deaktiviert. Wenn du sie aktivierst, erhält der Anbieter deine IP-Adresse sowie den angeforderten Kartenausschnitt, Suchbegriff oder die abgefragte Koordinate. Unit-Sync-Inhalte sind Ende-zu-Ende-verschlüsselt; das Relay sieht weiterhin Weiterleitungs- und Verkehrsmetadaten."</string>
     <string name="about_simplestyle_detail">"GeoJSON-Stilattribute (stroke, fill, marker-color, marker-symbol)."</string>
     <string name="about_standards">"Standards und Spezifikationen"</string>
+    <string name="add_map_unsupported">"Diese Datei ist keine PDF- oder MBTiles-Karte."</string>
     <string name="app_lock_biometric_title">"TacMap entsperren"</string>
     <string name="app_lock_data_damaged">"Daten der App-Sperre sind beschädigt und nicht überprüfbar. Lösche zur Wiederherstellung TacMaps App-Daten in den Android-Einstellungen."</string>
     <string name="app_lock_update_failed">"Der Speicher der App-Sperre konnte nicht aktualisiert werden. Die Sperre bleibt aktiv. Gib deine bisherige PIN ein."</string>
@@ -139,6 +142,13 @@
     <string name="chat_recipient_in_background">"TacMap dieser Einheit läuft im Hintergrund und kann erst wieder Chatnachrichten empfangen, wenn die App geöffnet wird."</string>
     <string name="chat_replay_table_full">"Eine Nachricht aus einer neuen Sitzung einer Einheit wurde blockiert, weil der Wiedergabeschutz des Chats in diesem Raum voll ist. Erstelle einen neuen Beitrittscode, um weiter mit neuen Sitzungen zu chatten."</string>
     <string name="common_ok">"OK"</string>
+    <string name="coord_chip_hint">"Koordinatenformat, %1$s. Tippen zum Wechseln."</string>
+    <string name="coord_chip_latlon">"LAT/LON"</string>
+    <string name="coord_chip_mgrs">"MGRS"</string>
+    <string name="coord_chip_utm">"UTM"</string>
+    <string name="coord_format_latlon">"Breite / Länge"</string>
+    <string name="coord_format_mgrs">"MGRS / USNG"</string>
+    <string name="coord_format_utm">"UTM"</string>
     <string name="drawings_delete_body">"„%1$s“ wird dauerhaft entfernt – %2$s."</string>
     <string name="drawings_delete_title">"Zeichnung löschen?"</string>
     <string name="drawings_discard_body">"Die gesetzten Punkte (%1$s) werden verworfen."</string>
@@ -167,6 +177,7 @@
     <string name="import_complete_summary">"%1$s und %2$s importiert."</string>
     <string name="import_failed">"Import fehlgeschlagen: %1$s"</string>
     <string name="import_feature_summary">"Importierte Wegpunkte: %1$s, Zeichnungen: %2$s%3$s"</string>
+    <string name="import_geopdf_row">"GeoPDF- oder PDF-Karte"</string>
     <string name="import_invalid_summary">"%1$s Ungültige Objekte übersprungen: %2$s."</string>
     <string name="imported_map_hidden_notice">"Importierte Karte ausgeblendet"</string>
     <string name="imported_map_show_toggle">"Importierte Karte anzeigen"</string>
@@ -241,6 +252,7 @@
     <string name="map_state_rejected">"Georeferenzierung nicht lesbar – zum Kalibrieren tippen"</string>
     <string name="map_state_unavailable">"Datei fehlt oder wurde geändert – lösche sie und importiere sie erneut"</string>
     <string name="map_use_embedded_confirm">"Deine Kalibrierung entfernen und die im PDF gespeicherte Georeferenzierung verwenden?"</string>
+    <string name="menu_add_map">"Karte hinzufügen"</string>
     <string name="night_mode_brightness">"Helligkeit im Nachtmodus"</string>
     <string name="night_mode_help">"Färbt den ganzen Bildschirm einschließlich Menüs und Dialogen rot und dunkelt ihn ab, um die Nachtsicht zu schützen. Die Statusleiste ist dabei ausgeblendet. Du schaltest ihn über die Mondtaste auf der Karte um."</string>
     <string name="night_mode_title">"Nachtmodus"</string>

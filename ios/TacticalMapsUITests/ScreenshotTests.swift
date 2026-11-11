@@ -540,7 +540,7 @@ final class ScreenshotTests: XCTestCase {
         openMenu()
         guard requireTapContaining("Import / Export") else { return }
         sleep(2)
-        guard requireTapContaining("PDF Map") else { return }
+        guard requireTapContaining("GeoPDF or PDF map") else { return }
         sleep(3)
 
         let file = descendant(containing: "USGS_SF_North")

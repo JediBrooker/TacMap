@@ -12,7 +12,7 @@ Online basemaps, elevation and weather are off on a fresh install. Every grid to
 
 ## Read your position
 
-The large readout at the top of the map is your current position in MGRS by default. Tap it to copy the coordinate. To change the format, open the map menu, choose **Settings, Privacy & OPSEC** and set **Coordinate display** to **MGRS**, **UTM** or **WGS84** (latitude and longitude). The choice survives relaunch.
+The large readout at the top of the map is your current position in MGRS by default. Tap it to copy the coordinate. To change the format, tap the small **MGRS** chip under the readout: it cycles through **MGRS / USNG**, **Latitude / Longitude** and **UTM**. The same choice is in **Settings, Privacy & OPSEC** under **Coordinate display**, and it survives relaunch.
 
 Hold a finger still anywhere on the map for a second to get a menu for that spot, including **Copy Coordinates** for the grid reference under the crosshair.
 

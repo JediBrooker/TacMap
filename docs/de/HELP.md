@@ -10,7 +10,7 @@ Der Sprachwechsel betrifft die App-Texte. Systemdialoge, Dateiauswahl, Tastatur 
 
 ## Ohne Internet starten
 
-Online-Grundkarten und Online-Abfragen sind bei einer Neuinstallation ausgeschaltet. Importiere über **Importieren / Exportieren** eine PDF-/GeoPDF-Karte oder MBTiles-Kacheln. Eine PDF ohne Georeferenzierung muss mit bekannten Passpunkten kalibriert werden. Prüfe anschließend die Ausrichtung und die angezeigte Abweichung. Über **Ebenen und Beschriftungen** wählst du die Karte und sichtbaren Überlagerungen.
+Online-Grundkarten und Online-Abfragen sind bei einer Neuinstallation ausgeschaltet. Importiere über **Karte hinzufügen**, die erste Zeile im Menü, eine GeoPDF-, PDF- oder MBTiles-Karte. Eine PDF ohne Georeferenzierung muss mit bekannten Passpunkten kalibriert werden. Prüfe anschließend die Ausrichtung und die angezeigte Abweichung. Über **Ebenen und Beschriftungen** wählst du die Karte und sichtbaren Überlagerungen.
 
 Koordinaten und eigene Einsatzobjekte kannst du lokal suchen. Ortssuche, Wetter, Geländehöhen und Online-Karten benötigen die jeweils passenden Online-Schalter und eine Verbindung.
 

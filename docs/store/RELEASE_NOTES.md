@@ -9,6 +9,54 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.1.2 (build 83)
+
+Text on `feature/3-1-2-plain-language` (`docs/store/localizations/*.json`), submitted 11 November 2026. Plain-language changes from Minnesota DNR's first look: Add a map as the first menu row, a coordinate format chip, GeoPDF wording, a pin-shaped add-symbol button, and the NSW Spatial Services attribution.
+
+### 3.1.2: App Store, English (615 / 4,000)
+
+```
+TacMap 3.1.2
+
+• Add a map is now the first row of the menu and takes a GeoPDF, PDF or MBTiles file in one step.
+• Tap the new format chip under the coordinate readout to switch between MGRS / USNG, latitude / longitude and UTM. The setting now says Latitude / Longitude instead of WGS84.
+• The import row says GeoPDF or PDF map, and the add-symbol button looks like a map pin, not a plus.
+• About & Credits names the NSW topographic series with its Spatial Services attribution.
+• From 3.1: opening maps and seeing your position is free with no time limit; the tools are a one-time unlock after the three-day trial.
+```
+
+### 3.1.2: Google Play, English (401 / 500)
+
+```
+TacMap 3.1.2
+• Add a map is now the first row of the menu and takes a GeoPDF, PDF or MBTiles file in one step.
+• Tap the new format chip under the coordinate readout to switch between MGRS / USNG, latitude / longitude and UTM.
+• The import row says GeoPDF or PDF map; the add-symbol button looks like a map pin.
+• About & Credits names the NSW topographic series with its Spatial Services attribution.
+```
+
+### 3.1.2: App Store, German (707 / 4,000)
+
+```
+TacMap 3.1.2
+
+• „Karte hinzufügen“ ist jetzt die erste Zeile im Menü und nimmt GeoPDF-, PDF- oder MBTiles-Dateien in einem Schritt entgegen.
+• Tippe auf den neuen Formatchip unter der Koordinatenanzeige, um zwischen MGRS / USNG, Breite / Länge und UTM zu wechseln. Die Einstellung heißt jetzt Breite / Länge statt WGS84.
+• Die Importzeile heißt „GeoPDF- oder PDF-Karte“, und die Symbol-hinzufügen-Taste sieht wie eine Kartennadel aus, nicht wie ein Plus.
+• „Über TacMap“ nennt die topografische Kartenserie von NSW mit dem Hinweis von Spatial Services.
+• Seit 3.1: Karten öffnen und deine Position sehen ist ohne Zeitlimit kostenlos; die Werkzeuge sind nach dem dreitägigen Testzeitraum ein einmaliger Kauf.
+```
+
+### 3.1.2: Google Play, German (442 / 500)
+
+```
+TacMap 3.1.2
+• „Karte hinzufügen“ ist jetzt die erste Zeile im Menü und nimmt GeoPDF-, PDF- oder MBTiles-Dateien in einem Schritt entgegen.
+• Tippe auf den neuen Formatchip unter der Koordinatenanzeige, um zwischen MGRS / USNG, Breite / Länge und UTM zu wechseln.
+• Die Importzeile heißt „GeoPDF- oder PDF-Karte“; die Symbol-Taste sieht wie eine Kartennadel aus.
+• „Über TacMap“ nennt die NSW-Kartenserie mit dem Hinweis von Spatial Services.
+```
+
 ## 3.1.1 (build 82, Android only)
 
 Text on `fix/android-3-1-1-launch-crash` (`docs/store/localizations/*.json`), published 10 November 2026. Hotfix for 3.1.0 (81), which crashed at launch on every Android device: R8's optimised `MapScreen` was rejected by ART's bytecode verifier (`VerifyError: type Float unexpected as arg to if-eqz`). iOS 3.1.0 (81) is unaffected and stays in review; its App Store text is unchanged.

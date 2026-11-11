@@ -20507,5 +20507,154 @@
     "legacy": false,
     "accessor": "featureExport",
     "parameters": []
+  },
+  "menu_add_map": {
+    "en": "Add a map",
+    "de": "Karte hinzufügen",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "First row of the map menu; opens the file picker for a GeoPDF, PDF or MBTiles map. iOS appends an ellipsis in code.",
+    "legacy": false,
+    "accessor": "menuAddMap",
+    "parameters": []
+  },
+  "import_geopdf_row": {
+    "en": "GeoPDF or PDF map",
+    "de": "GeoPDF- oder PDF-Karte",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Import row for a georeferenced or plain PDF map sheet, under Import in the Import / Export page. iOS appends an ellipsis in code.",
+    "legacy": false,
+    "accessor": "importGeopdfRow",
+    "parameters": []
+  },
+  "add_map_unsupported": {
+    "en": "That file is not a PDF or MBTiles map.",
+    "de": "Diese Datei ist keine PDF- oder MBTiles-Karte.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Toast or alert when the Add a map picker returns a file that is neither a PDF nor an MBTiles pack.",
+    "legacy": false,
+    "accessor": "addMapUnsupported",
+    "parameters": []
+  },
+  "coord_format_mgrs": {
+    "en": "MGRS / USNG",
+    "de": "MGRS / USNG",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Coordinate display option in Settings. USNG is the US name for the same grid; keep both.",
+    "legacy": false,
+    "accessor": "coordFormatMgrs",
+    "parameters": []
+  },
+  "coord_format_latlon": {
+    "en": "Latitude / Longitude",
+    "de": "Breite / Länge",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Coordinate display option in Settings for WGS84 decimal degrees.",
+    "legacy": false,
+    "accessor": "coordFormatLatlon",
+    "parameters": []
+  },
+  "coord_format_utm": {
+    "en": "UTM",
+    "de": "UTM",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Coordinate display option in Settings.",
+    "legacy": false,
+    "accessor": "coordFormatUtm",
+    "parameters": []
+  },
+  "coord_chip_mgrs": {
+    "en": "MGRS",
+    "de": "MGRS",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Short label on the tappable coordinate format chip in the map header.",
+    "legacy": false,
+    "accessor": "coordChipMgrs",
+    "parameters": []
+  },
+  "coord_chip_latlon": {
+    "en": "LAT/LON",
+    "de": "LAT/LON",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Short label on the tappable coordinate format chip in the map header. Keep it very short.",
+    "legacy": false,
+    "accessor": "coordChipLatlon",
+    "parameters": []
+  },
+  "coord_chip_utm": {
+    "en": "UTM",
+    "de": "UTM",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Short label on the tappable coordinate format chip in the map header.",
+    "legacy": false,
+    "accessor": "coordChipUtm",
+    "parameters": []
+  },
+  "coord_chip_hint": {
+    "en": "Coordinate format, {1}. Tap to change.",
+    "de": "Koordinatenformat, {1}. Tippen zum Wechseln.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "Accessibility label of the coordinate format chip in the map header; {1} is the current short label.",
+    "legacy": false,
+    "accessor": "coordChipHint",
+    "parameters": [
+      {
+        "name": "format",
+        "type": "string"
+      }
+    ]
+  },
+  "about_nsw_title": {
+    "en": "NSW topographic maps (Spatial Collaboration Portal)",
+    "de": "Topografische Karten NSW (Spatial Collaboration Portal)",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "About & Credits, map data section: the New South Wales topographic series users import themselves.",
+    "legacy": false,
+    "accessor": "aboutNswTitle",
+    "parameters": []
+  },
+  "about_nsw_detail": {
+    "en": "© State of New South Wales (DCS Spatial Services). Sheets are imported by you and shown as published.",
+    "de": "© State of New South Wales (DCS Spatial Services). Kartenblätter importierst du selbst, sie werden wie veröffentlicht angezeigt.",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "context": "About & Credits, map data section detail. The copyright line is the wording Spatial Services asked for; keep it verbatim.",
+    "legacy": false,
+    "accessor": "aboutNswDetail",
+    "parameters": []
   }
 }

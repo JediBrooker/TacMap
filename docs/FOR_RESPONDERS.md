@@ -18,7 +18,7 @@ We do not keep your screenshot. Once the code is sent, the attachment is deleted
 
 ## Why a SAR unit would use it
 
-- **Your own topo sheets, offline.** Import the GeoPDF sheets your agency already issues (NSW Spatial Services, QTopo, Geoscience Australia, LINZ, USGS, OS and others) and they are placed in their own projection and datum, so the on-screen MGRS grid sits on the printed grid. No signal needed in the field. See the [GeoPDF guide](/guides/geopdf-on-iphone).
+- **Your own topo sheets, offline.** Import the GeoPDF sheets your agency already issues (NSW Spatial Services, QTopo, Geoscience Australia, LINZ, USGS, OS and others) and they are placed in their own projection and datum, so the on-screen MGRS grid sits on the printed grid. No signal needed in the field. See the [GeoPDF guide](/guides/geopdf-on-iphone). NSW sheets are shown as published: © State of New South Wales (DCS Spatial Services).
 - **Grid references the way you call them.** Position readout and entry in MGRS, UTM or latitude and longitude, with a grid overlay, range rings and bearings in degrees or mils. See [MGRS on Android](/guides/mgrs-on-android).
 - **Search assignments as data.** Draw segments and lines, drop waypoints and symbols, record tracks, and hand them to the incident management team as GeoJSON, KML or KMZ, or tracks as GPX. They open in QGIS, Google Earth, CalTopo and ATAK.
 - **Share with your team without an account.** Unit Sync joins devices with a code you share yourself. Positions and markup are encrypted on the device before they leave it; the relay only ever sees ciphertext. The [threat model](/threat-model) says exactly what it can and cannot see.

@@ -10,9 +10,9 @@ Everything here applies to Android and iPhone.
 
 TacMap does not download map regions. You bring the map you want:
 
-- **A GeoPDF** of the area. Government topo sheets are the usual source: USGS US Topo quads in the United States, state and national mapping agencies elsewhere. Import it with **Import / Export**, then **PDF Map**. The sheet is placed in its own projection and datum, so the MGRS grid lines up with the printed one.
+- **A GeoPDF** of the area. Government topo sheets are the usual source: USGS US Topo quads in the United States, state and national mapping agencies elsewhere. Import it with **Add a map**, the first row of the menu. The sheet is placed in its own projection and datum, so the MGRS grid lines up with the printed one.
 - **A plain PDF or a scan of a paper map**, saved as PDF. Calibrate it from three or more grid references with **Calibrate / refine…** and TacMap tells you how good the fit is. A phone photo has to be saved as a PDF first; there is no image import.
-- **An MBTiles pack** you built from aerial imagery or your own GIS data. Import it with **Import / Export**, then **Offline Tiles**.
+- **An MBTiles pack** you built from aerial imagery or your own GIS data. Import it with **Add a map** as well; TacMap tells a PDF from an MBTiles pack by its contents.
 
 The step-by-step is in [How to load a GeoPDF on iPhone](/guides/geopdf-on-iphone); the Android steps are the same.
 
