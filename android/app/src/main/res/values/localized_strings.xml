@@ -23,6 +23,8 @@
     <string name="about_map_data">"Map data"</string>
     <string name="about_notices_button">"Licence texts"</string>
     <string name="about_notices_title">"Third-party notices"</string>
+    <string name="about_nsw_detail">"© State of New South Wales (DCS Spatial Services). Sheets are imported by you and shown as published."</string>
+    <string name="about_nsw_title">"NSW topographic maps (Spatial Collaboration Portal)"</string>
     <string name="about_open_meteo_detail">"Copernicus DEM (≈90m). Free for non-commercial &amp; commercial use under CC BY 4.0."</string>
     <string name="about_open_meteo_title">"Open-Meteo Elevation API"</string>
     <string name="about_open_source">"Open source libraries"</string>
@@ -32,6 +34,7 @@
     <string name="about_privacy_note">"TacMap adds no analytics or remote crash telemetry. Optional online basemaps and lookups are off on a fresh install; if you enable them, the provider receives your IP plus the requested tile area, place query, or lookup coordinate. Unit Sync payload content is end-to-end encrypted, while its relay still sees routing and traffic metadata."</string>
     <string name="about_simplestyle_detail">"GeoJSON styling keys (stroke, fill, marker-color, marker-symbol)."</string>
     <string name="about_standards">"Standards &amp; specifications"</string>
+    <string name="add_map_unsupported">"That file is not a PDF or MBTiles map."</string>
     <string name="app_lock_biometric_title">"Unlock TacMap"</string>
     <string name="app_lock_data_damaged">"App Lock data is damaged and cannot be verified. Clear TacMap\'s app data in Android Settings to recover."</string>
     <string name="app_lock_update_failed">"App Lock storage could not be updated. The lock remains armed; enter your existing PIN."</string>
@@ -139,6 +142,13 @@
     <string name="chat_recipient_in_background">"That unit\'s TacMap is in the background and can\'t receive chat until it is opened again."</string>
     <string name="chat_replay_table_full">"A message from a new unit session was blocked because this room\'s chat replay protection is full. Create a new join code to keep chatting with new sessions."</string>
     <string name="common_ok">"OK"</string>
+    <string name="coord_chip_hint">"Coordinate format, %1$s. Tap to change."</string>
+    <string name="coord_chip_latlon">"LAT/LON"</string>
+    <string name="coord_chip_mgrs">"MGRS"</string>
+    <string name="coord_chip_utm">"UTM"</string>
+    <string name="coord_format_latlon">"Latitude / Longitude"</string>
+    <string name="coord_format_mgrs">"MGRS / USNG"</string>
+    <string name="coord_format_utm">"UTM"</string>
     <string name="drawings_delete_body">"This will permanently remove “%1$s” — %2$s."</string>
     <string name="drawings_delete_title">"Delete drawing?"</string>
     <string name="drawings_discard_body">"This will discard the %1$s point(s) you\'ve placed."</string>
@@ -167,6 +177,7 @@
     <string name="import_complete_summary">"Imported %1$s and %2$s."</string>
     <string name="import_failed">"Import failed: %1$s"</string>
     <string name="import_feature_summary">"Imported %1$s waypoint(s) and %2$s drawing(s)%3$s"</string>
+    <string name="import_geopdf_row">"GeoPDF or PDF map"</string>
     <string name="import_invalid_summary">"%1$s Invalid features skipped: %2$s."</string>
     <string name="imported_map_hidden_notice">"Imported map hidden"</string>
     <string name="imported_map_show_toggle">"Show Imported Map"</string>
@@ -241,6 +252,7 @@
     <string name="map_state_rejected">"Georeferencing unreadable – tap to calibrate"</string>
     <string name="map_state_unavailable">"File missing or changed – delete it and import again"</string>
     <string name="map_use_embedded_confirm">"Remove your calibration and use the georeferencing stored in the PDF?"</string>
+    <string name="menu_add_map">"Add a map"</string>
     <string name="night_mode_brightness">"Night mode brightness"</string>
     <string name="night_mode_help">"Turns the whole screen, including menus and dialogs, red and dims it to protect night vision. The status bar is hidden while it is on. Toggle it from the moon button on the map."</string>
     <string name="night_mode_title">"Night mode"</string>

@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -74,6 +75,8 @@ fun MgrsHeader(
     highlightModifier: Modifier = Modifier,
     /** while calibrating (contract s7.8): provisional hides the coordinate, otherwise maybe a PREVIEW tag */
     calibrationReadout: CalibrationReadout? = null,
+    /** the format chip bottom-left of the card, tapping it flips MGRS / lat lon / UTM. null hides the chip */
+    onCycleCoordinateType: (() -> Unit)? = null,
     onDropPin: (() -> Unit)? = null
 ) {
     val notGeoreferenced = calibrationReadout == CalibrationReadout.NotGeoreferenced
@@ -89,22 +92,22 @@ fun MgrsHeader(
             .background(Color(0xCC000000))
             .combinedClickable(
                 // provisional: no copy action to announce either (OD-F15)
-                onClickLabel = if (notGeoreferenced) null else L10n.text("Copy %1\$s coordinate", coordinateType.displayName),
+                onClickLabel = if (notGeoreferenced) null else L10n.text("Copy %1\$s coordinate", coordinateType.shortLabel),
                 role = Role.Button,
                 onClick = {
                     // nothing real to copy off a provisional placement
                     if (notGeoreferenced) return@combinedClickable
                     val copied = copySensitivePlainText(
                         context,
-                        L10n.text("%1\$s coordinate", coordinateType.displayName),
+                        L10n.text("%1\$s coordinate", coordinateType.shortLabel),
                         primaryCoordinate,
                     )
                     Toast.makeText(
                         context,
                         if (copied) {
-                            L10n.text("%1\$s copied", coordinateType.displayName)
+                            L10n.text("%1\$s copied", coordinateType.shortLabel)
                         } else {
-                            L10n.text("Unable to copy %1\$s", coordinateType.displayName.lowercase())
+                            L10n.text("Unable to copy %1\$s", coordinateType.shortLabel.lowercase())
                         },
                         Toast.LENGTH_SHORT
                     ).show()
@@ -149,16 +152,20 @@ fun MgrsHeader(
                     contentDescription = if (notGeoreferenced) {
                         Messages.calibrationNotGeoreferenced()
                     } else {
-                        L10n.text("%1\$s coordinate %2\$s", coordinateType.displayName, primaryCoordinate)
+                        L10n.text("%1\$s coordinate %2\$s", coordinateType.shortLabel, primaryCoordinate)
                     }
                 }
         )
-        // Immediate operational row: range left, elevation right. Off a provisional
-        // placement there's no real ground under the crosshair to measure to
+        // Immediate operational row: format chip then range on the left, elevation right.
+        // Off a provisional placement there's no real ground under the crosshair to measure to
         if (!notGeoreferenced) Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (onCycleCoordinateType != null) {
+                CoordinateFormatChip(coordinateType.shortLabel, onCycleCoordinateType)
+                Spacer(Modifier.size(8.dp))
+            }
             if (distanceFromUserMetres != null) {
                 FittedHudText(
                     L10n.text("FROM ME %1\$s", MeasureFormat.distance(distanceFromUserMetres)),
@@ -266,6 +273,30 @@ fun MgrsHeader(
             }
         }
     }
+}
+
+/**
+ * The little MGRS / LAT/LON / UTM tag. Its own clickable so a tap here never reaches
+ * the card's copy action, the big readout still copies exactly as before.
+ */
+@Composable
+private fun CoordinateFormatChip(label: String, onCycle: () -> Unit) {
+    val hint = Messages.coordChipHint(label)
+    FittedHudText(
+        label,
+        color = Color.White.copy(alpha = 0.85f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = 12.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.White.copy(alpha = 0.16f))
+            .clickable(role = Role.Button, onClick = onCycle)
+            .semantics { contentDescription = hint }
+            .testTag("header.formatChip")
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+    )
 }
 
 /// iOS-matching elevation readout: "ELEV 0 m", "ELEV ~1025 m" (~ = approximate

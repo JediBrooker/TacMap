@@ -73,6 +73,47 @@ final class MapInteractionRegressionTests: XCTestCase {
         XCTAssertEqual(CoordinateDisplayFormat.stored(in: defaults), .mgrs)
     }
 
+    func testCoordinateDisplayFormatNextCyclesThroughEveryCase() {
+        XCTAssertEqual(CoordinateDisplayFormat.mgrs.next, .wgs84)
+        XCTAssertEqual(CoordinateDisplayFormat.wgs84.next, .utm)
+        XCTAssertEqual(CoordinateDisplayFormat.utm.next, .mgrs)
+        // three taps lands back where you started, no case gets skipped
+        var seen: [CoordinateDisplayFormat] = []
+        var format = CoordinateDisplayFormat.mgrs
+        for _ in CoordinateDisplayFormat.allCases {
+            seen.append(format)
+            format = format.next
+        }
+        XCTAssertEqual(format, .mgrs)
+        XCTAssertEqual(Set(seen), Set(CoordinateDisplayFormat.allCases))
+    }
+
+    func testCoordinateDisplayFormatLabelsAreNonEmptyAndDistinct() {
+        let long = CoordinateDisplayFormat.allCases.map(\.label)
+        let short = CoordinateDisplayFormat.allCases.map(\.shortLabel)
+        XCTAssertTrue(long.allSatisfy { !$0.isEmpty })
+        XCTAssertTrue(short.allSatisfy { !$0.isEmpty })
+        XCTAssertEqual(Set(long).count, long.count)
+        XCTAssertEqual(Set(short).count, short.count)
+        // the copied toast uses the short one, it must not be the long picker name
+        XCTAssertNotEqual(CoordinateDisplayFormat.mgrs.label, CoordinateDisplayFormat.mgrs.shortLabel)
+        XCTAssertNotEqual(CoordinateDisplayFormat.wgs84.label, CoordinateDisplayFormat.wgs84.shortLabel)
+    }
+
+    func testAddMapRouteByExtension() {
+        func route(_ name: String) -> AddMapRoute {
+            AddMapRoute.route(for: URL(fileURLWithPath: "/tmp/\(name)"))
+        }
+        XCTAssertEqual(route("sheet.pdf"), .pdf)
+        XCTAssertEqual(route("SHEET.PDF"), .pdf)
+        XCTAssertEqual(route("pack.mbtiles"), .mbtiles)
+        XCTAssertEqual(route("pack.MBTiles"), .mbtiles)
+        XCTAssertEqual(route("pack.db"), .mbtiles)
+        XCTAssertEqual(route("pack.sqlite"), .mbtiles)
+        XCTAssertEqual(route("track.gpx"), .unsupported)
+        XCTAssertEqual(route("noext"), .unsupported)
+    }
+
     func testBackgroundUnitSyncIntervalDefaultsToFifteenMinutesAndPersists() throws {
         let suiteName = "BackgroundUnitSyncIntervalTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

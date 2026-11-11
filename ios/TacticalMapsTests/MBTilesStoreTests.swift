@@ -1317,10 +1317,17 @@ final class MBTilesStoreTests: XCTestCase {
             XCTAssertNil(MBTilesStore(url: url), id)
             let lazy = MBTilesStore(prevalidatedURL: url, metadata: MBTilesStore.Metadata(
                 name: "x", format: "png", minZoom: 0, maxZoom: 1, bounds: nil))
-            let started = Date()
+            // "refused at once" means the schema check said no before the view query
+            // budget could run out, so each call has to come back inside that budget.
+            // used to be a flat 1s for both calls together, which a busy CI runner blew
+            // through twice without anything being wrong
+            let budget = Double(MBTilesStore.viewQueryBudgetMs) / 1000
+            var started = Date()
             XCTAssertNil(lazy.tileData(z: 0, x: 0, y: 0), "\(id) lazy")
+            XCTAssertLessThan(Date().timeIntervalSince(started), budget, "\(id): refused at once, not cut off by a budget")
+            started = Date()
             XCTAssertNil(lazy.extensionMetadata("tacmap_bake_key"), "\(id) lazy")
-            XCTAssertLessThan(Date().timeIntervalSince(started), 1, "\(id): refused at once, not cut off by a budget")
+            XCTAssertLessThan(Date().timeIntervalSince(started), budget, "\(id): refused at once, not cut off by a budget")
             lazy.closeForDeletion()
         }
     }

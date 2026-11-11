@@ -3,6 +3,23 @@ import Combine
 import SwiftUI
 import PDFKit
 
+/// Where a file from the "Add a map" picker goes. Pure so it can be tested
+/// without a picker
+enum AddMapRoute: Equatable {
+    case pdf
+    case mbtiles
+    case unsupported
+
+    static func route(for url: URL) -> AddMapRoute {
+        switch url.pathExtension.lowercased() {
+        case "pdf": return .pdf
+        // .database in the picker lets plain sqlite names through too
+        case "mbtiles", "db", "sqlite": return .mbtiles
+        default: return .unsupported
+        }
+    }
+}
+
 /// A PDF waiting on the page picker (s9.6): the prepared copy stays registered
 /// in flight until the user picks or cancels.
 struct PagePickerRequest: Identifiable {

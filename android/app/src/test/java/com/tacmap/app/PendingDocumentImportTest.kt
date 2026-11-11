@@ -63,6 +63,29 @@ class PendingDocumentImportTest {
     }
 
     @Test
+    fun everyKindRoundTripsThroughItsSavedValueIncludingTheCombinedMapPick() {
+        DocumentImportKind.entries.forEach { kind ->
+            assertEquals(kind, DocumentImportKind.fromSavedValue(kind.savedValue))
+        }
+        // the saved values are what an older build wrote into the bundle, they must not drift
+        assertEquals(DocumentImportKind.MAP, DocumentImportKind.fromSavedValue("map"))
+        assertEquals(DocumentImportKind.PDF, DocumentImportKind.fromSavedValue("pdf"))
+        assertEquals(DocumentImportKind.MBTILES, DocumentImportKind.fromSavedValue("mbtiles"))
+        assertNull(DocumentImportKind.fromSavedValue(null))
+        assertNull(DocumentImportKind.fromSavedValue("MAP"))
+        val restored = PendingDocumentImportRestore.fromValues("tok-3", "map", "content://x/Sheet.pdf", true)
+        assertEquals(PendingDocumentImport("tok-3", DocumentImportKind.MAP, "content://x/Sheet.pdf", true), restored)
+    }
+
+    @Test
+    fun theCombinedMapPickAcceptsBothMapFormatsFromThePicker() {
+        val mimes = DocumentImportKind.MAP.mimeTypes.toList()
+        assertTrue(mimes.contains("application/pdf"))
+        assertTrue("MBTiles turn up as octet-stream or a sqlite type depending on the provider", mimes.contains("application/octet-stream"))
+        assertTrue(mimes.contains("*/*"))
+    }
+
+    @Test
     fun leakedGrantsAreEverythingButThePickInHand() {
         val held = listOf("content://a/1", "content://a/2", "content://a/3")
         assertEquals(held, PendingDocumentImportRestore.orphanedGrants(held, null))

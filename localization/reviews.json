@@ -14769,6 +14769,90 @@
         "translation": "c2d601850d8722f8d4a5a18c0ef1255c375e42974bb837dc8b09e6cb25fc45db",
         "status": "reviewed"
       }
+    },
+    "menu_add_map": {
+      "de": {
+        "source": "643b2dca5dbc48bf28cf1bb84dc7270306e0a9120bede38855b22b7e344c16f4",
+        "translation": "b97a5d55de17faaf5d30ab4e3fb9b3dcc9b03a240b997a9ea393742ce40dfcec",
+        "status": "reviewed"
+      }
+    },
+    "import_geopdf_row": {
+      "de": {
+        "source": "3368413056b3d12cdd01d2a36014d40437c505c3491295ebcacdba305205d369",
+        "translation": "4c94187ac549220168f8d048a93555bdfa94c18b9220bef7b6c6a21ed39291f5",
+        "status": "reviewed"
+      }
+    },
+    "add_map_unsupported": {
+      "de": {
+        "source": "0a178f3afa8b347302227ff027037861eaeee63bfa4998e7cdd71a00bdfc95d3",
+        "translation": "36773815403e32d4a5bfe9911068f3af17ba8c69a23cb94ee937e4a027727f99",
+        "status": "reviewed"
+      }
+    },
+    "coord_format_mgrs": {
+      "de": {
+        "source": "da7833d69d5825c9cc2627e5975509acf5fdada04bf18e75c69766e2c527c001",
+        "translation": "5113eea2901c7bca9bba1b1e44884d4f575931fddb341621232b71167c9d4c52",
+        "status": "reviewed"
+      }
+    },
+    "coord_format_latlon": {
+      "de": {
+        "source": "f9b391d2af23a6d9c705307f8a62768551a914dcb246b8eb76b39c3feda5a511",
+        "translation": "b1581b0dad553462213be2d14512aa6dc94aa82a86089ebcf694f92dac85005e",
+        "status": "reviewed"
+      }
+    },
+    "coord_format_utm": {
+      "de": {
+        "source": "73f915eb5cf9aab439b687197cbe035d52d6369661842808ca5a1b4a93fa3f06",
+        "translation": "30181e80452a576f8871eb917e87da6d2808ba916e1426a3af361644601aba22",
+        "status": "reviewed"
+      }
+    },
+    "coord_chip_mgrs": {
+      "de": {
+        "source": "82913498e2ba7bd4493d33085b2edbc53fe84a4a26d8ae3d32e0fa343f9a8f8d",
+        "translation": "9e12e777ab047e189d1a2aab34c23aa879db8109fd7debf1ec25591c5f720d2e",
+        "status": "reviewed"
+      }
+    },
+    "coord_chip_latlon": {
+      "de": {
+        "source": "b451f4d8e69858430ce89950e2ab76bec1e699340316d2f01ae98948b684283e",
+        "translation": "1ce1d60c276607520865a1df6e00d148819ae34f4e26fa210680b2bbd06a25f7",
+        "status": "reviewed"
+      }
+    },
+    "coord_chip_utm": {
+      "de": {
+        "source": "325b325668186c697ad2f0d5ce85d411512c696ac595d9d620483a8576a7c76a",
+        "translation": "30181e80452a576f8871eb917e87da6d2808ba916e1426a3af361644601aba22",
+        "status": "reviewed"
+      }
+    },
+    "coord_chip_hint": {
+      "de": {
+        "source": "a64b873f1aec7f1e71d9e66d9be4bc696ea7385ea5450a2101226abff55eabc9",
+        "translation": "ffa1c9c2953fdb60bf62e987deb83148bd46dacf7be0c3b711f50000cffce355",
+        "status": "reviewed"
+      }
+    },
+    "about_nsw_title": {
+      "de": {
+        "source": "d0aef5b9be8242b308e8d7ef2ca92a5e9c649dbf16ab6eaff0c53fb5b087f805",
+        "translation": "1e534595ada8b913c118ef0c07b04ffc6af688e7e204818142f0ee705827ecc6",
+        "status": "reviewed"
+      }
+    },
+    "about_nsw_detail": {
+      "de": {
+        "source": "9ec37553274cd4b1c70b69765cd5cd70c2a17ed6b1cdae680b7af0059e235df3",
+        "translation": "c2b810bb55d518c5b769436dbaf0ca9ef8aebdd1b8ec60243ab11f4c4cbd1909",
+        "status": "reviewed"
+      }
     }
   },
   "plurals": {

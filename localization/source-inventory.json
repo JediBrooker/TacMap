@@ -2765,6 +2765,13 @@
     "reviewStatus": "manual-review-needed"
   },
   {
+    "path": "android/app/src/main/java/com/tacmap/app/MapFileSniffer.kt",
+    "platform": "android",
+    "area": "import-export",
+    "reviewStatus": "reviewed-no-display-text",
+    "evidence": "Pure header sniffing for the Add a map picker (PDF vs SQLite magic bytes); the unsupported-file message is drawn by MapScreen through the catalogue."
+  },
+  {
     "path": "android/app/src/main/java/com/tacmap/map/ReviewPromptLauncher.kt",
     "platform": "android",
     "area": "navigation-settings",

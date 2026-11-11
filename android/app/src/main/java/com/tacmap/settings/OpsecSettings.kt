@@ -17,10 +17,30 @@ import kotlinx.coroutines.flow.asStateFlow
 /** Coordinate format used for the map header's primary readout. The persisted
  *  enum name is intentionally stable; unknown or absent values use MGRS so
  *  existing installs keep the app's historical default. */
-enum class CoordinateDisplayType(val displayName: String) {
-    MGRS("MGRS"),
-    WGS84("WGS84"),
-    UTM("UTM");
+enum class CoordinateDisplayType {
+    MGRS,
+    WGS84,
+    UTM;
+
+    /** long name for the settings picker. resolved per read, a cached string would miss a language change */
+    val displayName: String
+        get() = when (this) {
+            MGRS -> Messages.coordFormatMgrs()
+            WGS84 -> Messages.coordFormatLatlon()
+            UTM -> Messages.coordFormatUtm()
+        }
+
+    /** the short tag on the header chip and in the copy toast ("MGRS copied") */
+    val shortLabel: String
+        get() = when (this) {
+            MGRS -> Messages.coordChipMgrs()
+            WGS84 -> Messages.coordChipLatlon()
+            UTM -> Messages.coordChipUtm()
+        }
+
+    /** what a tap on the header chip switches to: MGRS, lat/lon, UTM, round again */
+    val next: CoordinateDisplayType
+        get() = entries[(ordinal + 1) % entries.size]
 
     companion object {
         fun fromPersisted(value: String?): CoordinateDisplayType =

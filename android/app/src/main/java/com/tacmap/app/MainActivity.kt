@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
     private lateinit var geoJsonImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var mbtilesImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var kmlImportLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var mapImportLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var liveMapLocationPermissionLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var trackRecordingPermissionLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var pendingImportCoordinator: PendingDocumentImportCoordinator
@@ -180,6 +181,9 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
         }
         kmlImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             receiveDocumentImportResult(DocumentImportKind.KML, uri)
+        }
+        mapImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            receiveDocumentImportResult(DocumentImportKind.MAP, uri)
         }
         liveMapLocationPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
@@ -519,6 +523,7 @@ class MainActivity : ComponentActivity(), OwnShareSheetHost {
             DocumentImportKind.GEO_JSON -> geoJsonImportLauncher.launch(kind.mimeTypes)
             DocumentImportKind.MBTILES -> mbtilesImportLauncher.launch(kind.mimeTypes)
             DocumentImportKind.KML -> kmlImportLauncher.launch(kind.mimeTypes)
+            DocumentImportKind.MAP -> mapImportLauncher.launch(kind.mimeTypes)
         }
     }
 

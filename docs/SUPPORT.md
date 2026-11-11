@@ -10,7 +10,7 @@ System prompts, file pickers, keyboards and purchase dialogs follow the platform
 
 ## Start offline
 
-Online basemaps and lookups are off on a fresh installation. Use **Import / Export** to import PDF/GeoPDF maps or MBTiles tiles. Calibrate PDFs without georeferencing using known control points and check the reported residual. Choose your map and overlays in **Layers and Labels**.
+Online basemaps and lookups are off on a fresh installation. Use **Add a map**, the first row of the menu, to import a GeoPDF, PDF or MBTiles map. Calibrate PDFs without georeferencing using known control points and check the reported residual. Choose your map and overlays in **Layers and Labels**.
 
 Coordinate and mission-object search works locally. Place search, weather, elevation and online maps need the relevant online settings and a connection.
 

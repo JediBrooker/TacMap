@@ -28,7 +28,8 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.AddToPhotos
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -165,8 +166,9 @@ internal fun QuickAddSymbolButton(onClick: () -> Unit) {
             .semantics { contentDescription = L10n.text("Add symbol at crosshair") },
         contentAlignment = Alignment.Center
     ) {
+        // a pin with a plus rather than a bare plus, newcomers read the bare one as "add map"
         Icon(
-            Icons.Default.Add,
+            Icons.Default.AddLocationAlt,
             contentDescription = null,
             tint = Color.Black,
             modifier = Modifier.size(22.dp)
@@ -451,6 +453,17 @@ internal fun LockedRowIcon(title: String) {
         Icons.Default.Lock,
         contentDescription = Messages.viewerLockedRowHint(title),
         modifier = Modifier.size(18.dp),
+    )
+}
+
+/** first hamburger row: one picker for PDF and MBTiles, off while another map import is running */
+@Composable
+internal fun AddMapMenuItem(enabled: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(Messages.menuAddMap()) },
+        enabled = enabled,
+        onClick = onClick,
+        leadingIcon = { Icon(Icons.Default.AddToPhotos, contentDescription = null) },
     )
 }
 

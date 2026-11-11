@@ -3,8 +3,17 @@ enum Messages {
     static func aboutMadeInAustralia() -> String {
         L10n.message("id.about_made_in_australia", fallback: "Made in Australia")
     }
+    static func aboutNswDetail() -> String {
+        L10n.message("id.about_nsw_detail", fallback: "© State of New South Wales (DCS Spatial Services). Sheets are imported by you and shown as published.")
+    }
+    static func aboutNswTitle() -> String {
+        L10n.message("id.about_nsw_title", fallback: "NSW topographic maps (Spatial Collaboration Portal)")
+    }
     static func aboutScreenTitle() -> String {
         L10n.message("id.about_screen_title", fallback: "About TacMap")
+    }
+    static func addMapUnsupported() -> String {
+        L10n.message("id.add_map_unsupported", fallback: "That file is not a PDF or MBTiles map.")
     }
     static func calibrationActionDone() -> String {
         L10n.message("id.calibration_action_done", fallback: "Done")
@@ -297,6 +306,27 @@ enum Messages {
     static func acknowledge() -> String {
         L10n.message("id.common_ok", fallback: "OK")
     }
+    static func coordChipHint(_ format: String) -> String {
+        L10n.message("id.coord_chip_hint", fallback: "Coordinate format, %1$@. Tap to change.", format)
+    }
+    static func coordChipLatlon() -> String {
+        L10n.message("id.coord_chip_latlon", fallback: "LAT/LON")
+    }
+    static func coordChipMgrs() -> String {
+        L10n.message("id.coord_chip_mgrs", fallback: "MGRS")
+    }
+    static func coordChipUtm() -> String {
+        L10n.message("id.coord_chip_utm", fallback: "UTM")
+    }
+    static func coordFormatLatlon() -> String {
+        L10n.message("id.coord_format_latlon", fallback: "Latitude / Longitude")
+    }
+    static func coordFormatMgrs() -> String {
+        L10n.message("id.coord_format_mgrs", fallback: "MGRS / USNG")
+    }
+    static func coordFormatUtm() -> String {
+        L10n.message("id.coord_format_utm", fallback: "UTM")
+    }
     static func coordinateCopyHint(_ value: String) -> String {
         L10n.message("id.coordinate_copy_hint", fallback: "Tap to copy the displayed %1$@ coordinate. Long-press to drop a pin here.", value)
     }
@@ -362,6 +392,9 @@ enum Messages {
     }
     static func importFailedMessage(_ detail: String) -> LocalizedMessage {
         LocalizedMessage(id: "id.import_failed", fallback: "Import failed: %1$@", arguments: [detail])
+    }
+    static func importGeopdfRow() -> String {
+        L10n.message("id.import_geopdf_row", fallback: "GeoPDF or PDF map")
     }
     static func importedLayerSaveFailed(_ detail: String) -> String {
         L10n.message("id.imported_layer_save_failed", fallback: "Could not save imported layer to disk: %1$@", detail)
@@ -632,6 +665,9 @@ enum Messages {
     }
     static func mapUseEmbeddedConfirm() -> String {
         L10n.message("id.map_use_embedded_confirm", fallback: "Remove your calibration and use the georeferencing stored in the PDF?")
+    }
+    static func menuAddMap() -> String {
+        L10n.message("id.menu_add_map", fallback: "Add a map")
     }
     static func newLayerSaveFailed(_ detail: String) -> String {
         L10n.message("id.new_layer_save_failed", fallback: "Could not save new layer to disk: %1$@", detail)

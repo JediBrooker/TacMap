@@ -17,11 +17,32 @@ enum CoordinateDisplayFormat: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// long name for the Settings picker. a parks cartographer told us plain
+    /// "WGS84" meant nothing to her volunteers, so these spell it out
     var label: String {
         switch self {
-        case .mgrs: "MGRS"
-        case .wgs84: "WGS84"
-        case .utm: "UTM"
+        case .mgrs: Messages.coordFormatMgrs()
+        case .wgs84: Messages.coordFormatLatlon()
+        case .utm: Messages.coordFormatUtm()
+        }
+    }
+
+    /// short form for the header chip and the copied toast, where the long
+    /// label just wraps
+    var shortLabel: String {
+        switch self {
+        case .mgrs: Messages.coordChipMgrs()
+        case .wgs84: Messages.coordChipLatlon()
+        case .utm: Messages.coordChipUtm()
+        }
+    }
+
+    /// tap order for the header chip: mgrs -> lat/lon -> utm -> mgrs
+    var next: CoordinateDisplayFormat {
+        switch self {
+        case .mgrs: .wgs84
+        case .wgs84: .utm
+        case .utm: .mgrs
         }
     }
 

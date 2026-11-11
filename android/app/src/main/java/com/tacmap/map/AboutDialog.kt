@@ -133,6 +133,7 @@ private fun mapDataCredits() = listOf(
     ),
     Credit(Messages.aboutOpentopomapTitle(), Messages.aboutOpentopomapDetail(), "https://opentopomap.org/about"),
     Credit("OpenStreetMap", Messages.aboutOsmDetail(), "https://www.openstreetmap.org/copyright"),
+    Credit(Messages.aboutNswTitle(), Messages.aboutNswDetail(), "https://www.spatial.nsw.gov.au/"),
     Credit(Messages.aboutOpenMeteoTitle(), Messages.aboutOpenMeteoDetail(), "https://open-meteo.com/en/license"),
 )
 

@@ -140,6 +140,7 @@ import com.tacmap.calibration.OnlineRasterMapSourceAndroid
 import com.tacmap.calibration.PdfMapSource
 import com.tacmap.calibration.Wgs84Coordinate
 import com.tacmap.app.DocumentImportKind
+import com.tacmap.app.MapFileSniffer
 import com.tacmap.app.AppLock
 import com.tacmap.app.PendingDocumentImport
 import com.tacmap.drawings.DrawingDocument
@@ -1101,9 +1102,30 @@ internal fun MapScreen(
         ).show()
     }
 
-    suspend fun processDocumentImport(pending: PendingDocumentImport) {
+    /**
+     * [onResolved] hears which map pipeline an "Add a map" pick turned out to be,
+     * so the failure text downstream matches the file and not the picker
+     */
+    suspend fun processDocumentImport(pending: PendingDocumentImport, onResolved: (DocumentImportKind) -> Unit) {
         val uri = Uri.parse(pending.uri)
         when (pending.kind) {
+            DocumentImportKind.MAP -> {
+                val sniffed = withContext(Dispatchers.IO) {
+                    // unreadable counts the same as unknown, the user just gets told it isnt a map
+                    runCatching { context.contentResolver.openInputStream(uri)?.use { MapFileSniffer.kindOf(it) } }.getOrNull()
+                }
+                when (sniffed) {
+                    DocumentImportKind.PDF -> {
+                        onResolved(sniffed)
+                        runMapImport(uri, sniffed, "pdf:${pending.token}")
+                    }
+                    DocumentImportKind.MBTILES -> {
+                        onResolved(sniffed)
+                        runMapImport(uri, sniffed, "mbtiles:${pending.token}")
+                    }
+                    else -> importAlert = Messages.addMapUnsupported()
+                }
+            }
             DocumentImportKind.SYMBOL_PACK -> {
                 val pack = withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openInputStream(uri)).use {
@@ -1128,19 +1150,22 @@ internal fun MapScreen(
         val pending = pendingDocumentImport ?: return@LaunchedEffect
         if (!onClaimDocumentImport(pending.token)) return@LaunchedEffect
         val interrupted = vm.interruptedImportOperationKey
-        if (pending.kind == DocumentImportKind.PDF && interrupted == "pdf:${pending.token}") {
+        val couldBePdf = pending.kind == DocumentImportKind.PDF || pending.kind == DocumentImportKind.MAP
+        if (couldBePdf && interrupted == "pdf:${pending.token}") {
             // this exact import took the app down during its probe, replaying it would loop.
             // drop it, the launch notice says what happened
             onCompleteDocumentImport(pending.token)
             return@LaunchedEffect
         }
         var terminal = false
+        // an "Add a map" pick becomes PDF or MBTILES once sniffed, the failure copy below keys off that
+        var effectiveKind = pending.kind
         importCancelRequested = false
         // a child job so the progress card's Cancel can stop just this import; a pause
         // tearing MapScreen down cancels it too, that one abandons and retries on resume
         val job = launch {
             try {
-                processDocumentImport(pending)
+                processDocumentImport(pending) { effectiveKind = it }
                 terminal = true
             } catch (cancelled: CancellationException) {
                 if (importCancelRequested) {
@@ -1152,10 +1177,12 @@ internal fun MapScreen(
                 // Exception only: an OOM / StackOverflow is caught at the inspector boundary
                 // and nowhere else (D5-15), never turned into "imported" or a toast here
                 terminal = true
-                val mapImport = pending.kind == DocumentImportKind.PDF || pending.kind == DocumentImportKind.MBTILES
+                val mapImport = effectiveKind == DocumentImportKind.PDF ||
+                    effectiveKind == DocumentImportKind.MBTILES ||
+                    effectiveKind == DocumentImportKind.MAP
                 val message = when {
-                    pending.kind == DocumentImportKind.SYMBOL_PACK -> Messages.importFailed(Messages.symbolsSymbolPackError())
-                    mapImport && pending.kind == DocumentImportKind.MBTILES && failure is IllegalStateException ->
+                    effectiveKind == DocumentImportKind.SYMBOL_PACK -> Messages.importFailed(Messages.symbolsSymbolPackError())
+                    mapImport && effectiveKind == DocumentImportKind.MBTILES && failure is IllegalStateException ->
                         Messages.mapImportInvalidMbtiles()
                     // never the raw exception text for a map: it can carry the picked file's path
                     mapImport -> Messages.mapImportReadFailed(failure.javaClass.simpleName)
@@ -1443,7 +1470,7 @@ internal fun MapScreen(
                     },
                     onCopy = {
                         mapPressPoint = null
-                        val type = point.coordinate.type.displayName
+                        val type = point.coordinate.type.shortLabel
                         val copied = com.tacmap.util.copySensitivePlainText(
                             context,
                             L10n.text("%1\$s coordinate", type),
@@ -1496,6 +1523,7 @@ internal fun MapScreen(
             calibrationReadout = calibrationUi?.let { ui ->
                 if (ui.display.provisional) CalibrationReadout.NotGeoreferenced else CalibrationReadout.Preview(ui.showsPreview)
             },
+            onCycleCoordinateType = { vm.opsec.setPrimaryCoordinateType(primaryCoordinateType.next) },
             onDropPin = {
                 val (lat, lng) = vm.headerCoordinate
                 val activeLayerId = drawingDocument.layers
@@ -1610,6 +1638,12 @@ internal fun MapScreen(
                         )
                         HorizontalDivider()
                     }
+                    // the one thing a first-timer is after, so it goes above everything
+                    AddMapMenuItem(enabled = importProgress == null && importJob == null) {
+                        hamburgerOpen = false
+                        onRequestDocumentImport(DocumentImportKind.MAP)
+                    }
+                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text(L10n.text("Search")) },
                         onClick = {

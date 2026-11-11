@@ -228,6 +228,8 @@ struct ContentView: View {
     @State private var graphicsLocked = false
 
     @State private var showImporter        = false
+    /// the "Add a map…" row: one picker for pdf + mbtiles, routed by extension
+    @State private var showAddMapImporter  = false
     @State private var showMBTilesImporter = false
     @State private var showGeoJSONImporter = false
     @State private var showKMLImporter     = false
@@ -813,7 +815,7 @@ struct ContentView: View {
                 measureSession.addPoint(coordinate)
             },
             onCopied: { format in
-                showTransientToast(L10n.text("%1$@ copied", format.label))
+                showTransientToast(L10n.text("%1$@ copied", format.shortLabel))
             },
             isFullVersion: access.isFullVersion,
             onLocked: presentLocked
@@ -1093,6 +1095,20 @@ struct ContentView: View {
         .background(
             EmptyView()
                 .fileImporter(
+                    isPresented: $showAddMapImporter,
+                    allowedContentTypes: [
+                        .pdf,
+                        UTType(filenameExtension: "mbtiles") ?? .database,
+                        .database
+                    ],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleAddMap(result)
+                }
+        )
+        .background(
+            EmptyView()
+                .fileImporter(
                     isPresented: $showGeoJSONImporter,
                     allowedContentTypes: [
                         .json,
@@ -1140,7 +1156,7 @@ struct ContentView: View {
          importController.pagePicker != nil, showExportSheet, showGPXExporter, showWeatherSheet,
          showAppLockSheet, profileRequest != nil, showOpsecSheet, showSyncSheet, chatRoute != nil,
          showSearchSheet, showAboutSheet, showPaywallSheet, missionObjectExportURL != nil,
-         showImporter, showGeoJSONImporter, showMBTilesImporter, showKMLImporter]
+         showImporter, showAddMapImporter, showGeoJSONImporter, showMBTilesImporter, showKMLImporter]
     }
 
     /// Plain map, nothing on top, nothing in flight: the only time the review
@@ -1324,7 +1340,8 @@ struct ContentView: View {
                         missionMutationMessage = Messages.displayTheDroppedSymbolWasNotAddedCheckAvailableStorageMessage("").withArgument(0, error.displayMessage)
                     }
                 },
-                calibrationReadout: calibrationHeaderReadout
+                calibrationReadout: calibrationHeaderReadout,
+                onCycleFormat: { opsec.setCoordinateDisplayFormat(opsec.coordinateDisplayFormat.next) }
             )
             .tourTarget(.header)
             .padding(.horizontal, 12)
@@ -1366,6 +1383,10 @@ struct ContentView: View {
                         isFullVersion: access.isFullVersion,
                         trialDaysRemaining: trial.daysRemaining(),
                         onUnlock: { showPaywallSheet = true },
+                        onAddMap:    {
+                            drawingsPanelOpen = false
+                            showAddMapImporter = true
+                        },
                         onSearch:    {
                             drawingsPanelOpen = false
                             showSearchSheet = true
@@ -2101,6 +2122,21 @@ struct ContentView: View {
 
     private func handleImport(_ result: Result<[URL], Error>) {
         importController.importPDF(result)
+    }
+
+    /// "Add a map…": one picker, then hand off to whichever import matches the
+    /// extension. A picker error has no url so it just takes the pdf path and
+    /// gets the same error handling it always did
+    private func handleAddMap(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else {
+            handleImport(result)
+            return
+        }
+        switch AddMapRoute.route(for: url) {
+        case .pdf: handleImport(result)
+        case .mbtiles: handleMBTilesImport(result)
+        case .unsupported: showTransientToast(Messages.addMapUnsupported())
+        }
     }
 
     #if DEBUG

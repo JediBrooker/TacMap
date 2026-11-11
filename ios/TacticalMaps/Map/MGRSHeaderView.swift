@@ -40,6 +40,9 @@ struct MGRSHeaderView: View {
     /// Calibrating (s7.8): .notGeoreferenced swaps the coordinate for a warning
     /// (the placement is a guess), .preview tags an unsaved fit.
     var calibrationReadout: CalibrationHeaderReadout? = nil
+    /// Tap on the format chip (bottom-left). nil hides the chip. The caller
+    /// owns the setting, same as every other opsec value
+    var onCycleFormat: (() -> Void)? = nil
 
     @State private var showCopiedToast: Bool = false
     /// Grid-magnetic units. Mils by default (military standard); tapping the
@@ -87,7 +90,7 @@ struct MGRSHeaderView: View {
         )
         .overlay(alignment: .top) {
             if showCopiedToast {
-                Text(L10n.text("%1$@ copied", resolvedCoordinate.format.label))
+                Text(L10n.text("%1$@ copied", resolvedCoordinate.format.shortLabel))
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -121,7 +124,7 @@ struct MGRSHeaderView: View {
         // OD-F15: while provisional there's no coordinate to copy, VoiceOver
         // reads NOT GEOREFERENCED and nothing about MGRS
         .accessibilityHint(
-            notGeoreferenced ? "" : Messages.coordinateCopyHint(resolvedCoordinate.format.label)
+            notGeoreferenced ? "" : Messages.coordinateCopyHint(resolvedCoordinate.format.shortLabel)
         )
     }
 
@@ -134,12 +137,33 @@ struct MGRSHeaderView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .accessibilityLabel(
-                    L10n.text("%1$@ coordinate %2$@", resolvedCoordinate.format.label, resolvedCoordinate.text)
+                    L10n.text("%1$@ coordinate %2$@", resolvedCoordinate.format.shortLabel, resolvedCoordinate.text)
                 )
     }
 
     private var distanceAndElevation: some View {
             HStack(spacing: 8) {
+                // format chip sits opposite ELEV. high priority tap so it wins
+                // over the card's copy gesture, same trick as the G-M readout
+                if let onCycleFormat {
+                    Text(coordinateDisplayFormat.shortLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.white.opacity(0.12), in: Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .contentShape(Capsule())
+                        .highPriorityGesture(TapGesture().onEnded {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onCycleFormat()
+                        })
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Messages.coordChipHint(coordinateDisplayFormat.shortLabel))
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityIdentifier("header.formatChip")
+                }
                 if let distanceFromUser {
                     Text(L10n.text("FROM ME %1$@", MeasureFormat.distance(distanceFromUser)))
                         .font(.caption2.weight(.semibold).monospacedDigit())
