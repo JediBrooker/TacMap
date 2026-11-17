@@ -16,7 +16,7 @@
       "The App Store shows your local price.": "Google Play shows your local price.",
       "• Share drawings and symbols with your team over end-to-end encrypted Unit Sync.": "• Share drawings and symbols between iOS and Android with end-to-end encrypted Unit Sync."
     },
-    "releaseNotes": "TacMap 3.1.2\n• Add a map is now the first row of the menu and takes a GeoPDF, PDF or MBTiles file in one step.\n• Tap the new format chip under the coordinate readout to switch between MGRS / USNG, latitude / longitude and UTM.\n• The import row says GeoPDF or PDF map; the add-symbol button looks like a map pin.\n• About & Credits names the NSW topographic series with its Spatial Services attribution."
+    "releaseNotes": "TacMap 3.1.3\n• The welcome tour now waits until the location prompt has been answered, and a tap anywhere outside its card closes it. It only ever shows once; replay it from About & Credits.\n• From 3.1.2: Add a map is the first row of the menu, the format chip under the coordinates switches MGRS / USNG, latitude / longitude and UTM, and the import row says GeoPDF or PDF map."
   },
   "purchase": {
     "iosProductId": "com.tacticalmaps.app.unlock",

@@ -16,7 +16,7 @@
       "Den für dich gültigen Preis zeigt der App Store.": "Den für dich gültigen Preis zeigt Google Play.",
       "• Teile Zeichnungen und Symbole mit deinem Team über die Ende-zu-Ende-verschlüsselte Einheitensynchronisierung.": "• Teile Zeichnungen und Symbole zwischen iOS und Android über die Ende-zu-Ende-verschlüsselte Einheitensynchronisierung."
     },
-    "releaseNotes": "TacMap 3.1.2\n• „Karte hinzufügen“ ist jetzt die erste Zeile im Menü und nimmt GeoPDF-, PDF- oder MBTiles-Dateien in einem Schritt entgegen.\n• Tippe auf den neuen Formatchip unter der Koordinatenanzeige, um zwischen MGRS / USNG, Breite / Länge und UTM zu wechseln.\n• Die Importzeile heißt „GeoPDF- oder PDF-Karte“; die Symbol-Taste sieht wie eine Kartennadel aus.\n• „Über TacMap“ nennt die NSW-Kartenserie mit dem Hinweis von Spatial Services."
+    "releaseNotes": "TacMap 3.1.3\n• Die Willkommenstour wartet jetzt, bis die Standortabfrage beantwortet ist, und ein Tipp außerhalb der Karte schließt sie. Sie erscheint nur einmal; wiederholen über „Über TacMap“.\n• Seit 3.1.2: „Karte hinzufügen“ ist die erste Menüzeile, der Formatchip unter den Koordinaten wechselt zwischen MGRS / USNG, Breite / Länge und UTM, und die Importzeile heißt „GeoPDF- oder PDF-Karte“."
   },
   "purchase": {
     "iosProductId": "com.tacticalmaps.app.unlock",

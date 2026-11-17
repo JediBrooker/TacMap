@@ -255,6 +255,9 @@ version ships. The full store notes for the release being prepared live in
 `docs/store/localizations/*.json`, and shipped ones, English and German, in
 [`docs/store/RELEASE_NOTES.md`](docs/store/RELEASE_NOTES.md).
 
+### 3.1.3 (build 84, Android only), November 2026
+- The first-run tour waits until the location prompt has been answered and closes on a tap outside its card, after a Galaxy S24 report of unresponsive Next and Skip buttons that no emulator (including Android 17) reproduces.
+
 ### 3.1.2 (build 83), November 2026
 - Add a map is the first row of the menu and accepts GeoPDF, PDF or MBTiles in one picker; the Import / Export row for sheets now says GeoPDF or PDF map.
 - A tappable format chip in the map header switches MGRS / USNG, latitude / longitude and UTM; the setting says Latitude / Longitude instead of WGS84.

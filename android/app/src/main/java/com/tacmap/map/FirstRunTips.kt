@@ -1,6 +1,7 @@
 package com.tacmap.map
 
 import android.content.Context
+import com.tacmap.models.LiveMapLocationState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateMapOf
@@ -54,6 +55,19 @@ object FirstRunTips {
     fun reset(context: Context) {
         prefs(context).edit().remove(KEY_SEEN_VERSION).apply()
     }
+
+    /**
+     * whether the tour may come up yet. on a fresh install the location prompt and the
+     * tour used to arrive together, and on at least one Samsung the card sat under the
+     * prompt with its buttons dead. so the tour waits until the prompt has been answered
+     * (the state leaves NotRequested). [graceOver] is the escape hatch: if no prompt ever
+     * comes, the tour still shows after a short wait rather than never
+     */
+    fun mayShow(locationState: LiveMapLocationState, graceOver: Boolean): Boolean =
+        locationState != LiveMapLocationState.NotRequested || graceOver
+
+    /** how long MapScreen waits for the location prompt before showing the tour anyway */
+    const val PROMPT_GRACE_MS = 2_500L
 }
 
 /** Map controls the tour can point at. [CROSSHAIR] and [MAP_HOLD] are places
