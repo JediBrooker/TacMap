@@ -370,6 +370,16 @@ internal fun MapScreen(
     var mapPressPoint by remember { mutableStateOf<MapPressPoint?>(null) }
     var profilePath by remember { mutableStateOf<List<ElevationProfile.Coordinate>?>(null) }
     var showTips by rememberSaveable { mutableStateOf(FirstRunTips.shouldShow(context)) }
+    // hold the tour until the first-launch location prompt is out of the way (see
+    // FirstRunTips.mayShow). the grace timer only runs while the tour is pending
+    var tourGraceOver by remember { mutableStateOf(false) }
+    LaunchedEffect(showTips) {
+        if (showTips) {
+            delay(FirstRunTips.PROMPT_GRACE_MS)
+            tourGraceOver = true
+        }
+    }
+    val tourMayShow = FirstRunTips.mayShow(liveMapLocationState, tourGraceOver)
     val tourTargets = remember { TourTargets() }
     var pointSunMoon by remember { mutableStateOf<MapPressPoint?>(null) }
     var pointRingsCentre by remember { mutableStateOf<Waypoint?>(null) }
@@ -2087,7 +2097,7 @@ internal fun MapScreen(
                 .padding(bottom = 140.dp),
         )
 
-        if (showTips) {
+        if (showTips && tourMayShow) {
             MapTourOverlay(
                 targets = tourTargets,
                 onFinish = {

@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -118,8 +119,37 @@ internal fun MapTourOverlay(targets: TourTargets, onFinish: () -> Unit) {
             .fillMaxSize()
             .onGloballyPositioned { origin = it.positionInRoot() }
             .pointerInput(Unit) {
+                // everything gets consumed so the map underneath never pans or taps while
+                // the tour is up. on top of that, a plain tap that no button took (the
+                // changes reach this root already consumed when a child handled them)
+                // closes the tour, the same as Skip, so a card whose buttons dont respond
+                // can never trap anyone
                 awaitPointerEventScope {
-                    while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                    var downAt: Offset? = null
+                    var moved = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val first = event.changes.firstOrNull()
+                        when (event.type) {
+                            PointerEventType.Press -> {
+                                downAt = first?.position
+                                moved = event.changes.size > 1
+                            }
+                            PointerEventType.Move -> {
+                                val start = downAt
+                                if (start != null && first != null &&
+                                    (first.position - start).getDistance() > viewConfiguration.touchSlop
+                                ) moved = true
+                            }
+                            PointerEventType.Release -> {
+                                val start = downAt
+                                downAt = null
+                                if (start != null && !moved && event.changes.none { it.isConsumed }) onFinish()
+                            }
+                            else -> Unit
+                        }
+                        event.changes.forEach { it.consume() }
+                    }
                 }
             }
     ) {

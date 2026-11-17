@@ -9,6 +9,26 @@ version ships. Counts are Unicode characters (App Store limit 4,000, Google Play
 both take the `en-US` text. Releases before 3.0.1 are in
 [`../STORE_LISTING.md`](../STORE_LISTING.md).
 
+## 3.1.3 (build 84, Android only)
+
+Text on `fix/tour-safeguards` (`docs/store/localizations/*.json`), published 18 November 2026. Safeguards for the first-run tour after a Galaxy S24 / One UI 9 report of dead Next and Skip buttons that no emulator reproduces: the tour waits for the location prompt, and a tap outside the card closes it. iOS 3.1.2 (83) is unaffected; its App Store text is unchanged.
+
+### 3.1.3: Google Play, English (377 / 500)
+
+```
+TacMap 3.1.3
+• The welcome tour now waits until the location prompt has been answered, and a tap anywhere outside its card closes it. It only ever shows once; replay it from About & Credits.
+• From 3.1.2: Add a map is the first row of the menu, the format chip under the coordinates switches MGRS / USNG, latitude / longitude and UTM, and the import row says GeoPDF or PDF map.
+```
+
+### 3.1.3: Google Play, German (396 / 500)
+
+```
+TacMap 3.1.3
+• Die Willkommenstour wartet jetzt, bis die Standortabfrage beantwortet ist, und ein Tipp außerhalb der Karte schließt sie. Sie erscheint nur einmal; wiederholen über „Über TacMap“.
+• Seit 3.1.2: „Karte hinzufügen“ ist die erste Menüzeile, der Formatchip unter den Koordinaten wechselt zwischen MGRS / USNG, Breite / Länge und UTM, und die Importzeile heißt „GeoPDF- oder PDF-Karte“.
+```
+
 ## 3.1.2 (build 83)
 
 Text on `feature/3-1-2-plain-language` (`docs/store/localizations/*.json`), submitted 11 November 2026. Plain-language changes from Minnesota DNR's first look: Add a map as the first menu row, a coordinate format chip, GeoPDF wording, a pin-shaped add-symbol button, and the NSW Spatial Services attribution.
