@@ -31,6 +31,19 @@ The final command fails if the release bundle omits or changes the Java-
 WebSocket/SLF4J notices shown in About. Run all three checks against the exact
 AAB selected in Play Console, after the source tree is frozen.
 
+Release launch smoke (do this before every upload, it is what would have
+caught the 3.1.0 launch crash). With one emulator or phone visible to `adb`:
+
+```sh
+scripts/android_release_smoke.sh
+```
+
+It builds the minified `assembleRelease` apk, signs it with the debug key,
+installs it over whatever `com.tacmap` is on the device, cold-starts it and
+fails if the process is gone or logcat shows a `VerifyError`/`FATAL EXCEPTION`
+ten seconds later. Pass an apk path to skip the build. CI runs the same script
+on the API 26 and 36 emulators.
+
 ## Release Signing
 
 First, generate the upload keystore (run once — it is the permanent identity

@@ -11,6 +11,7 @@ on:
       - 'testdata/**'
       - 'localization/**'
       - 'scripts/*localization*.py'
+      - 'scripts/android_release_smoke.sh'
       - '.github/workflows/android.yml'
   pull_request:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - 'testdata/**'
       - 'localization/**'
       - 'scripts/*localization*.py'
+      - 'scripts/android_release_smoke.sh'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -81,7 +83,7 @@ jobs:
             -PVERSION_CODE="$(( 100000 + GITHUB_RUN_NUMBER ))"
 
   pdf-import-smoke:
-    name: PDF import and localisation tests (API ${{ matrix.api }})
+    name: PDF import, localisation and release launch tests (API ${{ matrix.api }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -109,6 +111,18 @@ jobs:
           set -euo pipefail
           sudo chmod 666 /dev/kvm
 
+      - name: Assemble release APK for the launch smoke test
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 3.1.0 shipped with R8 output that ART's verifier rejected and every
+          # check here was green because we only ever ran debug builds. The
+          # minified apk gets debug-signed and cold-started on the emulator
+          # below, after the instrumentation tests. Built up front so a plain
+          # compile failure fails fast without waiting on an emulator boot.
+          ./gradlew --no-daemon --dependency-verification strict :app:assembleRelease
+
       - name: Run PDF import and localisation instrumentation tests
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -119,11 +133,18 @@ jobs:
           working-directory: android
           # The tour test leaves a screenshot of each step on the emulator;
           # pull them whatever the result so the spotlight can be checked by eye.
+          # Then reuse the same booted emulator for the release launch smoke:
+          # uninstall the debug app, install the debug-signed minified apk,
+          # cold start it and fail on a dead process or a VerifyError/FATAL in
+          # logcat. Runs even when the instrumentation tests failed so one CI
+          # round shows both problems; whichever failed first sets the exit.
           script: >-
             timeout 1200 ./gradlew --no-daemon --dependency-verification strict
             :app:connectedDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.class=com.tacmap.map.PdfImportSmokeTest,com.tacmap.localization.LocalizationTest,com.tacmap.waypoints.CustomSymbolPackTest,com.tacmap.map.FirstRunTipsTest,com.tacmap.map.NightModeTest,com.tacmap.map.MBTilesLifecycleInstrumentedTest,com.tacmap.map.MbtilesOpenGuardInstrumentedTest,com.tacmap.map.LegacyMigrationSalvageInstrumentedTest
-            --stacktrace; status=$?; adb pull /data/local/tmp/tacmap-tour tour-screenshots || true; exit $status
+            --stacktrace; status=$?; adb pull /data/local/tmp/tacmap-tour tour-screenshots || true;
+            SMOKE_SKIP_BUILD=1 ../scripts/android_release_smoke.sh app/build/outputs/apk/release/app-release-unsigned.apk; smoke=$?;
+            if [ "$status" -ne 0 ]; then exit "$status"; fi; exit "$smoke"
 
       - name: Upload tour screenshots
         if: always()
